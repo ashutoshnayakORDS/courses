@@ -8488,9 +8488,7024 @@ If step fails → execute compensations in reverse</div>
                 lessons: [
                     {
                         id: 'rest-principles',
-                        title: 'REST Principles',
+                        title: 'REST Principles & Architecture',
+                        duration: '50 min',
+                        content: `
+                            <h2>What is REST?</h2>
+                            <p>REST stands for Representational State Transfer. It's an architectural style for designing networked applications, particularly web services. REST was introduced by Roy Fielding in his 2000 doctoral dissertation and has become the dominant approach for building web APIs.</p>
+
+                            <p>Think of REST as a set of rules and conventions for how client and server should communicate over HTTP. It's not a protocol or a standard, but rather a set of constraints that, when followed, lead to scalable, maintainable, and easy-to-understand APIs.</p>
+
+                            <h3>The Restaurant Analogy</h3>
+                            <p>Imagine REST as ordering food at a restaurant:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Resources (Menu Items):</strong> Each dish on the menu is a resource (e.g., "pizza", "burger")</li>
+                                <li><strong>HTTP Methods (Actions):</strong> You can GET the menu, POST an order, PUT (update) your order, or DELETE an order</li>
+                                <li><strong>Representations (Food Format):</strong> You can order the same pizza but get it sliced differently (JSON vs XML)</li>
+                                <li><strong>Stateless:</strong> Each time you order, you need to tell the waiter your full request - they don't remember your previous orders</li>
+                            </ul>
+
+                            <h2>The Six REST Constraints</h2>
+
+                            <h3>1. Client-Server Architecture</h3>
+                            <p>The client (like your web browser or mobile app) and the server (the backend system) are separate entities. They can evolve independently without affecting each other.</p>
+
+                            <div class="code-block">Client (Frontend)          Server (Backend)
+     |                           |
+     |-------- Request --------->|
+     |                           | [Process Request]
+     |<------- Response ---------|
+     |                           |
+
+Benefits:
+- Frontend team can update UI without touching backend
+- Backend team can optimize database without affecting frontend
+- Different clients (web, mobile, IoT) can use the same API</div>
+
+                            <p><strong>Real Example - Twitter:</strong> Twitter's API allows web browsers, iOS apps, Android apps, and third-party applications to all interact with the same backend. When Twitter redesigns their website, the mobile apps don't break.</p>
+
+                            <h3>2. Stateless Communication</h3>
+                            <p>Each request from client to server must contain ALL the information needed to understand and process the request. The server doesn't store any client context between requests.</p>
+
+                            <div class="code-block">❌ STATEFUL (NOT REST):
+Request 1: Login with credentials
+Request 2: Get my profile (server remembers you're logged in)
+Request 3: Update profile (server still remembers)
+
+✅ STATELESS (REST):
+Request 1: Login → Get token
+Request 2: Get my profile + token
+Request 3: Update profile + token
+
+Every request includes authentication token!</div>
+
+                            <h4>Why Stateless is Important:</h4>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Scalability:</strong> Any server can handle any request since no session data is stored</li>
+                                <li><strong>Reliability:</strong> Server crashes don't lose session state</li>
+                                <li><strong>Load Balancing:</strong> Easy to distribute requests across multiple servers</li>
+                            </ul>
+
+                            <h4>Common Fail Case:</h4>
+                            <div class="code-block">// ❌ BAD: Relying on server-side sessions
+POST /api/login
+{ "username": "john", "password": "***" }
+→ Server stores session, returns session ID
+
+GET /api/profile
+→ Expects server to remember who you are (not RESTful!)
+
+// ✅ GOOD: Stateless with tokens
+POST /api/login
+{ "username": "john", "password": "***" }
+→ Returns JWT token
+
+GET /api/profile
+Headers: { "Authorization": "Bearer eyJhbGc..." }
+→ Every request includes authentication</div>
+
+                            <h3>3. Cacheable</h3>
+                            <p>Responses must define themselves as cacheable or non-cacheable. If cacheable, the client can reuse the response data for equivalent requests later.</p>
+
+                            <div class="code-block">Example Response Headers:
+
+// ✅ Cacheable (user profile changes rarely)
+GET /api/users/123
+Cache-Control: max-age=3600, public
+→ Can be cached for 1 hour
+
+// ❌ Non-cacheable (real-time stock price)
+GET /api/stocks/AAPL/price
+Cache-Control: no-cache, no-store, must-revalidate
+→ Always fetch fresh data</div>
+
+                            <p><strong>Real Example - GitHub:</strong> When you fetch repository information, GitHub tells your browser it can cache that data for several minutes. But when you check notifications, it's marked as non-cacheable since notifications change frequently.</p>
+
+                            <h3>4. Uniform Interface</h3>
+                            <p>This is the most important constraint. REST APIs should have a consistent, uniform way of interacting with resources. This includes:</p>
+
+                            <h4>a) Resource Identification through URIs</h4>
+                            <div class="code-block">Resources are identified by URLs:
+/users/123           → User with ID 123
+/users/123/posts     → All posts by user 123
+/posts/456           → Post with ID 456
+/posts/456/comments  → All comments on post 456</div>
+
+                            <h4>b) Resource Manipulation through Representations</h4>
+                            <p>You work with representations of resources (usually JSON or XML), not the actual resource itself.</p>
+
+                            <div class="code-block">// JSON representation of a user
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "created_at": "2023-01-15T10:00:00Z"
+}
+
+// Same user, XML representation
+&lt;user&gt;
+  &lt;id&gt;123&lt;/id&gt;
+  &lt;name&gt;John Doe&lt;/name&gt;
+  &lt;email&gt;john@example.com&lt;/email&gt;
+  &lt;created_at&gt;2023-01-15T10:00:00Z&lt;/created_at&gt;
+&lt;/user&gt;</div>
+
+                            <h4>c) Self-Descriptive Messages</h4>
+                            <p>Each message includes enough information to describe how to process it.</p>
+
+                            <div class="code-block">GET /api/users/123 HTTP/1.1
+Host: api.example.com
+Accept: application/json
+Authorization: Bearer token123
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: max-age=3600
+
+{
+  "id": 123,
+  "name": "John Doe"
+}</div>
+
+                            <h4>d) HATEOAS (Hypermedia as the Engine of Application State)</h4>
+                            <p>Responses include links to related resources, guiding clients on what they can do next.</p>
+
+                            <div class="code-block">GET /api/users/123
+
+{
+  "id": 123,
+  "name": "John Doe",
+  "links": {
+    "self": "/api/users/123",
+    "posts": "/api/users/123/posts",
+    "followers": "/api/users/123/followers",
+    "following": "/api/users/123/following"
+  }
+}</div>
+
+                            <h3>5. Layered System</h3>
+                            <p>A client cannot tell whether it's connected directly to the end server or an intermediary. This allows for load balancers, caches, and security layers.</p>
+
+                            <div class="code-block">Client
+  ↓
+Load Balancer (Layer 1)
+  ↓
+API Gateway (Layer 2)
+  ↓
+Cache Server (Layer 3)
+  ↓
+Application Server (Layer 4)
+  ↓
+Database
+
+Client only sees: https://api.example.com
+Client doesn't know about all the layers in between</div>
+
+                            <p><strong>Real Example - Stripe:</strong> When you call Stripe's API, your request might go through their load balancer, CDN, API gateway, rate limiter, and finally their application servers. But you just call <code>https://api.stripe.com</code> and it all works transparently.</p>
+
+                            <h3>6. Code on Demand (Optional)</h3>
+                            <p>Servers can temporarily extend client functionality by transferring executable code (like JavaScript). This is the only optional constraint.</p>
+
+                            <div class="code-block">// Server can send JavaScript code to client
+GET /api/calculator
+
+Response:
+{
+  "function": "function calculate(a, b) { return a + b; }",
+  "description": "Add two numbers"
+}
+
+// Client executes this code dynamically</div>
+
+                            <h2>RESTful Resource Design</h2>
+
+                            <h3>Resources vs Actions</h3>
+                            <p>In REST, everything is a resource. URLs should represent resources (nouns), not actions (verbs).</p>
+
+                            <div class="code-block">❌ BAD (Action-based, RPC style):
+POST /api/createUser
+POST /api/getUser
+POST /api/updateUser
+POST /api/deleteUser
+
+✅ GOOD (Resource-based, RESTful):
+POST   /api/users       (Create user)
+GET    /api/users/123   (Get user)
+PUT    /api/users/123   (Update user)
+DELETE /api/users/123   (Delete user)
+
+The HTTP method defines the action!</div>
+
+                            <h3>Resource Hierarchy</h3>
+                            <div class="code-block">// Top-level collection
+GET /users              → All users
+
+// Specific resource
+GET /users/123          → User 123
+
+// Nested collection
+GET /users/123/posts    → All posts by user 123
+
+// Specific nested resource
+GET /users/123/posts/456 → Post 456 by user 123
+
+// Three levels deep (generally avoid going deeper)
+GET /users/123/posts/456/comments</div>
+
+                            <h2>Common Anti-Patterns (What NOT to Do)</h2>
+
+                            <h3>1. Using Verbs in URLs</h3>
+                            <div class="code-block">❌ BAD:
+POST /api/createOrder
+GET /api/getAllOrders
+POST /api/updateOrder/123
+POST /api/deleteOrder/123
+
+✅ GOOD:
+POST   /api/orders
+GET    /api/orders
+PUT    /api/orders/123
+DELETE /api/orders/123</div>
+
+                            <h3>2. Not Using HTTP Methods Properly</h3>
+                            <div class="code-block">❌ BAD: Everything is POST
+POST /api/users?action=get&id=123
+POST /api/users?action=update&id=123
+POST /api/users?action=delete&id=123
+
+✅ GOOD: Use proper HTTP methods
+GET    /api/users/123
+PUT    /api/users/123
+DELETE /api/users/123</div>
+
+                            <h3>3. Exposing Database Structure</h3>
+                            <div class="code-block">❌ BAD: Exposing internal database structure
+GET /api/tbl_users
+GET /api/user_profile_data
+GET /api/db_transactions
+
+✅ GOOD: Business-oriented resources
+GET /api/users
+GET /api/profiles
+GET /api/transactions</div>
+
+                            <h3>4. Ignoring Status Codes</h3>
+                            <div class="code-block">❌ BAD: Always return 200
+HTTP 200 OK
+{
+  "status": "error",
+  "message": "User not found"
+}
+
+✅ GOOD: Use proper status codes
+HTTP 404 Not Found
+{
+  "error": "User not found",
+  "resource": "/api/users/999"
+}</div>
+
+                            <h2>Real-World REST API Examples</h2>
+
+                            <h3>GitHub API</h3>
+                            <div class="code-block">// Get a repository
+GET https://api.github.com/repos/facebook/react
+
+// List issues
+GET https://api.github.com/repos/facebook/react/issues
+
+// Create an issue
+POST https://api.github.com/repos/facebook/react/issues
+{
+  "title": "Bug in hooks",
+  "body": "Description here..."
+}
+
+// Update an issue
+PATCH https://api.github.com/repos/facebook/react/issues/123
+{
+  "state": "closed"
+}</div>
+
+                            <h3>Twitter API</h3>
+                            <div class="code-block">// Get a tweet
+GET https://api.twitter.com/2/tweets/1234567890
+
+// Get user's tweets
+GET https://api.twitter.com/2/users/12345/tweets
+
+// Create a tweet
+POST https://api.twitter.com/2/tweets
+{
+  "text": "Hello world!"
+}
+
+// Delete a tweet
+DELETE https://api.twitter.com/2/tweets/1234567890</div>
+
+                            <h2>Summary</h2>
+                            <p>REST is an architectural style that uses HTTP methods, status codes, and URLs to create predictable, scalable APIs. The key principles are:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Resources (nouns) identified by URLs</li>
+                                <li>HTTP methods (verbs) for actions</li>
+                                <li>Stateless communication</li>
+                                <li>Uniform interface</li>
+                                <li>Proper use of status codes</li>
+                                <li>Cacheable responses</li>
+                            </ul>
+                            <p>Following these principles leads to APIs that are easy to understand, maintain, and scale.</p>
+                        `,
+                        interviews: [
+                            {
+                                question: "What does REST stand for and what are its main principles?",
+                                answer: "REST stands for Representational State Transfer. Main principles: 1) Client-Server separation, 2) Stateless communication (each request contains all needed info), 3) Cacheable responses, 4) Uniform interface (consistent URL structure), 5) Layered system (intermediaries like load balancers), 6) Code on demand (optional)."
+                            },
+                            {
+                                question: "Why is statelessness important in REST APIs?",
+                                answer: "Statelessness means each request contains all needed information. Benefits: 1) Any server can handle any request (no session affinity), 2) Easy to scale horizontally, 3) Server crashes don't lose state, 4) Simplified load balancing. Each request includes auth tokens rather than relying on server-side sessions."
+                            },
+                            {
+                                question: "What's wrong with URLs like POST /api/createUser or GET /api/getAllUsers?",
+                                answer: "These are action-based URLs (RPC style), not resource-based (REST style). REST uses resources (nouns) in URLs and HTTP methods for actions. Should be: POST /api/users (create), GET /api/users (get all), GET /api/users/123 (get one). The HTTP method defines the action, not the URL."
+                            },
+                            {
+                                question: "What is HATEOAS and why is it useful?",
+                                answer: "HATEOAS (Hypermedia as Engine of Application State) means API responses include links to related resources. Example: GET /users/123 returns links to /users/123/posts, /users/123/followers. Benefits: self-documenting API, clients can discover available actions, reduces hardcoding of URLs in clients."
+                            },
+                            {
+                                question: "How do REST APIs handle caching?",
+                                answer: "REST APIs use HTTP cache headers in responses: Cache-Control, ETag, Last-Modified. Example: Cache-Control: max-age=3600 means cache for 1 hour. Cacheable data (user profiles) gets cache headers; real-time data (stock prices) uses Cache-Control: no-cache. This reduces server load and improves response times."
+                            },
+                            {
+                                question: "Give an example of a non-RESTful anti-pattern and how to fix it.",
+                                answer: "Anti-pattern: POST /api/users?action=delete&id=123 (using query params for actions). Fix: DELETE /api/users/123. Another: Returning HTTP 200 with {status: 'error'}. Fix: Use proper status codes like 404, 400, 500. REST uses HTTP features (methods, status codes) instead of reinventing them."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'http-methods',
+                        title: 'HTTP Methods Deep Dive',
+                        duration: '55 min',
+                        content: `
+                            <h2>Understanding HTTP Methods (Verbs)</h2>
+                            <p>HTTP methods tell the server what action to perform on a resource. Think of them as the verbs in a sentence where the URL is the noun. Each method has specific semantics and expected behaviors.</p>
+
+                            <h2>The Main HTTP Methods</h2>
+
+                            <h3>1. GET - Retrieve Data</h3>
+                            <p>GET is used to retrieve data from the server. It should be safe (no side effects) and idempotent (calling it multiple times has the same effect as calling it once).</p>
+
+                            <div class="code-block">// Get a single user
+GET /api/users/123
+Response: 200 OK
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+
+// Get a collection
+GET /api/users
+Response: 200 OK
+[
+  {"id": 123, "name": "John Doe"},
+  {"id": 124, "name": "Jane Smith"}
+]
+
+// Get with query parameters
+GET /api/users?role=admin&status=active
+Response: 200 OK
+[
+  {"id": 125, "name": "Admin User", "role": "admin"}
+]</div>
+
+                            <h4>Key Characteristics:</h4>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Safe:</strong> Doesn't modify server state</li>
+                                <li><strong>Idempotent:</strong> Multiple identical requests have the same effect</li>
+                                <li><strong>Cacheable:</strong> Responses can be cached</li>
+                                <li><strong>No request body:</strong> Parameters go in URL query string</li>
+                            </ul>
+
+                            <h4>Common Fail Cases:</h4>
+                            <div class="code-block">❌ BAD: Using GET to modify data
+GET /api/users/123/delete  (Deleting with GET!)
+GET /api/posts/create?title=Hello  (Creating with GET!)
+
+Problem: Browser prefetching, link crawlers, and caching
+can accidentally trigger these actions!
+
+✅ GOOD: GET only retrieves
+GET /api/users/123  (Just read, no modifications)
+GET /api/posts?status=published  (Filter, no changes)</div>
+
+                            <h4>Real Example - The Google Web Accelerator Incident (2005)</h4>
+                            <div class="code-block">A website used: GET /admin/delete-user?id=123
+
+Google's Web Accelerator pre-fetched all links to speed
+up browsing. It clicked every link on admin pages,
+including all the "delete" links!
+
+Result: Accidentally deleted users, posts, and content.
+
+Lesson: Never use GET for actions that modify state!</div>
+
+                            <h3>2. POST - Create New Resources</h3>
+                            <p>POST is used to create new resources or submit data that causes server-side changes. It's neither safe nor idempotent.</p>
+
+                            <div class="code-block">// Create a new user
+POST /api/users
+Content-Type: application/json
+
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "role": "user"
+}
+
+Response: 201 Created
+Location: /api/users/126
+{
+  "id": 126,
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "role": "user",
+  "created_at": "2024-01-15T10:00:00Z"
+}</div>
+
+                            <h4>Key Characteristics:</h4>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Not safe:</strong> Modifies server state</li>
+                                <li><strong>Not idempotent:</strong> Multiple requests create multiple resources</li>
+                                <li><strong>Has request body:</strong> Data sent in request body</li>
+                                <li><strong>Returns 201 Created:</strong> On success, with Location header</li>
+                            </ul>
+
+                            <h4>POST vs GET for Search</h4>
+                            <div class="code-block">// Simple search - use GET
+GET /api/products?q=laptop&maxPrice=1000
+
+// Complex search with many filters - use POST
+POST /api/products/search
+{
+  "query": "laptop",
+  "filters": {
+    "price": {"min": 500, "max": 1000},
+    "brands": ["Apple", "Dell", "HP"],
+    "specs": {
+      "ram": {"min": 16},
+      "storage": {"min": 512}
+    }
+  },
+  "sort": {"field": "price", "order": "asc"}
+}
+
+Why POST? Too complex for URL, might exceed URL length limits</div>
+
+                            <h4>Idempotency Problem with POST</h4>
+                            <div class="code-block">// User clicks "Submit Order" button multiple times
+POST /api/orders
+{
+  "product_id": 123,
+  "quantity": 1,
+  "price": 99.99
+}
+
+Problem: Creates multiple orders!
+
+Solution 1 - Idempotency Keys:
+POST /api/orders
+Idempotency-Key: uuid-12345
+{
+  "product_id": 123,
+  "quantity": 1
+}
+
+Server stores idempotency key. If same key comes again,
+returns the original response without creating duplicate.
+
+Solution 2 - Client-generated IDs:
+POST /api/orders
+{
+  "order_id": "client-generated-uuid",
+  "product_id": 123,
+  "quantity": 1
+}
+
+Server rejects if order_id already exists.</div>
+
+                            <p><strong>Real Example - Stripe:</strong> Stripe requires an idempotency key for all POST requests that create resources. If you retry with the same key, you get the original result back, preventing duplicate charges.</p>
+
+                            <h3>3. PUT - Replace/Update Entire Resource</h3>
+                            <p>PUT replaces an entire resource or creates it if it doesn't exist. It's idempotent.</p>
+
+                            <div class="code-block">// Update entire user (replace)
+PUT /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com",
+  "role": "admin",
+  "department": "Engineering"
+}
+
+Response: 200 OK
+{
+  "id": 123,
+  "name": "John Updated",
+  "email": "john.new@example.com",
+  "role": "admin",
+  "department": "Engineering",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+
+Important: PUT replaces the ENTIRE resource.
+If you omit a field, it should be removed or set to null!</div>
+
+                            <h4>Key Characteristics:</h4>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Idempotent:</strong> Multiple identical requests have same effect</li>
+                                <li><strong>Full replacement:</strong> Replaces entire resource</li>
+                                <li><strong>Can create:</strong> Creates resource if it doesn't exist (sometimes)</li>
+                                <li><strong>Returns 200 OK or 204 No Content</strong></li>
+                            </ul>
+
+                            <h4>PUT Idempotency Example:</h4>
+                            <div class="code-block">// First PUT
+PUT /api/users/123
+{"name": "John", "email": "john@example.com"}
+→ Creates/updates user 123
+
+// Second PUT (identical)
+PUT /api/users/123
+{"name": "John", "email": "john@example.com"}
+→ Same result, user 123 has same data
+
+// Third PUT (identical)
+PUT /api/users/123
+{"name": "John", "email": "john@example.com"}
+→ Still same result
+
+No matter how many times you call it, the result is the same!</div>
+
+                            <h3>4. PATCH - Partial Update</h3>
+                            <p>PATCH is used to partially update a resource. You only send the fields you want to change.</p>
+
+                            <div class="code-block">// Original user
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "role": "user",
+  "department": "Sales"
+}
+
+// PATCH: Only update email
+PATCH /api/users/123
+{
+  "email": "john.new@example.com"
+}
+
+Response: 200 OK
+{
+  "id": 123,
+  "name": "John Doe",  // Unchanged
+  "email": "john.new@example.com",  // Changed
+  "role": "user",  // Unchanged
+  "department": "Sales"  // Unchanged
+}
+
+// PATCH vs PUT
+PUT /api/users/123      → Replace entire user
+PATCH /api/users/123    → Update only specified fields</div>
+
+                            <h4>PATCH Formats</h4>
+                            <div class="code-block">1. JSON Merge Patch (Simple):
+PATCH /api/users/123
+Content-Type: application/merge-patch+json
+{
+  "email": "new@example.com"
+}
+
+2. JSON Patch (Powerful):
+PATCH /api/users/123
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/email", "value": "new@example.com"},
+  {"op": "add", "path": "/phone", "value": "+1234567890"},
+  {"op": "remove", "path": "/department"}
+]
+
+JSON Patch operations: add, remove, replace, move, copy, test</div>
+
+                            <h4>When to Use PATCH vs PUT</h4>
+                            <table class="table">
+                                <tr>
+                                    <th>Use PATCH when...</th>
+                                    <th>Use PUT when...</th>
+                                </tr>
+                                <tr>
+                                    <td>Updating a few fields</td>
+                                    <td>Replacing entire resource</td>
+                                </tr>
+                                <tr>
+                                    <td>Client doesn't know all fields</td>
+                                    <td>Client has complete resource data</td>
+                                </tr>
+                                <tr>
+                                    <td>Bandwidth is limited (mobile)</td>
+                                    <td>Full update is required</td>
+                                </tr>
+                                <tr>
+                                    <td>Example: Change user's email</td>
+                                    <td>Example: Upload complete profile</td>
+                                </tr>
+                            </table>
+
+                            <h3>5. DELETE - Remove Resource</h3>
+                            <p>DELETE removes a resource from the server. It's idempotent.</p>
+
+                            <div class="code-block">// Delete a user
+DELETE /api/users/123
+
+Response: 204 No Content
+(Empty body, just the status code)
+
+// OR with confirmation
+Response: 200 OK
+{
+  "message": "User 123 deleted successfully",
+  "deleted_at": "2024-01-15T10:45:00Z"
+}
+
+// Idempotent behavior
+DELETE /api/users/123  → 204 No Content (deleted)
+DELETE /api/users/123  → 404 Not Found (already deleted)
+DELETE /api/users/123  → 404 Not Found (still doesn't exist)</div>
+
+                            <h4>Soft Delete vs Hard Delete</h4>
+                            <div class="code-block">Hard Delete (Actually removes from database):
+DELETE /api/users/123
+→ User is completely removed
+→ Cannot be recovered
+
+Soft Delete (Marks as deleted):
+DELETE /api/users/123
+→ Sets deleted_at timestamp
+→ User hidden from normal queries
+→ Can be recovered later
+
+{
+  "id": 123,
+  "name": "John",
+  "deleted_at": "2024-01-15T10:45:00Z"  // Soft deleted
+}
+
+// Later, can restore
+POST /api/users/123/restore
+→ Sets deleted_at to null</div>
+
+                            <h4>Bulk Delete Considerations</h4>
+                            <div class="code-block">❌ Avoid: Delete in URL params (ugly, URL length limits)
+DELETE /api/users?ids=123,124,125,126,127...
+
+✅ Better: Use request body (though technically against HTTP spec)
+DELETE /api/users
+{
+  "ids": [123, 124, 125, 126, 127]
+}
+
+✅ Alternative: Bulk delete endpoint
+POST /api/users/bulk-delete
+{
+  "ids": [123, 124, 125, 126, 127]
+}
+
+Note: HTTP spec says DELETE shouldn't have a body, but
+many modern APIs do this for practical reasons.</div>
+
+                            <h3>6. HEAD - Get Headers Only</h3>
+                            <p>HEAD is identical to GET, but the server returns only headers, no body. Used to check if a resource exists or get metadata.</p>
+
+                            <div class="code-block">// Check if user exists without downloading full data
+HEAD /api/users/123
+
+Response:
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 256
+Last-Modified: Mon, 15 Jan 2024 10:00:00 GMT
+ETag: "abc123"
+
+(No body)
+
+Use cases:
+- Check if resource exists (200 vs 404)
+- Get resource size before downloading (Content-Length)
+- Check if resource changed (ETag, Last-Modified)
+- Check content type</div>
+
+                            <h3>7. OPTIONS - Discover Allowed Methods</h3>
+                            <p>OPTIONS asks the server what methods are allowed for a resource. Also used for CORS preflight requests.</p>
+
+                            <div class="code-block">// What can I do with this resource?
+OPTIONS /api/users/123
+
+Response:
+HTTP/1.1 200 OK
+Allow: GET, PUT, PATCH, DELETE, HEAD, OPTIONS
+Access-Control-Allow-Methods: GET, PUT, PATCH, DELETE
+Access-Control-Allow-Origin: *
+
+// CORS Preflight (browser sends this automatically)
+OPTIONS /api/users
+Origin: https://myapp.com
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type, Authorization
+
+Response:
+Access-Control-Allow-Origin: https://myapp.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 86400</div>
+
+                            <h2>Method Properties Summary</h2>
+
+                            <table class="table">
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Safe</th>
+                                    <th>Idempotent</th>
+                                    <th>Cacheable</th>
+                                    <th>Request Body</th>
+                                </tr>
+                                <tr>
+                                    <td>GET</td>
+                                    <td>Yes</td>
+                                    <td>Yes</td>
+                                    <td>Yes</td>
+                                    <td>No</td>
+                                </tr>
+                                <tr>
+                                    <td>POST</td>
+                                    <td>No</td>
+                                    <td>No</td>
+                                    <td>Rarely</td>
+                                    <td>Yes</td>
+                                </tr>
+                                <tr>
+                                    <td>PUT</td>
+                                    <td>No</td>
+                                    <td>Yes</td>
+                                    <td>No</td>
+                                    <td>Yes</td>
+                                </tr>
+                                <tr>
+                                    <td>PATCH</td>
+                                    <td>No</td>
+                                    <td>No*</td>
+                                    <td>No</td>
+                                    <td>Yes</td>
+                                </tr>
+                                <tr>
+                                    <td>DELETE</td>
+                                    <td>No</td>
+                                    <td>Yes</td>
+                                    <td>No</td>
+                                    <td>Optional</td>
+                                </tr>
+                                <tr>
+                                    <td>HEAD</td>
+                                    <td>Yes</td>
+                                    <td>Yes</td>
+                                    <td>Yes</td>
+                                    <td>No</td>
+                                </tr>
+                                <tr>
+                                    <td>OPTIONS</td>
+                                    <td>Yes</td>
+                                    <td>Yes</td>
+                                    <td>No</td>
+                                    <td>No</td>
+                                </tr>
+                            </table>
+
+                            <p><em>*PATCH can be designed to be idempotent, but isn't required to be</em></p>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Twitter API</h3>
+                            <div class="code-block">// Get tweets
+GET /2/tweets/:id
+
+// Create tweet
+POST /2/tweets
+{"text": "Hello world"}
+
+// Delete tweet
+DELETE /2/tweets/:id
+
+// No PUT for tweets (can't replace entire tweet)
+// No PATCH (can't edit tweets after posting)</div>
+
+                            <h3>GitHub API</h3>
+                            <div class="code-block">// Get repository
+GET /repos/:owner/:repo
+
+// Create repository
+POST /user/repos
+{"name": "my-project", "private": true}
+
+// Update repository
+PATCH /repos/:owner/:repo
+{"description": "Updated description"}
+
+// Delete repository
+DELETE /repos/:owner/:repo</div>
+
+                            <h3>Stripe API</h3>
+                            <div class="code-block">// Create payment intent
+POST /v1/payment_intents
+Idempotency-Key: unique-key-123
+{"amount": 1000, "currency": "usd"}
+
+// Update payment intent
+POST /v1/payment_intents/:id
+{"amount": 1500}  // Stripe uses POST for updates!
+
+// Retrieve payment intent
+GET /v1/payment_intents/:id
+
+Note: Stripe uses POST for most operations,
+even updates, with idempotency keys for safety.</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Using POST for Everything</h3>
+                            <div class="code-block">❌ BAD:
+POST /api/getUser?id=123
+POST /api/updateUser
+POST /api/deleteUser
+
+✅ GOOD:
+GET /api/users/123
+PUT/PATCH /api/users/123
+DELETE /api/users/123</div>
+
+                            <h3>2. Not Understanding Idempotency</h3>
+                            <div class="code-block">❌ BAD: PUT that's not idempotent
+PUT /api/users/123/increment-login-count
+// Each call increments, different results!
+
+✅ GOOD: Use POST for non-idempotent operations
+POST /api/users/123/login
+// Or use PATCH with specific value
+PATCH /api/users/123
+{"login_count": 42}</div>
+
+                            <h3>3. Wrong Success Status Codes</h3>
+                            <div class="code-block">❌ BAD:
+POST /api/users → Returns 200 OK
+
+✅ GOOD:
+POST /api/users → Returns 201 Created
+Location: /api/users/123
+
+❌ BAD:
+DELETE /api/users/123 → Returns 200 OK with empty body
+
+✅ GOOD:
+DELETE /api/users/123 → Returns 204 No Content</div>
+
+                            <h2>Summary</h2>
+                            <p>Choose the right HTTP method:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>GET:</strong> Read data (safe, idempotent, cacheable)</li>
+                                <li><strong>POST:</strong> Create new resources (not idempotent)</li>
+                                <li><strong>PUT:</strong> Replace entire resource (idempotent)</li>
+                                <li><strong>PATCH:</strong> Partial update (flexible)</li>
+                                <li><strong>DELETE:</strong> Remove resource (idempotent)</li>
+                                <li><strong>HEAD:</strong> Check existence/metadata</li>
+                                <li><strong>OPTIONS:</strong> Discover capabilities</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between PUT and PATCH?",
+                                answer: "PUT replaces the entire resource - you must send all fields. PATCH does partial updates - you only send fields to change. Example: PUT /users/123 with {name: 'John'} removes all other fields. PATCH /users/123 with {name: 'John'} only updates name, keeps other fields. Use PATCH for efficiency, especially on mobile."
+                            },
+                            {
+                                question: "Why should you never use GET for operations that modify data?",
+                                answer: "GET is meant to be safe (no side effects). Browsers, proxies, and crawlers can prefetch GET requests. Real incident: Google Web Accelerator prefetched links like /delete?id=123, accidentally deleting data. Always use POST/PUT/DELETE for modifications. GET should only read, never write."
+                            },
+                            {
+                                question: "What does it mean for an HTTP method to be idempotent? Give examples.",
+                                answer: "Idempotent means multiple identical requests have the same effect as one request. GET, PUT, DELETE are idempotent. POST is not. Example: DELETE /users/123 called 5 times still results in user 123 being deleted (same result). POST /orders called 5 times creates 5 orders (different results). Use idempotency keys with POST to make it safe to retry."
+                            },
+                            {
+                                question: "How does Stripe handle duplicate POST requests?",
+                                answer: "Stripe requires an Idempotency-Key header for POST requests that create resources. Server stores the key with the response. If you retry with same key, you get the original response without creating duplicates. Example: POST /charges with Idempotency-Key: abc123. If retried, returns original charge instead of creating duplicate charge."
+                            },
+                            {
+                                question: "When should you use POST for search instead of GET?",
+                                answer: "Use GET for simple searches: GET /products?q=laptop&max=1000. Use POST for complex searches with: 1) Many filters (URL length limits), 2) Complex nested JSON structures, 3) Sensitive data in search criteria. POST /products/search with body containing complex filter object. Trade-off: POST search results aren't cacheable like GET."
+                            },
+                            {
+                                question: "What's the difference between soft delete and hard delete? When would you use each?",
+                                answer: "Hard delete: DELETE /users/123 removes from database permanently, cannot recover. Soft delete: sets deleted_at timestamp, hides from queries but keeps in database, can be restored. Use hard delete for sensitive data (GDPR compliance). Use soft delete for: audit trails, accidental deletion recovery, preserving relationships. Can add POST /users/123/restore for soft deleted items."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'status-codes',
+                        title: 'HTTP Status Codes Explained',
+                        duration: '45 min',
+                        content: `
+                            <h2>Understanding HTTP Status Codes</h2>
+                            <p>HTTP status codes are three-digit numbers that tell you the result of an HTTP request. They're divided into five categories (1xx, 2xx, 3xx, 4xx, 5xx), each indicating a different type of response. Using the right status code is crucial for building clear, predictable APIs.</p>
+
+                            <h2>Status Code Categories</h2>
+                            <div class="code-block">1xx - Informational (rarely used in APIs)
+2xx - Success
+3xx - Redirection
+4xx - Client Error (the client did something wrong)
+5xx - Server Error (the server did something wrong)</div>
+
+                            <h2>2xx Success Codes</h2>
+
+                            <h3>200 OK - Standard Success</h3>
+                            <p>The request succeeded. This is the most common success code.</p>
+
+                            <div class="code-block">// GET request successful
+GET /api/users/123
+Response: 200 OK
+{
+  "id": 123,
+  "name": "John Doe"
+}
+
+// PUT request successful
+PUT /api/users/123
+{"name": "John Updated"}
+Response: 200 OK
+{
+  "id": 123,
+  "name": "John Updated"
+}
+
+// PATCH request successful
+PATCH /api/users/123
+{"email": "new@example.com"}
+Response: 200 OK
+{
+  "id": 123,
+  "email": "new@example.com"
+}</div>
+
+                            <h3>201 Created - Resource Created</h3>
+                            <p>A new resource was successfully created. Should include a Location header pointing to the new resource.</p>
+
+                            <div class="code-block">POST /api/users
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com"
+}
+
+Response: 201 Created
+Location: /api/users/126
+{
+  "id": 126,
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "created_at": "2024-01-15T10:00:00Z"
+}
+
+Important: Use 201 for POST, not 200!</div>
+
+                            <h4>Common Mistake:</h4>
+                            <div class="code-block">❌ BAD: Creating resource but returning 200
+POST /api/users
+Response: 200 OK
+
+✅ GOOD: Return 201 with Location header
+POST /api/users
+Response: 201 Created
+Location: /api/users/126</div>
+
+                            <h3>202 Accepted - Async Processing</h3>
+                            <p>The request has been accepted for processing, but processing hasn't completed yet. Used for long-running operations.</p>
+
+                            <div class="code-block">// Submit video for processing
+POST /api/videos/process
+{
+  "video_id": "abc123",
+  "operations": ["transcode", "thumbnail"]
+}
+
+Response: 202 Accepted
+{
+  "job_id": "job_789",
+  "status": "processing",
+  "status_url": "/api/jobs/job_789"
+}
+
+// Client polls the status URL
+GET /api/jobs/job_789
+Response: 200 OK
+{
+  "job_id": "job_789",
+  "status": "completed",
+  "result_url": "/api/videos/abc123"
+}</div>
+
+                            <p><strong>Real Example - AWS S3:</strong> When you initiate a large file upload or a restore from Glacier, AWS returns 202 Accepted immediately and processes the request asynchronously.</p>
+
+                            <h3>204 No Content - Success with No Body</h3>
+                            <p>The request succeeded but there's no content to return. Commonly used for DELETE operations.</p>
+
+                            <div class="code-block">// Delete a user
+DELETE /api/users/123
+Response: 204 No Content
+(No body, just headers)
+
+// Update that doesn't need to return data
+PUT /api/users/123/preferences
+{"theme": "dark"}
+Response: 204 No Content
+
+Saves bandwidth - client doesn't need the data back</div>
+
+                            <h2>3xx Redirection Codes</h2>
+
+                            <h3>301 Moved Permanently</h3>
+                            <p>The resource has permanently moved to a new URL. Clients should use the new URL from now on.</p>
+
+                            <div class="code-block">// Old API version
+GET /api/v1/users/123
+
+Response: 301 Moved Permanently
+Location: /api/v2/users/123
+
+Browsers and clients will automatically follow the redirect
+and cache the new location for future requests</div>
+
+                            <h3>302 Found / 303 See Other / 307 Temporary Redirect</h3>
+                            <p>The resource is temporarily at a different URL. Used less commonly in REST APIs.</p>
+
+                            <div class="code-block">// Temporary redirect during maintenance
+GET /api/users/123
+
+Response: 307 Temporary Redirect
+Location: /api-backup/users/123
+
+Client should follow but keep using original URL later</div>
+
+                            <h3>304 Not Modified - Cached Content Still Valid</h3>
+                            <p>Used with conditional requests. The resource hasn't changed, so client can use cached version.</p>
+
+                            <div class="code-block">// Initial request
+GET /api/users/123
+Response: 200 OK
+ETag: "abc123"
+{
+  "id": 123,
+  "name": "John"
+}
+
+// Subsequent request with If-None-Match
+GET /api/users/123
+If-None-Match: "abc123"
+
+Response: 304 Not Modified
+(No body - client uses cached version)
+
+Saves bandwidth and server processing!</div>
+
+                            <h2>4xx Client Error Codes</h2>
+
+                            <h3>400 Bad Request - Invalid Request</h3>
+                            <p>The request is malformed or contains invalid data. The client should fix the request before retrying.</p>
+
+                            <div class="code-block">// Missing required field
+POST /api/users
+{
+  "email": "alice@example.com"
+  // Missing "name" field
+}
+
+Response: 400 Bad Request
+{
+  "error": "Bad Request",
+  "message": "Missing required field: name",
+  "fields": {
+    "name": "This field is required"
+  }
+}
+
+// Invalid data format
+POST /api/users
+{
+  "name": "Alice",
+  "email": "not-an-email"  // Invalid email format
+}
+
+Response: 400 Bad Request
+{
+  "error": "Validation Error",
+  "message": "Invalid email format",
+  "fields": {
+    "email": "Must be a valid email address"
+  }
+}</div>
+
+                            <h3>401 Unauthorized - Authentication Required</h3>
+                            <p>The request requires authentication. The client needs to provide valid credentials.</p>
+
+                            <div class="code-block">// No authentication token
+GET /api/users/me
+
+Response: 401 Unauthorized
+WWW-Authenticate: Bearer
+{
+  "error": "Unauthorized",
+  "message": "Authentication required"
+}
+
+// Invalid or expired token
+GET /api/users/me
+Authorization: Bearer expired_token_xyz
+
+Response: 401 Unauthorized
+{
+  "error": "Unauthorized",
+  "message": "Token expired. Please login again."
+}</div>
+
+                            <h4>Common Mistake: 401 vs 403</h4>
+                            <div class="code-block">401 Unauthorized:
+- "I don't know who you are"
+- No credentials or invalid credentials
+- Client should authenticate (login)
+
+403 Forbidden:
+- "I know who you are, but you can't do this"
+- Valid credentials but insufficient permissions
+- Client should NOT retry (permission denied)
+
+Example:
+GET /api/admin/users
+[No token] → 401 Unauthorized
+[User token] → 403 Forbidden (user is not admin)
+[Admin token] → 200 OK</div>
+
+                            <h3>403 Forbidden - Permission Denied</h3>
+                            <p>The client is authenticated but doesn't have permission to access the resource.</p>
+
+                            <div class="code-block">// Regular user trying to access admin endpoint
+GET /api/admin/users
+Authorization: Bearer valid_user_token
+
+Response: 403 Forbidden
+{
+  "error": "Forbidden",
+  "message": "Admin privileges required"
+}
+
+// User trying to delete someone else's post
+DELETE /api/posts/456
+Authorization: Bearer user123_token
+
+Response: 403 Forbidden
+{
+  "error": "Forbidden",
+  "message": "You can only delete your own posts"
+}</div>
+
+                            <h3>404 Not Found - Resource Doesn't Exist</h3>
+                            <p>The requested resource doesn't exist on the server.</p>
+
+                            <div class="code-block">// User doesn't exist
+GET /api/users/99999
+
+Response: 404 Not Found
+{
+  "error": "Not Found",
+  "message": "User with ID 99999 not found"
+}
+
+// Wrong endpoint URL
+GET /api/userz/123  // Typo in "users"
+
+Response: 404 Not Found
+{
+  "error": "Not Found",
+  "message": "Endpoint not found"
+}</div>
+
+                            <h4>404 vs 403 for Security</h4>
+                            <div class="code-block">Question: Should you return 404 or 403 when a resource
+exists but the user doesn't have access?
+
+Option 1: Return 403 (Honest)
+GET /api/users/999/private-data
+→ 403 Forbidden
+Reveals that the resource exists
+
+Option 2: Return 404 (Security by obscurity)
+GET /api/users/999/private-data
+→ 404 Not Found
+Hides existence of resource
+
+Most APIs: Use 404 for security-sensitive resources
+Example: Private documents, other users' data</div>
+
+                            <h3>405 Method Not Allowed - Wrong HTTP Method</h3>
+                            <p>The resource exists but doesn't support the HTTP method used.</p>
+
+                            <div class="code-block">// Trying to DELETE when only GET is allowed
+DELETE /api/config/settings
+
+Response: 405 Method Not Allowed
+Allow: GET, PUT
+{
+  "error": "Method Not Allowed",
+  "message": "DELETE is not supported for this resource",
+  "allowed_methods": ["GET", "PUT"]
+}</div>
+
+                            <h3>409 Conflict - Request Conflicts with Current State</h3>
+                            <p>The request conflicts with the current state of the resource.</p>
+
+                            <div class="code-block">// Trying to create user with existing email
+POST /api/users
+{
+  "name": "Alice",
+  "email": "existing@example.com"
+}
+
+Response: 409 Conflict
+{
+  "error": "Conflict",
+  "message": "User with email existing@example.com already exists"
+}
+
+// Optimistic locking conflict
+PUT /api/documents/123
+If-Match: "old-etag"
+{
+  "content": "Updated content"
+}
+
+Response: 409 Conflict
+{
+  "error": "Conflict",
+  "message": "Document was modified by another user",
+  "current_etag": "new-etag"
+}</div>
+
+                            <h3>422 Unprocessable Entity - Semantic Errors</h3>
+                            <p>The request is well-formed but contains semantic errors. Similar to 400 but more specific.</p>
+
+                            <div class="code-block">// Valid JSON structure but business logic violation
+POST /api/orders
+{
+  "product_id": 123,
+  "quantity": -5  // Negative quantity!
+}
+
+Response: 422 Unprocessable Entity
+{
+  "error": "Validation Error",
+  "message": "Quantity must be positive",
+  "fields": {
+    "quantity": "Must be greater than 0"
+  }
+}
+
+// Date in the past for future booking
+POST /api/bookings
+{
+  "date": "2020-01-01",  // Past date
+  "service": "haircut"
+}
+
+Response: 422 Unprocessable Entity
+{
+  "error": "Validation Error",
+  "message": "Booking date must be in the future"
+}</div>
+
+                            <h3>429 Too Many Requests - Rate Limited</h3>
+                            <p>The client has sent too many requests in a given time period.</p>
+
+                            <div class="code-block">GET /api/users/123
+
+Response: 429 Too Many Requests
+Retry-After: 60
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1704123600
+{
+  "error": "Rate Limit Exceeded",
+  "message": "You have exceeded 100 requests per hour",
+  "retry_after": 60
+}</div>
+
+                            <p><strong>Real Example - GitHub API:</strong> GitHub limits API requests to 5000/hour for authenticated users and 60/hour for unauthenticated. When you exceed this, you get 429 with X-RateLimit headers.</p>
+
+                            <h2>5xx Server Error Codes</h2>
+
+                            <h3>500 Internal Server Error - Generic Server Error</h3>
+                            <p>Something went wrong on the server. The client can't fix this.</p>
+
+                            <div class="code-block">GET /api/users/123
+
+Response: 500 Internal Server Error
+{
+  "error": "Internal Server Error",
+  "message": "An unexpected error occurred",
+  "request_id": "req_abc123"  // For support/debugging
+}
+
+Common causes:
+- Uncaught exceptions
+- Database connection failures
+- Null pointer errors
+- Configuration issues</div>
+
+                            <h4>Important: Don't Leak Error Details</h4>
+                            <div class="code-block">❌ BAD: Exposing internal details
+{
+  "error": "NullPointerException at line 42 in UserService.java",
+  "stackTrace": "..."
+}
+
+Security risk! Reveals code structure to attackers.
+
+✅ GOOD: Generic error with request ID
+{
+  "error": "Internal Server Error",
+  "message": "An unexpected error occurred",
+  "request_id": "req_abc123"
+}
+
+Log full details server-side, return generic message to client</div>
+
+                            <h3>502 Bad Gateway - Upstream Server Failed</h3>
+                            <p>Your API server received an invalid response from an upstream server (database, microservice, external API).</p>
+
+                            <div class="code-block">// Your API calls payment service, which is down
+POST /api/checkout
+
+Response: 502 Bad Gateway
+{
+  "error": "Bad Gateway",
+  "message": "Payment service is currently unavailable"
+}
+
+Common scenarios:
+- Microservice is down
+- Database connection timeout
+- External API not responding</div>
+
+                            <h3>503 Service Unavailable - Temporary Downtime</h3>
+                            <p>The server is temporarily unavailable, usually for maintenance. Client should retry later.</p>
+
+                            <div class="code-block">GET /api/users/123
+
+Response: 503 Service Unavailable
+Retry-After: 3600
+{
+  "error": "Service Unavailable",
+  "message": "System is under maintenance",
+  "retry_after": 3600
+}
+
+Use during:
+- Planned maintenance
+- System overload
+- Deployment</div>
+
+                            <h3>504 Gateway Timeout - Upstream Timeout</h3>
+                            <p>Similar to 502, but specifically means the upstream server didn't respond in time.</p>
+
+                            <div class="code-block">// Request to slow microservice timed out
+GET /api/reports/large-report
+
+Response: 504 Gateway Timeout
+{
+  "error": "Gateway Timeout",
+  "message": "Request to reporting service timed out"
+}
+
+Solution: Use 202 Accepted for long-running operations!</div>
+
+                            <h2>Status Code Selection Guide</h2>
+
+                            <table class="table">
+                                <tr>
+                                    <th>Situation</th>
+                                    <th>Status Code</th>
+                                    <th>Example</th>
+                                </tr>
+                                <tr>
+                                    <td>Resource retrieved successfully</td>
+                                    <td>200 OK</td>
+                                    <td>GET /users/123</td>
+                                </tr>
+                                <tr>
+                                    <td>Resource created</td>
+                                    <td>201 Created</td>
+                                    <td>POST /users</td>
+                                </tr>
+                                <tr>
+                                    <td>Resource deleted</td>
+                                    <td>204 No Content</td>
+                                    <td>DELETE /users/123</td>
+                                </tr>
+                                <tr>
+                                    <td>Invalid request data</td>
+                                    <td>400 Bad Request</td>
+                                    <td>Missing required field</td>
+                                </tr>
+                                <tr>
+                                    <td>Not authenticated</td>
+                                    <td>401 Unauthorized</td>
+                                    <td>No token provided</td>
+                                </tr>
+                                <tr>
+                                    <td>Authenticated but no permission</td>
+                                    <td>403 Forbidden</td>
+                                    <td>User trying admin action</td>
+                                </tr>
+                                <tr>
+                                    <td>Resource doesn't exist</td>
+                                    <td>404 Not Found</td>
+                                    <td>GET /users/99999</td>
+                                </tr>
+                                <tr>
+                                    <td>Wrong HTTP method</td>
+                                    <td>405 Method Not Allowed</td>
+                                    <td>DELETE on read-only resource</td>
+                                </tr>
+                                <tr>
+                                    <td>Duplicate resource</td>
+                                    <td>409 Conflict</td>
+                                    <td>Email already exists</td>
+                                </tr>
+                                <tr>
+                                    <td>Validation error</td>
+                                    <td>422 Unprocessable Entity</td>
+                                    <td>Negative quantity</td>
+                                </tr>
+                                <tr>
+                                    <td>Rate limited</td>
+                                    <td>429 Too Many Requests</td>
+                                    <td>Exceeded request limit</td>
+                                </tr>
+                                <tr>
+                                    <td>Server error</td>
+                                    <td>500 Internal Server Error</td>
+                                    <td>Uncaught exception</td>
+                                </tr>
+                                <tr>
+                                    <td>Upstream service down</td>
+                                    <td>502 Bad Gateway</td>
+                                    <td>Database unreachable</td>
+                                </tr>
+                                <tr>
+                                    <td>Temporary maintenance</td>
+                                    <td>503 Service Unavailable</td>
+                                    <td>Planned downtime</td>
+                                </tr>
+                            </table>
+
+                            <h2>Real-World API Examples</h2>
+
+                            <h3>Stripe API Status Codes</h3>
+                            <div class="code-block">// Success
+POST /v1/charges
+→ 200 OK (charge succeeded)
+
+// Invalid API key
+→ 401 Unauthorized
+
+// Card declined
+→ 402 Payment Required (Stripe-specific!)
+
+// Rate limited
+→ 429 Too Many Requests
+
+// Stripe server error
+→ 500, 502, 503, 504</div>
+
+                            <h3>GitHub API Status Codes</h3>
+                            <div class="code-block">// Repository found
+GET /repos/facebook/react
+→ 200 OK
+
+// Repository not found
+GET /repos/nonexistent/repo
+→ 404 Not Found
+
+// No permission to access private repo
+GET /repos/private/repo
+→ 404 Not Found (not 403, for security)
+
+// Rate limited
+→ 403 Forbidden (with X-RateLimit headers)
+GitHub uses 403 instead of 429 for rate limiting!</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Always Returning 200</h3>
+                            <div class="code-block">❌ BAD: Everything returns 200
+POST /api/users
+Response: 200 OK
+{"status": "error", "message": "Email required"}
+
+GET /api/users/99999
+Response: 200 OK
+{"status": "error", "message": "User not found"}
+
+✅ GOOD: Use proper status codes
+POST /api/users
+Response: 400 Bad Request
+{"error": "Validation Error", "message": "Email required"}
+
+GET /api/users/99999
+Response: 404 Not Found
+{"error": "Not Found", "message": "User not found"}</div>
+
+                            <h3>2. Using 200 for Created Resources</h3>
+                            <div class="code-block">❌ BAD:
+POST /api/users
+Response: 200 OK
+
+✅ GOOD:
+POST /api/users
+Response: 201 Created
+Location: /api/users/126</div>
+
+                            <h3>3. Confusing 401 and 403</h3>
+                            <div class="code-block">❌ BAD: Using 401 for permission denied
+[User token provided, but user is not admin]
+GET /api/admin/dashboard
+Response: 401 Unauthorized  // Wrong!
+
+✅ GOOD: Use 403 when authenticated but unauthorized
+GET /api/admin/dashboard
+Response: 403 Forbidden  // Correct!</div>
+
+                            <h2>Summary</h2>
+                            <p>HTTP status codes communicate the result of an API request. Key points:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>2xx:</strong> Success (200 OK, 201 Created, 204 No Content)</li>
+                                <li><strong>4xx:</strong> Client errors (400, 401, 403, 404, 409, 422, 429)</li>
+                                <li><strong>5xx:</strong> Server errors (500, 502, 503, 504)</li>
+                                <li>Use 201 for created resources, not 200</li>
+                                <li>Use 204 for successful deletes</li>
+                                <li>401 = not authenticated, 403 = not authorized</li>
+                                <li>Don't return 200 with error messages in body</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between 401 Unauthorized and 403 Forbidden?",
+                                answer: "401 means 'I don't know who you are' - no credentials or invalid credentials provided. Client should authenticate. 403 means 'I know who you are, but you don't have permission' - valid credentials but insufficient privileges. Client should NOT retry. Example: No token → 401, User token accessing admin endpoint → 403."
+                            },
+                            {
+                                question: "Why should you return 201 Created instead of 200 OK when creating resources?",
+                                answer: "201 Created specifically indicates a new resource was created and should include a Location header pointing to the new resource. 200 OK is generic success. Using 201 makes the API more semantic and helps clients know where to find the new resource. Example: POST /users → 201 Created with Location: /users/126."
+                            },
+                            {
+                                question: "When should you use 400 Bad Request vs 422 Unprocessable Entity?",
+                                answer: "400 Bad Request: malformed request, invalid JSON, missing required fields - syntax errors. 422 Unprocessable Entity: valid syntax but semantic/business logic errors. Example: Invalid JSON → 400. Valid JSON but negative quantity → 422. Both are client errors but 422 is more specific for validation."
+                            },
+                            {
+                                question: "What status code should you return for rate limiting and why?",
+                                answer: "429 Too Many Requests is standard. Include Retry-After header telling client when to retry, and X-RateLimit headers showing limit, remaining, and reset time. Note: Some APIs (GitHub) use 403 for historical reasons, but 429 is the proper status code for rate limiting."
+                            },
+                            {
+                                question: "What's the security implication of returning 403 vs 404 for resources that exist but user can't access?",
+                                answer: "403 reveals the resource exists (information leakage). 404 hides its existence (security by obscurity). Most APIs return 404 for security-sensitive resources. Example: Private documents, other users' data → 404 instead of 403. This prevents attackers from discovering what resources exist. Trade-off: less clarity vs more security."
+                            },
+                            {
+                                question: "Why should you never return detailed error messages in 500 responses?",
+                                answer: "Returning stack traces or detailed error messages (like 'NullPointerException at line 42') reveals internal code structure and implementation details to potential attackers. Instead, return generic error with request_id for tracking. Log full details server-side. Example: Bad: {error: 'Error at UserService.java:42'}. Good: {error: 'Internal Server Error', request_id: 'req_123'}."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'url-design',
+                        title: 'URL Design Best Practices',
+                        duration: '50 min',
+                        content: `
+                            <h2>The Importance of Good URL Design</h2>
+                            <p>URLs are the interface to your API. Well-designed URLs are intuitive, consistent, and make your API easy to understand and use. Poor URL design leads to confusion, errors, and frustrated developers.</p>
+
+                            <p>Think of URLs like addresses for houses. A good address is clear and follows a predictable pattern: "123 Main Street, Apartment 4B". A bad address would be confusing: "House_123_get_details?floor=4&unit=B".</p>
+
+                            <h2>Core URL Design Principles</h2>
+
+                            <h3>1. Use Nouns, Not Verbs</h3>
+                            <p>URLs should represent resources (nouns). The HTTP method provides the verb.</p>
+
+                            <div class="code-block">❌ BAD: Verbs in URLs (RPC style)
+POST /api/createUser
+GET /api/getUser?id=123
+POST /api/updateUser?id=123
+POST /api/deleteUser?id=123
+GET /api/getAllUsers
+
+✅ GOOD: Nouns with HTTP methods (REST style)
+POST   /api/users           (create)
+GET    /api/users/123       (retrieve)
+PUT    /api/users/123       (update)
+DELETE /api/users/123       (delete)
+GET    /api/users           (list all)</div>
+
+                            <h3>2. Use Plural Nouns for Collections</h3>
+                            <p>Collections should use plural nouns. Be consistent - don't mix singular and plural.</p>
+
+                            <div class="code-block">✅ GOOD: Consistent plural nouns
+GET /users              (collection of users)
+GET /users/123          (specific user)
+GET /users/123/posts    (collection of user's posts)
+GET /users/123/posts/456 (specific post)
+
+❌ BAD: Mixing singular and plural
+GET /user               (confusing!)
+GET /users/123
+GET /users/123/post     (inconsistent!)
+
+Exception: Singleton resources can be singular
+GET /profile            (current user's profile)
+GET /config             (system configuration)</div>
+
+                            <h3>3. Use Hierarchical Structure</h3>
+                            <p>Show relationships through URL hierarchy. Each level should be a logical parent-child relationship.</p>
+
+                            <div class="code-block">// Resource hierarchy
+GET /users                    → All users
+GET /users/123                → Specific user
+GET /users/123/posts          → Posts by user 123
+GET /users/123/posts/456      → Post 456 by user 123
+GET /users/123/posts/456/comments → Comments on post 456
+
+// Alternative: Direct access (if resource ID is globally unique)
+GET /posts/456                → Post 456 (regardless of user)
+GET /comments/789             → Comment 789
+
+Choose based on:
+- Security (need to verify user owns post?)
+- Context (does parent matter?)
+- Complexity (too many levels?)</div>
+
+                            <h4>When to Flatten vs Nest</h4>
+                            <div class="code-block">Nested (when parent context matters):
+GET /users/123/orders
+→ Only orders by user 123
+→ Good for: "Show me MY orders"
+
+Flat (when resource is independent):
+GET /orders?user_id=123
+→ Same result, but orders exist independently
+→ Good for: "Show all orders, optionally filter by user"
+
+Too Deep (avoid):
+GET /users/123/posts/456/comments/789/likes
+→ 5 levels deep! Too complex
+→ Better: GET /comments/789/likes
+or even: GET /likes?comment_id=789</div>
+
+                            <h3>4. Use Lowercase and Hyphens</h3>
+                            <p>URLs should be lowercase with hyphens separating words. Avoid underscores, camelCase, or spaces.</p>
+
+                            <div class="code-block">✅ GOOD:
+GET /api/user-profiles
+GET /api/product-categories
+GET /api/order-history
+
+❌ BAD:
+GET /api/UserProfiles        (camelCase - can cause issues)
+GET /api/user_profiles        (underscores - harder to read)
+GET /api/USERPROFILES         (uppercase - not standard)
+GET /api/user%20profiles      (spaces - require encoding)
+
+Reason: URLs are case-sensitive on some servers.
+/Users vs /users might be different!
+Lowercase avoids confusion.</div>
+
+                            <h3>5. Use Forward Slashes for Hierarchy, Not Trailing Slashes</h3>
+                            <div class="code-block">✅ GOOD:
+GET /users/123/posts
+
+❌ AVOID: Trailing slashes
+GET /users/123/posts/
+
+Some APIs treat these as the same, some as different.
+Be consistent. Most modern APIs omit trailing slashes.</div>
+
+                            <h2>Query Parameters vs Path Parameters</h2>
+
+                            <h3>Path Parameters - For Resource Identification</h3>
+                            <p>Use path parameters to identify specific resources.</p>
+
+                            <div class="code-block">GET /users/123              → User ID 123
+GET /posts/456              → Post ID 456
+GET /orders/ord_abc123      → Order with ID ord_abc123
+
+Path parameters are required and identify which resource</div>
+
+                            <h3>Query Parameters - For Filtering, Sorting, Pagination</h3>
+                            <p>Use query parameters for optional operations on collections.</p>
+
+                            <div class="code-block">// Filtering
+GET /users?role=admin
+GET /users?status=active&role=admin
+GET /products?category=electronics&price_max=1000
+
+// Sorting
+GET /users?sort=created_at
+GET /users?sort=-created_at        (- prefix for descending)
+GET /products?sort=price,name      (multiple fields)
+
+// Pagination
+GET /users?page=2&limit=20
+GET /users?offset=40&limit=20
+
+// Search
+GET /products?q=laptop
+GET /users?search=john
+
+// Multiple purposes combined
+GET /products?category=electronics&price_max=1000&sort=price&page=1&limit=20</div>
+
+                            <h4>Query Parameter Naming Conventions</h4>
+                            <div class="code-block">Common conventions:
+
+Filtering:
+?status=active              (exact match)
+?price_min=100&price_max=500 (range)
+?tags=urgent,important      (multiple values)
+
+Pagination:
+?page=2&limit=20            (page-based)
+?offset=40&limit=20         (offset-based)
+?cursor=abc123              (cursor-based)
+
+Sorting:
+?sort=created_at            (ascending)
+?sort=-created_at           (descending, minus prefix)
+?order_by=price&order=desc  (explicit direction)
+
+Search:
+?q=laptop                   (short form)
+?search=laptop              (explicit)
+
+Fields selection:
+?fields=id,name,email       (sparse fieldsets)
+?include=posts,comments     (include relations)</div>
+
+                            <h2>Versioning Strategies</h2>
+
+                            <h3>1. URL Path Versioning (Most Common)</h3>
+                            <div class="code-block">✅ Recommended:
+GET /api/v1/users
+GET /api/v2/users
+
+Pros:
+- Easy to understand
+- Easy to route
+- Can run multiple versions simultaneously
+- Clear in documentation
+
+Cons:
+- Verbose
+- Versions in many places
+
+Real Example - Twitter API:
+GET https://api.twitter.com/1.1/statuses/show.json  (v1.1)
+GET https://api.twitter.com/2/tweets/:id            (v2)</div>
+
+                            <h3>2. Query Parameter Versioning</h3>
+                            <div class="code-block">GET /api/users?version=1
+GET /api/users?version=2
+
+Pros:
+- Same URL path
+- Optional (can default to latest)
+
+Cons:
+- Easy to miss
+- Harder to route
+- Not cacheable (query params vary)
+
+Less common, not recommended</div>
+
+                            <h3>3. Header Versioning</h3>
+                            <div class="code-block">GET /api/users
+Accept: application/vnd.myapi.v1+json
+
+GET /api/users
+Accept: application/vnd.myapi.v2+json
+
+Pros:
+- Clean URLs
+- RESTful (uses content negotiation)
+
+Cons:
+- Hidden from URL
+- Harder to test (need to set headers)
+- More complex
+
+Real Example - GitHub API:
+GET /repos/:owner/:repo
+Accept: application/vnd.github.v3+json</div>
+
+                            <h3>Version Strategy Recommendation</h3>
+                            <div class="code-block">Best practice: URL path versioning
+
+Start with: /api/v1/
+When breaking changes needed: /api/v2/
+Support multiple versions during transition
+
+Example migration:
+2024-01: Launch /api/v2/, keep /api/v1/
+2024-02: Announce /api/v1/ deprecation (6 months notice)
+2024-08: Shut down /api/v1/
+
+Never break v1 while it's supported!
+Each version is a contract with users.</div>
+
+                            <h2>Special Endpoints and Actions</h2>
+
+                            <h3>Actions That Don't Fit CRUD</h3>
+                            <p>Sometimes you need actions that don't map to HTTP methods. Here are strategies:</p>
+
+                            <h4>1. Use Subresources for Actions</h4>
+                            <div class="code-block">// Activate a user
+POST /users/123/activate
+
+// Send password reset email
+POST /users/123/password-reset
+
+// Archive a document
+POST /documents/456/archive
+
+// Publish a post
+POST /posts/789/publish
+
+The action is a subresource of the main resource</div>
+
+                            <h4>2. Use Status/State Updates</h4>
+                            <div class="code-block">// Instead of: POST /orders/123/cancel
+// Use state update:
+PATCH /orders/123
+{
+  "status": "cancelled"
+}
+
+// Instead of: POST /posts/456/publish
+// Use:
+PATCH /posts/456
+{
+  "published": true,
+  "published_at": "2024-01-15T10:00:00Z"
+}
+
+More RESTful - you're updating resource state</div>
+
+                            <h4>3. Create a Resource for the Action</h4>
+                            <div class="code-block">// Create a "transfer" resource
+POST /transfers
+{
+  "from_account": "acc_123",
+  "to_account": "acc_456",
+  "amount": 100.00
+}
+
+// Create a "search" resource
+POST /searches
+{
+  "query": "laptop",
+  "filters": {...}
+}
+→ Returns search results
+
+Treat the action itself as a resource</div>
+
+                            <h3>Bulk Operations</h3>
+                            <div class="code-block">// Bulk create
+POST /users/bulk
+{
+  "users": [
+    {"name": "Alice", "email": "alice@example.com"},
+    {"name": "Bob", "email": "bob@example.com"}
+  ]
+}
+
+// Bulk update
+PATCH /users/bulk
+{
+  "user_ids": [123, 124, 125],
+  "updates": {"status": "active"}
+}
+
+// Bulk delete
+DELETE /users/bulk
+{
+  "user_ids": [123, 124, 125]
+}
+
+Note: Some prefer POST for bulk operations even for deletes</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API</h3>
+                            <div class="code-block">// Well-designed URLs
+GET /repos/:owner/:repo
+GET /repos/:owner/:repo/issues
+GET /repos/:owner/:repo/issues/:number
+GET /repos/:owner/:repo/issues/:number/comments
+
+// Actions as subresources
+POST /repos/:owner/:repo/issues/:number/lock
+DELETE /repos/:owner/:repo/issues/:number/lock
+PUT /repos/:owner/:repo/subscription
+
+// Query parameters for filtering
+GET /issues?state=open&labels=bug&sort=created&direction=desc</div>
+
+                            <h3>Stripe API</h3>
+                            <div class="code-block">// Consistent plural nouns
+GET /v1/customers
+POST /v1/customers
+GET /v1/customers/:id
+
+GET /v1/charges
+POST /v1/charges
+
+// Nested resources
+GET /v1/customers/:id/payment_methods
+GET /v1/customers/:id/subscriptions
+
+// Actions
+POST /v1/customers/:id/sources/:id/verify
+POST /v1/charges/:id/capture
+POST /v1/charges/:id/refund</div>
+
+                            <h3>Twitter API</h3>
+                            <div class="code-block">// Version in path
+GET /2/tweets/:id
+POST /2/tweets
+DELETE /2/tweets/:id
+
+// User context
+GET /2/users/:id/tweets
+GET /2/users/:id/followers
+
+// Query parameters
+GET /2/tweets/search/recent?query=hello&max_results=10</div>
+
+                            <h2>Common Anti-Patterns</h2>
+
+                            <h3>1. Exposing Implementation Details</h3>
+                            <div class="code-block">❌ BAD: Database table names
+GET /api/tbl_users
+GET /api/user_profile_data
+GET /api/usr_prd_ctg
+
+✅ GOOD: Business domain language
+GET /api/users
+GET /api/profiles
+GET /api/product-categories</div>
+
+                            <h3>2. Inconsistent Naming</h3>
+                            <div class="code-block">❌ BAD: Mixing conventions
+GET /api/users          (plural)
+GET /api/product        (singular)
+GET /api/order-history  (hyphen)
+GET /api/userProfiles   (camelCase)
+
+✅ GOOD: Consistent style
+GET /api/users
+GET /api/products
+GET /api/order-history
+GET /api/user-profiles</div>
+
+                            <h3>3. Too Many Nesting Levels</h3>
+                            <div class="code-block">❌ BAD: Too deep
+GET /api/companies/123/departments/456/teams/789/employees/012/tasks/345
+
+✅ GOOD: Flatten or use query params
+GET /api/tasks/345
+GET /api/employees/012/tasks
+GET /api/tasks?employee_id=012&team_id=789</div>
+
+                            <h3>4. CRUD Function Names in URLs</h3>
+                            <div class="code-block">❌ BAD:
+GET /api/users/get-user/123
+POST /api/users/create-user
+POST /api/users/update-user/123
+
+✅ GOOD: Let HTTP methods do the work
+GET /api/users/123
+POST /api/users
+PUT /api/users/123</div>
+
+                            <h2>URL Design Checklist</h2>
+
+                            <div class="code-block">✅ Use nouns, not verbs
+✅ Use plural nouns for collections
+✅ Use lowercase with hyphens
+✅ Use forward slashes for hierarchy
+✅ No trailing slashes
+✅ Path params for resource IDs
+✅ Query params for filtering/sorting/pagination
+✅ Version in URL path (/api/v1/)
+✅ Actions as subresources when needed
+✅ Consistent naming conventions
+✅ Keep nesting to 2-3 levels max
+✅ Use standard HTTP methods
+✅ Think from API consumer perspective</div>
+
+                            <h2>Summary</h2>
+                            <p>Good URL design makes your API intuitive and easy to use:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Resources as nouns: /users, /products, /orders</li>
+                                <li>HTTP methods as verbs: GET, POST, PUT, DELETE</li>
+                                <li>Hierarchy shows relationships: /users/123/posts</li>
+                                <li>Query params for options: ?sort=name&page=2</li>
+                                <li>Lowercase with hyphens: /user-profiles</li>
+                                <li>Version in path: /api/v1/</li>
+                                <li>Consistency is key!</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "Why should you use plural nouns instead of verbs in REST API URLs?",
+                                answer: "REST URLs represent resources (nouns), not actions (verbs). HTTP methods provide the verbs. Example: Instead of POST /createUser, use POST /users. This separation makes APIs predictable: GET /users (list), POST /users (create), GET /users/123 (read one), PUT /users/123 (update), DELETE /users/123 (delete). Same resource path, different methods."
+                            },
+                            {
+                                question: "When should you nest resources vs keeping them flat? Give examples.",
+                                answer: "Nest when parent context matters and you need access control. Example: GET /users/123/orders (only user 123's orders, verify ownership). Flatten when resources are independent. Example: GET /orders?user_id=123 (orders exist independently). Avoid deep nesting (>3 levels): GET /users/123/posts/456/comments/789/likes is too deep, use GET /likes?comment_id=789 instead."
+                            },
+                            {
+                                question: "What's the difference between path parameters and query parameters? When should you use each?",
+                                answer: "Path parameters identify specific resources (required): GET /users/123. Query parameters filter, sort, paginate collections (optional): GET /users?role=admin&sort=name. Path params are part of resource identity. Query params modify the collection result. Example: /products/456 (specific product) vs /products?category=electronics (filtered list)."
+                            },
+                            {
+                                question: "What are the pros and cons of different API versioning strategies?",
+                                answer: "URL path (/api/v1/users): Most common, easy to route, clear in docs, but verbose. Header (Accept: vnd.api.v1+json): Clean URLs, RESTful, but hidden and harder to test. Query param (?version=1): Same path, optional, but not cacheable and easy to miss. Recommendation: Use URL path versioning for simplicity and clarity."
+                            },
+                            {
+                                question: "How do you handle actions that don't fit into standard CRUD operations?",
+                                answer: "Three approaches: 1) Subresources: POST /users/123/activate, 2) State updates: PATCH /orders/123 {status: 'cancelled'}, 3) Action as resource: POST /transfers {from, to, amount}. Example: Instead of POST /orders/123/cancel, use PATCH /orders/123 {status: 'cancelled'} to be more RESTful, treating action as state change."
+                            },
+                            {
+                                question: "Why should you avoid exposing implementation details in URLs?",
+                                answer: "URLs should reflect business domain, not internal structure. Example: Bad: GET /tbl_users, /user_profile_data (exposes database tables). Good: GET /users, /profiles. Reasons: 1) Internal changes break API, 2) Security risk (reveals architecture), 3) Confusing for API consumers, 4) Not domain-driven. URLs are public contracts, not implementation details."
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                title: 'Module 2: Request & Response Design',
+                lessons: [
+                    {
+                        id: 'request-headers-body',
+                        title: 'Request Headers & Body',
+                        duration: '45 min',
+                        content: `
+                            <h2>Understanding HTTP Requests</h2>
+                            <p>Every API request consists of several parts: the method, URL, headers, and optionally a body. Understanding how to structure these components properly is crucial for building effective APIs.</p>
+
+                            <div class="code-block">HTTP Request Structure:
+
+METHOD /path HTTP/1.1
+Header1: value1
+Header2: value2
+
+{request body}</div>
+
+                            <h2>Request Headers</h2>
+                            <p>Headers provide metadata about the request. They tell the server how to interpret the request and what the client expects in return.</p>
+
+                            <h3>Essential Request Headers</h3>
+
+                            <h4>Content-Type - What You're Sending</h4>
+                            <p>Tells the server the format of the request body.</p>
+
+                            <div class="code-block">// JSON (most common)
+POST /api/users
+Content-Type: application/json
+
+{
+  "name": "Alice",
+  "email": "alice@example.com"
+}
+
+// Form data
+POST /api/upload
+Content-Type: application/x-www-form-urlencoded
+
+name=Alice&email=alice@example.com
+
+// Multipart (file uploads)
+POST /api/upload
+Content-Type: multipart/form-data; boundary=---boundary123
+
+------boundary123
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+[binary data]
+------boundary123--
+
+// XML (legacy)
+POST /api/users
+Content-Type: application/xml
+
+<?xml version="1.0"?>
+<user>
+  <name>Alice</name>
+  <email>alice@example.com</email>
+</user></div>
+
+                            <h4>Accept - What You Want Back</h4>
+                            <p>Tells the server what format you want in the response.</p>
+
+                            <div class="code-block">// Request JSON response
+GET /api/users/123
+Accept: application/json
+
+// Request XML response
+GET /api/users/123
+Accept: application/xml
+
+// Multiple preferences (quality values)
+GET /api/users/123
+Accept: application/json, application/xml;q=0.8, text/plain;q=0.5
+
+// q=0.8 means "less preferred than JSON (q=1.0 default)"
+
+Real Example - GitHub API:
+GET /repos/facebook/react
+Accept: application/vnd.github.v3+json</div>
+
+                            <h4>Authorization - Who You Are</h4>
+                            <p>Provides credentials to authenticate the request.</p>
+
+                            <div class="code-block">// Bearer token (JWT, OAuth)
+GET /api/users/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+// Basic authentication (username:password, base64 encoded)
+GET /api/users/me
+Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
+
+// API Key
+GET /api/users/me
+Authorization: ApiKey sk_test_abc123
+
+// Custom schemes
+GET /api/users/me
+Authorization: Token abc123xyz</div>
+
+                            <p><strong>Real Example - Stripe:</strong></p>
+                            <div class="code-block">curl https://api.stripe.com/v1/charges \\
+  -u sk_test_abc123: \\
+  -H "Content-Type: application/x-www-form-urlencoded"
+
+// Basic auth with API key as username, empty password</div>
+
+                            <h4>Content-Length - Size of Body</h4>
+                            <div class="code-block">POST /api/users
+Content-Type: application/json
+Content-Length: 58
+
+{"name":"Alice","email":"alice@example.com"}
+
+Usually auto-calculated by HTTP libraries, but important
+for servers to know when request is complete</div>
+
+                            <h4>User-Agent - Client Information</h4>
+                            <div class="code-block">GET /api/users
+User-Agent: MyApp/1.0 (iOS 15.0; iPhone 13)
+
+// Helps with:
+// - Analytics (which clients use your API)
+// - Troubleshooting (identify problematic clients)
+// - Feature detection (serve different responses)
+
+Example User-Agent strings:
+curl/7.68.0
+Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+Stripe/v1 Node/18.0</div>
+
+                            <h3>Custom Headers</h3>
+                            <p>APIs often use custom headers for specific purposes. By convention, custom headers use X- prefix (though this is deprecated).</p>
+
+                            <div class="code-block">// Request ID for tracking
+GET /api/users/123
+X-Request-ID: req_abc123
+
+// Client-generated idempotency key
+POST /api/orders
+Idempotency-Key: order_xyz789
+{"product_id": 123, "quantity": 1}
+
+// API versioning
+GET /api/users/123
+X-API-Version: 2
+
+// Feature flags
+GET /api/users
+X-Enable-Beta-Features: true
+
+// Correlation ID (for distributed tracing)
+GET /api/users/123
+X-Correlation-ID: trace_456def</div>
+
+                            <h2>Request Body Formats</h2>
+
+                            <h3>1. JSON (Recommended)</h3>
+                            <p>JSON is the standard for modern REST APIs. It's human-readable, well-supported, and works well with JavaScript.</p>
+
+                            <div class="code-block">POST /api/users
+Content-Type: application/json
+
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "age": 30,
+  "active": true,
+  "roles": ["user", "admin"],
+  "profile": {
+    "bio": "Software engineer",
+    "location": "San Francisco"
+  }
+}
+
+Advantages:
+✅ Human-readable
+✅ Nested objects and arrays
+✅ Native JavaScript support
+✅ Well-documented
+✅ Type information (strings, numbers, booleans, null)
+
+Disadvantages:
+❌ No date type (use ISO 8601 strings)
+❌ No binary data support
+❌ Verbose for large datasets</div>
+
+                            <h3>2. Form Data (application/x-www-form-urlencoded)</h3>
+                            <p>Simple key-value pairs, like HTML forms. Good for simple data, not for nested objects.</p>
+
+                            <div class="code-block">POST /api/users
+Content-Type: application/x-www-form-urlencoded
+
+name=Alice%20Johnson&email=alice%40example.com&age=30
+
+Parsed as:
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "age": "30"  // Note: all values are strings!
+}
+
+Use cases:
+- Simple forms
+- OAuth token requests
+- Legacy systems
+
+Limitations:
+❌ No nested objects
+❌ No arrays (workarounds exist)
+❌ Everything is a string
+❌ Special characters must be URL-encoded</div>
+
+                            <h3>3. Multipart Form Data (File Uploads)</h3>
+                            <p>Used when uploading files. Allows mixing files and regular fields.</p>
+
+                            <div class="code-block">POST /api/users/123/avatar
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA
+
+------WebKitFormBoundary7MA
+Content-Disposition: form-data; name="user_id"
+
+123
+------WebKitFormBoundary7MA
+Content-Disposition: form-data; name="file"; filename="avatar.jpg"
+Content-Type: image/jpeg
+
+[binary image data]
+------WebKitFormBoundary7MA--
+
+JavaScript example:
+const formData = new FormData();
+formData.append('user_id', '123');
+formData.append('file', fileInput.files[0]);
+
+fetch('/api/users/123/avatar', {
+  method: 'POST',
+  body: formData  // No Content-Type header, browser sets it
+});</div>
+
+                            <h3>4. XML (Legacy)</h3>
+                            <div class="code-block">POST /api/users
+Content-Type: application/xml
+
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+  <name>Alice Johnson</name>
+  <email>alice@example.com</email>
+  <age>30</age>
+  <profile>
+    <bio>Software engineer</bio>
+    <location>San Francisco</location>
+  </profile>
+</user>
+
+Still used by:
+- SOAP APIs
+- Legacy enterprise systems
+- Some financial systems
+
+Most modern APIs prefer JSON</div>
+
+                            <h2>Request Body Best Practices</h2>
+
+                            <h3>1. Use Consistent Field Naming</h3>
+                            <div class="code-block">❌ BAD: Inconsistent naming
+{
+  "userName": "Alice",      // camelCase
+  "user_email": "alice@...", // snake_case
+  "UserAge": 30              // PascalCase
+}
+
+✅ GOOD: Pick one style and stick to it
+{
+  "user_name": "Alice",      // snake_case (Python, Ruby)
+  "user_email": "alice@...",
+  "user_age": 30
+}
+
+OR
+
+{
+  "userName": "Alice",       // camelCase (JavaScript)
+  "userEmail": "alice@...",
+  "userAge": 30
+}
+
+Most JavaScript APIs use camelCase
+Most Python/Ruby APIs use snake_case</div>
+
+                            <h3>2. Use ISO 8601 for Dates</h3>
+                            <div class="code-block">❌ BAD: Ambiguous date formats
+{
+  "birth_date": "01/02/2024"  // Jan 2 or Feb 1?
+  "created": "2024-1-5"       // Non-standard
+  "updated": 1704067200       // Unix timestamp (not readable)
+}
+
+✅ GOOD: ISO 8601
+{
+  "birth_date": "2024-01-02",           // Date only
+  "created_at": "2024-01-05T10:30:00Z", // UTC time
+  "updated_at": "2024-01-05T10:30:00-08:00" // With timezone
+}
+
+ISO 8601 format: YYYY-MM-DDTHH:mm:ss.sssZ</div>
+
+                            <h3>3. Validate and Provide Clear Errors</h3>
+                            <div class="code-block">// Bad request
+POST /api/users
+{
+  "email": "not-an-email",
+  "age": -5,
+  "role": "invalid_role"
+}
+
+// Good error response
+Response: 400 Bad Request
+{
+  "error": "Validation Error",
+  "message": "Request body contains invalid fields",
+  "fields": {
+    "email": "Must be a valid email address",
+    "age": "Must be a positive integer",
+    "role": "Must be one of: user, admin, moderator"
+  }
+}</div>
+
+                            <h3>4. Keep Request Bodies Flat When Possible</h3>
+                            <div class="code-block">❌ Unnecessarily nested:
+{
+  "user": {
+    "personal": {
+      "name": {
+        "first": "Alice",
+        "last": "Johnson"
+      }
+    }
+  }
+}
+
+✅ Flatter structure:
+{
+  "first_name": "Alice",
+  "last_name": "Johnson"
+}
+
+OR if grouping makes sense:
+{
+  "name": {
+    "first": "Alice",
+    "last": "Johnson"
+  },
+  "contact": {
+    "email": "alice@example.com",
+    "phone": "+1234567890"
+  }
+}</div>
+
+                            <h2>Common Request Mistakes</h2>
+
+                            <h3>1. Wrong Content-Type Header</h3>
+                            <div class="code-block">❌ BAD: Sending JSON without Content-Type
+POST /api/users
+
+{"name": "Alice"}
+
+Server might interpret as plain text or form data!
+
+✅ GOOD: Always set Content-Type for POST/PUT/PATCH
+POST /api/users
+Content-Type: application/json
+
+{"name": "Alice"}</div>
+
+                            <h3>2. Sensitive Data in URLs</h3>
+                            <div class="code-block">❌ BAD: Passwords in query params
+GET /api/login?username=alice&password=secret123
+
+Problems:
+- Logged in server access logs
+- Visible in browser history
+- Can be bookmarked
+- Sent to analytics
+
+✅ GOOD: Sensitive data in request body
+POST /api/login
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "password": "secret123"
+}</div>
+
+                            <h3>3. Large Data in GET Requests</h3>
+                            <div class="code-block">❌ BAD: Complex search in GET
+GET /api/search?filter[name]=John&filter[age][min]=18&filter[age][max]=65&filter[tags][]=urgent&filter[tags][]=important&sort[field]=created_at&sort[order]=desc&fields[]=id&fields[]=name&fields[]=email
+
+Problems:
+- URL length limits (2048 chars in browsers)
+- Hard to read and debug
+- Not cacheable (too specific)
+
+✅ GOOD: Use POST for complex queries
+POST /api/search
+Content-Type: application/json
+
+{
+  "filter": {
+    "name": "John",
+    "age": {"min": 18, "max": 65},
+    "tags": ["urgent", "important"]
+  },
+  "sort": {"field": "created_at", "order": "desc"},
+  "fields": ["id", "name", "email"]
+}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API Request</h3>
+                            <div class="code-block">POST /repos/owner/repo/issues
+Authorization: Bearer ghp_abc123
+Content-Type: application/json
+Accept: application/vnd.github.v3+json
+User-Agent: MyApp/1.0
+
+{
+  "title": "Bug in API",
+  "body": "Description of the bug...",
+  "labels": ["bug", "api"],
+  "assignees": ["username"]
+}</div>
+
+                            <h3>Stripe API Request</h3>
+                            <div class="code-block">POST /v1/charges
+Authorization: Bearer sk_test_abc123
+Content-Type: application/x-www-form-urlencoded
+Idempotency-Key: charge_abc123
+
+amount=1000&currency=usd&source=tok_visa&description=Test+charge
+
+Note: Stripe uses form data, not JSON!</div>
+
+                            <h2>Summary</h2>
+                            <p>Key points for request design:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Use proper headers: Content-Type, Accept, Authorization</li>
+                                <li>Prefer JSON for request bodies (modern APIs)</li>
+                                <li>Use ISO 8601 for dates</li>
+                                <li>Consistent field naming (camelCase or snake_case)</li>
+                                <li>Validate input and return clear error messages</li>
+                                <li>Never put sensitive data in URLs</li>
+                                <li>Use POST for complex queries, not GET</li>
+                                <li>Set User-Agent for better analytics and debugging</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between Content-Type and Accept headers?",
+                                answer: "Content-Type describes the format of data you're sending in the request body (e.g., Content-Type: application/json). Accept describes what format you want in the response (e.g., Accept: application/json). Example: POST request with JSON body uses Content-Type: application/json, and if you want JSON response, add Accept: application/json."
+                            },
+                            {
+                                question: "Why should you never put passwords or sensitive data in URL query parameters?",
+                                answer: "Query params are logged in server access logs, visible in browser history, can be bookmarked, sent to analytics tools, and appear in referrer headers. They're not secure. Always use POST with request body for sensitive data like passwords, tokens, or credit cards. URLs are considered public, request bodies are not."
+                            },
+                            {
+                                question: "When should you use multipart/form-data instead of application/json?",
+                                answer: "Use multipart/form-data when uploading files (images, documents, etc.) or mixing binary data with text fields. JSON cannot handle binary data. Example: Upload user avatar with metadata. For pure text data, JSON is better (more compact, easier to parse, supports nested objects)."
+                            },
+                            {
+                                question: "What is an idempotency key and why is it important?",
+                                answer: "An idempotency key is a unique client-generated string sent in header (e.g., Idempotency-Key: order_123). If the same request is retried with the same key, server returns the original response without creating duplicates. Critical for preventing duplicate orders, charges, or records when requests are retried due to network issues. Stripe requires this for all POST requests."
+                            },
+                            {
+                                question: "Why is ISO 8601 the recommended format for dates in APIs?",
+                                answer: "ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ) is unambiguous, sortable, and internationally standard. Formats like '01/02/2024' are ambiguous (Jan 2 vs Feb 1). Unix timestamps aren't human-readable. ISO 8601 includes timezone (Z for UTC), sortable as strings, and natively parsed by most languages. Example: 2024-01-15T10:30:00Z."
+                            },
+                            {
+                                question: "What are the advantages and disadvantages of JSON vs form-urlencoded for request bodies?",
+                                answer: "JSON advantages: nested objects, arrays, type information (numbers, booleans), human-readable. Disadvantages: no binary data, no native date type. Form-urlencoded advantages: simple, widely supported, legacy compatibility. Disadvantages: flat structure only, everything is strings, special chars need encoding. Use JSON for modern APIs, form-urlencoded for OAuth or simple forms."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'response-structure',
+                        title: 'Response Structure & Design',
+                        duration: '50 min',
+                        content: `
+                            <h2>Anatomy of an HTTP Response</h2>
+                            <p>Every HTTP response consists of three parts: status line, headers, and body. Designing consistent, predictable responses is crucial for API usability.</p>
+
+                            <div class="code-block">HTTP Response Structure:
+
+HTTP/1.1 200 OK
+Header1: value1
+Header2: value2
+
+{response body}</div>
+
+                            <h2>Response Headers</h2>
+
+                            <h3>Content-Type - What You're Sending</h3>
+                            <div class="code-block">// JSON response
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"id": 123, "name": "Alice"}
+
+// HTML response
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+
+<html>...</html>
+
+// Plain text
+HTTP/1.1 200 OK
+Content-Type: text/plain
+
+Hello, World!
+
+// Image
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+
+[binary data]</div>
+
+                            <h3>Location - Where the Resource Is</h3>
+                            <div class="code-block">// Resource created - point to new location
+POST /api/users
+
+HTTP/1.1 201 Created
+Location: /api/users/126
+Content-Type: application/json
+
+{
+  "id": 126,
+  "name": "Alice",
+  "created_at": "2024-01-15T10:00:00Z"
+}
+
+// Redirect to new URL
+HTTP/1.1 301 Moved Permanently
+Location: /api/v2/users/123</div>
+
+                            <h3>Cache Control Headers</h3>
+                            <div class="code-block">// Cache for 1 hour
+GET /api/users/123
+
+HTTP/1.1 200 OK
+Cache-Control: max-age=3600, public
+ETag: "abc123"
+Last-Modified: Mon, 15 Jan 2024 10:00:00 GMT
+
+// Don't cache (sensitive or real-time data)
+GET /api/users/me
+
+HTTP/1.1 200 OK
+Cache-Control: no-cache, no-store, must-revalidate
+Pragma: no-cache
+Expires: 0
+
+// Cache but revalidate
+GET /api/products
+
+HTTP/1.1 200 OK
+Cache-Control: max-age=3600, must-revalidate
+ETag: "xyz789"</div>
+
+                            <h3>Rate Limiting Headers</h3>
+                            <div class="code-block">GET /api/users
+
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 847
+X-RateLimit-Reset: 1704123600
+
+// When rate limited
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1704123600
+
+Real Example - GitHub:
+Limit: 5000/hour for authenticated
+Remaining: How many requests left
+Reset: Unix timestamp when limit resets</div>
+
+                            <h3>CORS Headers</h3>
+                            <div class="code-block">// Allow cross-origin requests
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: https://myapp.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 86400
+
+// Allow all origins (public API)
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST
+
+Note: Never use * with credentials!
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Credentials: true  ❌ Not allowed!</div>
+
+                            <h2>Response Body Patterns</h2>
+
+                            <h3>1. Simple Resource Response</h3>
+                            <div class="code-block">// Single resource - return just the object
+GET /api/users/123
+
+HTTP/1.1 200 OK
+{
+  "id": 123,
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-20T15:30:00Z"
+}
+
+Clean, simple, no wrapper needed for single resources</div>
+
+                            <h3>2. Collection Response</h3>
+                            <div class="code-block">// Array of resources
+GET /api/users
+
+HTTP/1.1 200 OK
+[
+  {"id": 123, "name": "Alice"},
+  {"id": 124, "name": "Bob"},
+  {"id": 125, "name": "Charlie"}
+]
+
+Simple but lacks metadata (pagination, totals, etc.)</div>
+
+                            <h3>3. Wrapped Collection with Metadata</h3>
+                            <div class="code-block">// Better for collections - include metadata
+GET /api/users?page=2&limit=20
+
+HTTP/1.1 200 OK
+{
+  "data": [
+    {"id": 123, "name": "Alice"},
+    {"id": 124, "name": "Bob"}
+  ],
+  "pagination": {
+    "page": 2,
+    "limit": 20,
+    "total_pages": 10,
+    "total_items": 200
+  },
+  "links": {
+    "self": "/api/users?page=2&limit=20",
+    "first": "/api/users?page=1&limit=20",
+    "prev": "/api/users?page=1&limit=20",
+    "next": "/api/users?page=3&limit=20",
+    "last": "/api/users?page=10&limit=20"
+  }
+}
+
+Provides navigation and context</div>
+
+                            <h3>4. Envelope Pattern</h3>
+                            <div class="code-block">// Consistent wrapper for all responses
+GET /api/users/123
+
+HTTP/1.1 200 OK
+{
+  "status": "success",
+  "data": {
+    "id": 123,
+    "name": "Alice"
+  },
+  "meta": {
+    "request_id": "req_abc123",
+    "timestamp": "2024-01-15T10:00:00Z"
+  }
+}
+
+// Error response with same structure
+GET /api/users/999
+
+HTTP/1.1 404 Not Found
+{
+  "status": "error",
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User with ID 999 not found"
+  },
+  "meta": {
+    "request_id": "req_def456",
+    "timestamp": "2024-01-15T10:05:00Z"
+  }
+}
+
+Pros: Consistent structure
+Cons: More verbose, extra nesting</div>
+
+                            <h3>5. JSON:API Standard</h3>
+                            <div class="code-block">// Follows JSON:API specification
+GET /api/users/123
+
+{
+  "data": {
+    "type": "user",
+    "id": "123",
+    "attributes": {
+      "name": "Alice Johnson",
+      "email": "alice@example.com"
+    },
+    "relationships": {
+      "posts": {
+        "links": {
+          "related": "/api/users/123/posts"
+        }
+      }
+    }
+  },
+  "included": [
+    {
+      "type": "post",
+      "id": "456",
+      "attributes": {
+        "title": "My first post"
+      }
+    }
+  ]
+}
+
+Standardized but verbose. Used by Ember.js community.</div>
+
+                            <h2>Response Design Best Practices</h2>
+
+                            <h3>1. Consistent Field Naming</h3>
+                            <div class="code-block">✅ GOOD: Consistent timestamps
+{
+  "id": 123,
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-20T15:30:00Z",
+  "deleted_at": null
+}
+
+❌ BAD: Inconsistent naming
+{
+  "id": 123,
+  "createdAt": "2024-01-15T10:00:00Z",  // camelCase
+  "update_time": "2024-01-20T15:30:00Z", // snake_case
+  "DeletedDate": "null"                   // PascalCase
+}</div>
+
+                            <h3>2. Null vs Omit Fields</h3>
+                            <div class="code-block">Strategy 1: Include null fields
+{
+  "id": 123,
+  "name": "Alice",
+  "phone": null,        // Explicitly null
+  "address": null
+}
+
+Pros: Client knows field exists
+Cons: Verbose, larger payload
+
+Strategy 2: Omit null fields
+{
+  "id": 123,
+  "name": "Alice"
+  // phone and address omitted
+}
+
+Pros: Smaller payload
+Cons: Can't distinguish between null and missing
+
+Recommendation: Include nulls for clarity, use sparse
+fieldsets for optimization (?fields=id,name)</div>
+
+                            <h3>3. Nested vs Flat Resources</h3>
+                            <div class="code-block">// Nested (include related data)
+GET /api/users/123?include=posts,profile
+
+{
+  "id": 123,
+  "name": "Alice",
+  "profile": {
+    "bio": "Software engineer",
+    "avatar_url": "https://..."
+  },
+  "posts": [
+    {"id": 456, "title": "First post"},
+    {"id": 457, "title": "Second post"}
+  ]
+}
+
+Pros: One request, all data
+Cons: Large response, complex queries
+
+// Flat (use links)
+GET /api/users/123
+
+{
+  "id": 123,
+  "name": "Alice",
+  "links": {
+    "profile": "/api/users/123/profile",
+    "posts": "/api/users/123/posts"
+  }
+}
+
+Pros: Smaller response, simpler queries
+Cons: Multiple requests needed
+
+Choose based on: client needs, performance, complexity</div>
+
+                            <h3>4. Boolean vs Status Strings</h3>
+                            <div class="code-block">// Option 1: Boolean
+{
+  "id": 123,
+  "active": true
+}
+
+Good for binary states (true/false)
+
+// Option 2: Status enum
+{
+  "id": 123,
+  "status": "active"  // active, inactive, suspended, banned
+}
+
+Good for multiple states
+
+// Option 3: Multiple booleans (avoid!)
+{
+  "id": 123,
+  "is_active": true,
+  "is_suspended": false,
+  "is_banned": false,
+  "is_archived": false
+}
+
+❌ BAD: Can have conflicting states!
+What if is_active=true and is_banned=true?
+
+✅ GOOD: Use status enum for mutually exclusive states</div>
+
+                            <h3>5. Error Response Format</h3>
+                            <div class="code-block">// Consistent error structure
+{
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User with ID 999 not found",
+    "details": {
+      "resource": "user",
+      "resource_id": "999"
+    }
+  },
+  "request_id": "req_abc123"
+}
+
+// Validation errors
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request contains invalid fields",
+    "fields": {
+      "email": ["Must be a valid email address"],
+      "age": ["Must be a positive integer", "Must be at least 18"]
+    }
+  },
+  "request_id": "req_def456"
+}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API Response</h3>
+                            <div class="code-block">GET /repos/facebook/react
+
+{
+  "id": 10270250,
+  "name": "react",
+  "full_name": "facebook/react",
+  "owner": {
+    "login": "facebook",
+    "id": 69631,
+    "avatar_url": "https://..."
+  },
+  "private": false,
+  "description": "A declarative...",
+  "fork": false,
+  "created_at": "2013-05-24T16:15:54Z",
+  "updated_at": "2024-01-15T10:00:00Z",
+  "stargazers_count": 200000,
+  "watchers_count": 200000,
+  "language": "JavaScript",
+  "forks_count": 42000
+}
+
+Clean, flat structure with nested owner</div>
+
+                            <h3>Stripe API Response</h3>
+                            <div class="code-block">GET /v1/charges/ch_abc123
+
+{
+  "id": "ch_abc123",
+  "object": "charge",
+  "amount": 1000,
+  "currency": "usd",
+  "status": "succeeded",
+  "created": 1704067200,
+  "customer": "cus_xyz789",
+  "description": "Test charge",
+  "metadata": {
+    "order_id": "order_123"
+  },
+  "source": {
+    "id": "card_abc",
+    "object": "card",
+    "brand": "Visa",
+    "last4": "4242"
+  }
+}
+
+Includes object type, nested related objects</div>
+
+                            <h3>Twitter API Response</h3>
+                            <div class="code-block">GET /2/tweets/1234567890
+
+{
+  "data": {
+    "id": "1234567890",
+    "text": "Hello world!",
+    "created_at": "2024-01-15T10:00:00Z",
+    "author_id": "123456"
+  },
+  "includes": {
+    "users": [
+      {
+        "id": "123456",
+        "username": "alice",
+        "name": "Alice Johnson"
+      }
+    ]
+  }
+}
+
+Uses data/includes pattern for related resources</div>
+
+                            <h2>Common Response Mistakes</h2>
+
+                            <h3>1. Inconsistent Structures</h3>
+                            <div class="code-block">❌ BAD: Different structures for success/error
+// Success
+{"id": 123, "name": "Alice"}
+
+// Error
+{"status": "error", "message": "Not found"}
+
+✅ GOOD: Consistent structure
+// Success
+{"data": {"id": 123, "name": "Alice"}}
+
+// Error
+{"error": {"message": "Not found"}}</div>
+
+                            <h3>2. HTML in JSON Responses</h3>
+                            <div class="code-block">❌ BAD: Mixing formats
+{
+  "error": "<html><body><h1>500 Error</h1></body></html>"
+}
+
+Happens when framework error pages leak into API responses!
+
+✅ GOOD: Pure JSON
+{
+  "error": {
+    "message": "Internal Server Error",
+    "request_id": "req_123"
+  }
+}</div>
+
+                            <h3>3. Exposing Internal IDs</h3>
+                            <div class="code-block">❌ RISKY: Database auto-increment IDs
+{
+  "id": 123,  // Reveals you have ~123 users
+  "user_id": 124,
+  "order_id": 456  // Reveals order volume
+}
+
+✅ BETTER: Use UUIDs or prefixed IDs
+{
+  "id": "usr_2a5f9c8b",
+  "user_id": "usr_2a5f9c8b",
+  "order_id": "ord_3b6e1d9f"
+}
+
+Or Stripe-style:
+{
+  "id": "cus_abc123xyz",
+  "customer_id": "cus_abc123xyz"
+}</div>
+
+                            <h3>4. Missing Pagination</h3>
+                            <div class="code-block">❌ BAD: Return all 10,000 items
+GET /api/users
+
+[
+  {id: 1, ...},
+  {id: 2, ...},
+  ... 10,000 items ...
+]
+
+Results in: Timeouts, memory issues, slow responses
+
+✅ GOOD: Always paginate collections
+GET /api/users?limit=20
+
+{
+  "data": [...20 items...],
+  "pagination": {
+    "limit": 20,
+    "offset": 0,
+    "total": 10000,
+    "has_more": true
+  },
+  "links": {
+    "next": "/api/users?limit=20&offset=20"
+  }
+}</div>
+
+                            <h2>Summary</h2>
+                            <p>Key principles for response design:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Use consistent structure across all endpoints</li>
+                                <li>Include proper headers (Content-Type, Cache-Control, Rate-Limit)</li>
+                                <li>Wrap collections with metadata (pagination, links)</li>
+                                <li>Use clear error format with error codes</li>
+                                <li>Include null fields for clarity or omit for efficiency</li>
+                                <li>Use status enums instead of multiple booleans</li>
+                                <li>Always paginate collections</li>
+                                <li>Use UUIDs instead of sequential IDs for security</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between returning a bare array vs wrapping it in an object for collection endpoints?",
+                                answer: "Bare array: [item1, item2] is simple but can't include metadata. Wrapped: {data: [...], pagination: {...}, links: {...}} allows adding pagination info, total counts, navigation links without breaking the structure. Bare arrays also have JSON hijacking vulnerabilities (old browsers). Recommendation: Always wrap collections in an object."
+                            },
+                            {
+                                question: "Why should you use UUIDs or prefixed IDs instead of sequential integers for resource IDs?",
+                                answer: "Sequential IDs (1, 2, 3) reveal business metrics: user count, order volume, growth rate. Also predictable and enumerable (attacker can guess IDs). UUIDs (usr_2a5f9c8b) or Stripe-style (cus_abc123) are: unpredictable, don't reveal metrics, harder to enumerate. Trade-off: UUIDs are longer in URLs and databases, but security benefit outweighs this."
+                            },
+                            {
+                                question: "What rate limiting headers should you include in API responses and why?",
+                                answer: "Include: X-RateLimit-Limit (total allowed), X-RateLimit-Remaining (requests left), X-RateLimit-Reset (when limit resets, Unix timestamp), Retry-After (seconds to wait when limited). Helps clients: implement backoff strategies, display meaningful errors to users, avoid unnecessary retries. Example: GitHub's 5000/hour limit includes these headers on every response."
+                            },
+                            {
+                                question: "When should you include related resources in the response vs making clients fetch them separately?",
+                                answer: "Include when: commonly needed together (user with profile), reduces round trips, client explicitly requests (?include=posts). Separate when: related data is large, rarely needed, would create N+1 query problems, client may not need it. Provide links for separate fetching. Example: GET /users/123 returns user, provides links.posts for separate fetch. Let clients control with ?include parameter."
+                            },
+                            {
+                                question: "What's the best way to handle multiple states in a resource - multiple booleans or a status enum?",
+                                answer: "Use status enum for mutually exclusive states. Bad: {is_active: true, is_suspended: false, is_banned: false} - can have conflicting states. Good: {status: 'active'} with values like 'active', 'suspended', 'banned', 'archived'. Enums prevent impossible states, are more maintainable, and clearer. Use booleans only for independent flags like {is_verified: true, is_admin: true}."
+                            },
+                            {
+                                question: "Why is it important to have a consistent error response format across your API?",
+                                answer: "Consistent format allows clients to handle errors uniformly with one error handling function. Should include: error code (machine-readable), message (human-readable), request_id (for debugging). Example: {error: {code: 'USER_NOT_FOUND', message: '...', fields: {...}}, request_id: 'req_123'}. Inconsistent errors require case-by-case parsing, harder to debug, poor developer experience."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'content-negotiation',
+                        title: 'Content Negotiation',
                         duration: '40 min',
-                        content: `<p>Content for REST principles...</p>`,
+                        content: `
+                            <h2>What is Content Negotiation?</h2>
+                            <p>Content negotiation is the process where the client and server agree on the format and language of the content being exchanged. The client tells the server what it prefers, and the server responds with the best match it can provide.</p>
+
+                            <p>Think of it like ordering at a restaurant: you tell the waiter your preferences (vegetarian, spicy), and they recommend dishes that match. The client specifies preferences, the server provides the best match.</p>
+
+                            <h2>Types of Content Negotiation</h2>
+
+                            <h3>1. Media Type Negotiation (Accept Header)</h3>
+                            <p>The client specifies what data formats it can handle.</p>
+
+                            <div class="code-block">// Client prefers JSON
+GET /api/users/123
+Accept: application/json
+
+Response:
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"id": 123, "name": "Alice"}
+
+// Client prefers XML
+GET /api/users/123
+Accept: application/xml
+
+Response:
+HTTP/1.1 200 OK
+Content-Type: application/xml
+
+<?xml version="1.0"?>
+<user>
+  <id>123</id>
+  <name>Alice</name>
+</user></div>
+
+                            <h3>Quality Values (q parameter)</h3>
+                            <p>Clients can specify preference order using quality values (0 to 1).</p>
+
+                            <div class="code-block">// Multiple preferences with quality values
+GET /api/users/123
+Accept: application/json, application/xml;q=0.8, text/plain;q=0.5
+
+Meaning:
+- application/json (q=1.0 default) - most preferred
+- application/xml (q=0.8) - second choice
+- text/plain (q=0.5) - fallback
+
+Server picks highest q value it can provide
+
+// Another example
+Accept: application/json;q=0.9, */*;q=0.1
+
+Prefers JSON but will accept anything as fallback</div>
+
+                            <h3>When Server Can't Satisfy</h3>
+                            <div class="code-block">// Client only accepts XML
+GET /api/users/123
+Accept: application/xml
+
+// Server only supports JSON
+Response:
+HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+
+{
+  "error": "Not Acceptable",
+  "message": "Server can only provide application/json",
+  "supported_types": ["application/json"]
+}
+
+406 = Server cannot provide any format client accepts</div>
+
+                            <h2>2. Language Negotiation (Accept-Language)</h2>
+                            <div class="code-block">// Client prefers Spanish
+GET /api/products/123
+Accept-Language: es
+
+Response:
+{
+  "id": 123,
+  "name": "Ordenador Portátil",
+  "description": "Una computadora portátil..."
+}
+
+// Multiple language preferences
+GET /api/products/123
+Accept-Language: es-MX, es;q=0.8, en;q=0.5
+
+Meaning:
+- es-MX (Mexican Spanish) - most preferred
+- es (general Spanish) - second choice
+- en (English) - fallback
+
+// Server responds with best match
+Response:
+Content-Language: es-MX
+
+Real Example - Google APIs use Accept-Language
+for localized error messages</div>
+
+                            <h3>Language Fallback Strategy</h3>
+                            <div class="code-block">Client requests: Accept-Language: fr-CA
+
+Server logic:
+1. Try exact match: fr-CA (French Canadian)
+2. Try language only: fr (French)
+3. Fall back to default: en (English)
+
+Response includes what was actually used:
+Content-Language: fr</div>
+
+                            <h2>3. Encoding Negotiation (Accept-Encoding)</h2>
+                            <p>Clients specify what compression algorithms they support to reduce bandwidth.</p>
+
+                            <div class="code-block">// Client supports gzip and deflate compression
+GET /api/users
+Accept-Encoding: gzip, deflate, br
+
+Response:
+HTTP/1.1 200 OK
+Content-Encoding: gzip
+Content-Type: application/json
+
+[compressed JSON data]
+
+Common encodings:
+- gzip: Most widely supported (up to 70% compression)
+- br (Brotli): Better compression than gzip
+- deflate: Older compression
+- identity: No compression
+
+Browsers automatically:
+- Send Accept-Encoding
+- Decompress responses
+You usually don't need to handle this manually!</div>
+
+                            <h3>When to Disable Compression</h3>
+                            <div class="code-block">Don't compress:
+1. Already compressed formats (images, videos, PDFs)
+2. Very small responses (<1KB - overhead not worth it)
+3. Real-time streaming
+4. When CPU is bottleneck
+
+Example:
+GET /api/users/123/avatar.jpg
+// Image already compressed, don't gzip it</div>
+
+                            <h2>4. Character Set Negotiation (Accept-Charset)</h2>
+                            <div class="code-block">// Rarely used - UTF-8 is standard
+GET /api/users/123
+Accept-Charset: utf-8, iso-8859-1;q=0.5
+
+Response:
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"name": "Alice"}
+
+Modern APIs: Always use UTF-8, don't bother negotiating</div>
+
+                            <h2>Custom Vendor Media Types</h2>
+                            <p>APIs can define custom media types for versioning or special formats.</p>
+
+                            <h3>GitHub API Example</h3>
+                            <div class="code-block">// Request specific API version
+GET /repos/facebook/react
+Accept: application/vnd.github.v3+json
+
+Response:
+Content-Type: application/vnd.github.v3+json
+
+// Request different representation
+GET /repos/facebook/react/readme
+Accept: application/vnd.github.v3.raw
+
+Returns raw markdown instead of JSON
+
+// Request HTML
+GET /repos/facebook/react/readme
+Accept: application/vnd.github.v3.html
+
+Returns rendered HTML
+
+vnd = vendor-specific media type</div>
+
+                            <h3>Stripe API Example</h3>
+                            <div class="code-block">// Default version
+GET /v1/charges
+Accept: application/json
+
+// Specific version
+GET /v1/charges
+Stripe-Version: 2024-01-15
+
+Stripe uses header instead of Accept for versioning</div>
+
+                            <h2>Proactive vs Reactive Negotiation</h2>
+
+                            <h3>Proactive (Server-Driven)</h3>
+                            <p>Server chooses format based on Accept headers. Most common in REST APIs.</p>
+
+                            <div class="code-block">GET /api/users/123
+Accept: application/json, application/xml;q=0.8
+
+Server decides: "I'll send JSON since q=1.0"
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Vary: Accept
+
+{"id": 123, "name": "Alice"}
+
+Vary header tells caches: response varies based on Accept</div>
+
+                            <h3>Reactive (Agent-Driven)</h3>
+                            <p>Server sends list of options, client chooses.</p>
+
+                            <div class="code-block">GET /api/users/123
+
+HTTP/1.1 300 Multiple Choices
+{
+  "options": [
+    {"type": "application/json", "url": "/api/users/123.json"},
+    {"type": "application/xml", "url": "/api/users/123.xml"},
+    {"type": "text/html", "url": "/api/users/123.html"}
+  ]
+}
+
+Rarely used in REST APIs - adds extra round trip</div>
+
+                            <h3>Transparent Negotiation</h3>
+                            <p>Server provides multiple representations simultaneously.</p>
+
+                            <div class="code-block">HTTP/1.1 200 OK
+Content-Type: multipart/alternative
+
+--boundary
+Content-Type: application/json
+
+{"id": 123, "name": "Alice"}
+--boundary
+Content-Type: application/xml
+
+<user><id>123</id><name>Alice</name></user>
+--boundary--
+
+Very rare - complex and inefficient</div>
+
+                            <h2>Content Negotiation Best Practices</h2>
+
+                            <h3>1. Default Format When Accept is Missing</h3>
+                            <div class="code-block">// No Accept header
+GET /api/users/123
+
+// Don't fail - return default format (JSON)
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"id": 123, "name": "Alice"}
+
+Most APIs default to JSON</div>
+
+                            <h3>2. Support Wildcards</h3>
+                            <div class="code-block">// Accept anything
+GET /api/users/123
+Accept: */*
+
+// Return default format
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+// Accept any JSON variant
+Accept: application/*
+or
+Accept: application/json, application/*
+
+Server should match application/json</div>
+
+                            <h3>3. Use File Extensions as Alternative</h3>
+                            <div class="code-block">// Content negotiation via Accept header
+GET /api/users/123
+Accept: application/json
+
+// OR via file extension (simpler for testing)
+GET /api/users/123.json
+GET /api/users/123.xml
+
+Both approaches work. Extensions easier for:
+- Browser testing
+- Curl commands
+- Documentation examples
+
+Example APIs using extensions:
+- Rails ActiveResource
+- Some REST frameworks</div>
+
+                            <h3>4. Set Vary Header for Caching</h3>
+                            <div class="code-block">GET /api/users/123
+Accept: application/json
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Vary: Accept
+
+{"id": 123}
+
+Vary: Accept tells caches:
+"This response varies based on Accept header"
+"Don't serve JSON response to XML request"
+
+Without Vary, caches might serve wrong format!</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Ignoring Accept Header</h3>
+                            <div class="code-block">❌ BAD: Always return JSON regardless of Accept
+GET /api/users/123
+Accept: application/xml
+
+HTTP/1.1 200 OK
+Content-Type: application/json  ← Should be XML or 406!
+
+{"id": 123}
+
+✅ GOOD: Honor Accept or return 406
+HTTP/1.1 406 Not Acceptable
+{
+  "error": "Cannot provide application/xml",
+  "supported": ["application/json"]
+}</div>
+
+                            <h3>2. Missing Content-Type in Response</h3>
+                            <div class="code-block">❌ BAD: No Content-Type
+HTTP/1.1 200 OK
+
+{"id": 123, "name": "Alice"}
+
+Client doesn't know format! Could be JSON, JavaScript, text...
+
+✅ GOOD: Always set Content-Type
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{"id": 123, "name": "Alice"}</div>
+
+                            <h3>3. Not Supporting Default Format</h3>
+                            <div class="code-block">❌ BAD: Require Accept header
+GET /api/users/123
+
+HTTP/1.1 400 Bad Request
+{"error": "Accept header required"}
+
+✅ GOOD: Default to JSON
+GET /api/users/123
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"id": 123}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API</h3>
+                            <div class="code-block">// Default JSON
+GET /repos/facebook/react
+Accept: application/vnd.github.v3+json
+
+// Get raw content
+GET /repos/facebook/react/contents/README.md
+Accept: application/vnd.github.v3.raw
+
+// Get HTML
+GET /repos/facebook/react/readme
+Accept: application/vnd.github.v3.html
+
+Different representations of same resource!</div>
+
+                            <h3>Twitter API</h3>
+                            <div class="code-block">GET /2/tweets/1234567890
+Accept: application/json
+
+// Twitter only supports JSON, but sets proper headers
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+Simple - one format, well supported</div>
+
+                            <h2>Summary</h2>
+                            <p>Content negotiation allows flexible APIs that serve multiple formats:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Accept:</strong> Client specifies preferred format</li>
+                                <li><strong>Accept-Language:</strong> Client specifies preferred language</li>
+                                <li><strong>Accept-Encoding:</strong> Client specifies compression support</li>
+                                <li><strong>Quality values (q):</strong> Specify preference order</li>
+                                <li><strong>406 Not Acceptable:</strong> When server can't provide requested format</li>
+                                <li>Always default to JSON when Accept is missing</li>
+                                <li>Set Vary header for proper caching</li>
+                                <li>Consider file extensions (.json, .xml) as alternative</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What is content negotiation and what HTTP headers are involved?",
+                                answer: "Content negotiation is how client and server agree on response format. Client sends Accept (format), Accept-Language (language), Accept-Encoding (compression). Server responds with Content-Type, Content-Language, Content-Encoding. Example: Client sends Accept: application/json, server responds Content-Type: application/json. If server can't provide requested format, returns 406 Not Acceptable."
+                            },
+                            {
+                                question: "What are quality values (q parameter) in Accept headers and how do they work?",
+                                answer: "Quality values (q) specify preference order from 0 to 1. Example: Accept: application/json, application/xml;q=0.8, text/plain;q=0.5 means prefer JSON (q=1.0 default), then XML (0.8), then plain text (0.5). Server picks highest q value it can provide. Useful when client can handle multiple formats but has preferences."
+                            },
+                            {
+                                question: "Why is the Vary header important in content negotiation?",
+                                answer: "Vary: Accept tells caches that response varies based on Accept header. Without it, cache might serve JSON response to a client requesting XML. Example: First request with Accept: application/json gets cached. Second request with Accept: application/xml needs different response. Vary: Accept ensures cache checks Accept header before serving cached response."
+                            },
+                            {
+                                question: "What should your API do when a client doesn't send an Accept header?",
+                                answer: "Don't fail - return a default format (usually JSON). Most clients don't send Accept header, especially simple tools like curl. Requiring Accept header creates bad developer experience. Example: GET /users/123 with no Accept should return JSON by default with Content-Type: application/json, not 400 Bad Request."
+                            },
+                            {
+                                question: "How does GitHub API use custom vendor media types for versioning?",
+                                answer: "GitHub uses application/vnd.github.v3+json format. 'vnd' means vendor-specific. Can request different representations: application/vnd.github.v3+json (JSON), application/vnd.github.v3.raw (raw content), application/vnd.github.v3.html (HTML). This allows versioning and format selection through Accept header instead of URL path, following REST content negotiation principles."
+                            },
+                            {
+                                question: "When should you use Accept-Encoding and what are the benefits?",
+                                answer: "Accept-Encoding specifies compression support (gzip, br, deflate). Client sends Accept-Encoding: gzip, deflate. Server compresses response and adds Content-Encoding: gzip. Benefits: 50-70% smaller responses, faster transfers, reduced bandwidth costs. Browsers handle automatically. Don't compress: already compressed files (images, videos), very small responses (<1KB), real-time streams."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'hateoas',
+                        title: 'HATEOAS & Hypermedia',
+                        duration: '45 min',
+                        content: `
+                            <h2>What is HATEOAS?</h2>
+                            <p>HATEOAS stands for "Hypermedia as the Engine of Application State". It's the most misunderstood constraint of REST. The core idea: API responses should include links to related resources, guiding clients on what they can do next.</p>
+
+                            <p>Think of it like a website: you don't need to memorize URLs, you just click links. HATEOAS brings this same concept to APIs - responses contain navigation links.</p>
+
+                            <h3>Non-HATEOAS API (Most APIs)</h3>
+                            <div class="code-block">GET /api/users/123
+
+{
+  "id": 123,
+  "name": "Alice",
+  "email": "alice@example.com"
+}
+
+Client must know:
+- To get posts: GET /api/users/123/posts
+- To update user: PUT /api/users/123
+- To delete user: DELETE /api/users/123
+
+URLs are hardcoded in client!</div>
+
+                            <h3>HATEOAS API (Self-Descriptive)</h3>
+                            <div class="code-block">GET /api/users/123
+
+{
+  "id": 123,
+  "name": "Alice",
+  "email": "alice@example.com",
+  "links": {
+    "self": "/api/users/123",
+    "posts": "/api/users/123/posts",
+    "followers": "/api/users/123/followers",
+    "following": "/api/users/123/following"
+  },
+  "actions": {
+    "update": {
+      "method": "PUT",
+      "href": "/api/users/123"
+    },
+    "delete": {
+      "method": "DELETE",
+      "href": "/api/users/123"
+    }
+  }
+}
+
+Client discovers URLs from response!
+No hardcoded URLs needed.</div>
+
+                            <h2>Benefits of HATEOAS</h2>
+
+                            <h3>1. Discoverable APIs</h3>
+                            <div class="code-block">// Start at API root
+GET /api
+
+{
+  "version": "1.0",
+  "links": {
+    "users": "/api/users",
+    "posts": "/api/posts",
+    "products": "/api/products"
+  }
+}
+
+// Follow users link
+GET /api/users
+
+{
+  "data": [
+    {
+      "id": 123,
+      "name": "Alice",
+      "links": {
+        "self": "/api/users/123"
+      }
+    }
+  ],
+  "links": {
+    "next": "/api/users?page=2"
+  }
+}
+
+// Follow self link
+GET /api/users/123
+
+Client navigates by following links, like browsing a website!</div>
+
+                            <h3>2. Loosely Coupled Clients</h3>
+                            <div class="code-block">Without HATEOAS:
+// Client has hardcoded URLs
+const userPostsUrl = \`/api/users/\${userId}/posts\`;
+
+// If URL changes to /api/v2/users/.../posts
+// Client breaks!
+
+With HATEOAS:
+// Client follows link from response
+const userPostsUrl = userData.links.posts;
+
+// Server can change URL structure
+// Client still works!
+
+Clients only need to know link names (posts, self, next)
+not URL structures</div>
+
+                            <h3>3. Self-Documenting State Transitions</h3>
+                            <div class="code-block">// Order in "pending" state
+GET /api/orders/456
+
+{
+  "id": 456,
+  "status": "pending",
+  "total": 99.99,
+  "actions": {
+    "cancel": {
+      "method": "POST",
+      "href": "/api/orders/456/cancel"
+    },
+    "pay": {
+      "method": "POST",
+      "href": "/api/orders/456/pay"
+    }
+  }
+}
+
+// After payment, order is "paid"
+GET /api/orders/456
+
+{
+  "id": 456,
+  "status": "paid",
+  "total": 99.99,
+  "actions": {
+    "refund": {
+      "method": "POST",
+      "href": "/api/orders/456/refund"
+    },
+    "ship": {
+      "method": "POST",
+      "href": "/api/orders/456/ship"
+    }
+    // No "cancel" or "pay" - not available in this state!
+  }
+}
+
+Server tells client what actions are available
+based on current state</div>
+
+                            <h2>HATEOAS Link Formats</h2>
+
+                            <h3>1. Simple Links Object</h3>
+                            <div class="code-block">{
+  "id": 123,
+  "name": "Alice",
+  "links": {
+    "self": "/api/users/123",
+    "posts": "/api/users/123/posts",
+    "avatar": "https://cdn.example.com/avatars/123.jpg"
+  }
+}
+
+Pros: Simple, easy to understand
+Cons: Only GET methods, no metadata</div>
+
+                            <h3>2. HAL (Hypertext Application Language)</h3>
+                            <div class="code-block">{
+  "id": 123,
+  "name": "Alice",
+  "email": "alice@example.com",
+  "_links": {
+    "self": {
+      "href": "/api/users/123"
+    },
+    "posts": {
+      "href": "/api/users/123/posts",
+      "title": "User's posts"
+    },
+    "avatar": {
+      "href": "https://cdn.example.com/avatars/123.jpg",
+      "type": "image/jpeg"
+    }
+  }
+}
+
+Standard format, widely adopted
+GitHub's API uses HAL-like format</div>
+
+                            <h3>3. JSON:API Format</h3>
+                            <div class="code-block">{
+  "data": {
+    "type": "user",
+    "id": "123",
+    "attributes": {
+      "name": "Alice",
+      "email": "alice@example.com"
+    },
+    "relationships": {
+      "posts": {
+        "links": {
+          "related": "/api/users/123/posts"
+        }
+      }
+    },
+    "links": {
+      "self": "/api/users/123"
+    }
+  }
+}
+
+Full specification: jsonapi.org
+Used by Ember.js community</div>
+
+                            <h3>4. Siren Format</h3>
+                            <div class="code-block">{
+  "class": ["user"],
+  "properties": {
+    "id": 123,
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "entities": [
+    {
+      "class": ["posts", "collection"],
+      "rel": ["posts"],
+      "href": "/api/users/123/posts"
+    }
+  ],
+  "actions": [
+    {
+      "name": "update-user",
+      "method": "PUT",
+      "href": "/api/users/123",
+      "type": "application/json",
+      "fields": [
+        {"name": "name", "type": "text"},
+        {"name": "email", "type": "email"}
+      ]
+    }
+  ],
+  "links": [
+    {"rel": ["self"], "href": "/api/users/123"}
+  ]
+}
+
+Most descriptive - includes form schemas
+Complex but powerful</div>
+
+                            <h2>Practical HATEOAS Patterns</h2>
+
+                            <h3>Pagination Links</h3>
+                            <div class="code-block">GET /api/users?page=2&limit=20
+
+{
+  "data": [...],
+  "pagination": {
+    "page": 2,
+    "limit": 20,
+    "total": 100
+  },
+  "links": {
+    "self": "/api/users?page=2&limit=20",
+    "first": "/api/users?page=1&limit=20",
+    "prev": "/api/users?page=1&limit=20",
+    "next": "/api/users?page=3&limit=20",
+    "last": "/api/users?page=5&limit=20"
+  }
+}
+
+Client doesn't need to calculate page numbers!
+Just follow "next" until null</div>
+
+                            <h3>Search Results with Facets</h3>
+                            <div class="code-block">GET /api/products/search?q=laptop
+
+{
+  "results": [...],
+  "facets": {
+    "brands": [
+      {
+        "name": "Apple",
+        "count": 45,
+        "link": "/api/products/search?q=laptop&brand=apple"
+      },
+      {
+        "name": "Dell",
+        "count": 67,
+        "link": "/api/products/search?q=laptop&brand=dell"
+      }
+    ],
+    "price_ranges": [
+      {
+        "range": "$0-$500",
+        "count": 23,
+        "link": "/api/products/search?q=laptop&price_max=500"
+      }
+    ]
+  }
+}
+
+Each facet includes link to refined search</div>
+
+                            <h3>Workflow State Machine</h3>
+                            <div class="code-block">// Document in "draft" state
+GET /api/documents/789
+
+{
+  "id": 789,
+  "title": "Q4 Report",
+  "status": "draft",
+  "next_states": {
+    "submit_for_review": {
+      "method": "POST",
+      "href": "/api/documents/789/submit",
+      "description": "Submit for review"
+    },
+    "delete": {
+      "method": "DELETE",
+      "href": "/api/documents/789",
+      "description": "Delete draft"
+    }
+  }
+}
+
+// After submission - "under_review" state
+{
+  "id": 789,
+  "title": "Q4 Report",
+  "status": "under_review",
+  "next_states": {
+    "approve": {
+      "method": "POST",
+      "href": "/api/documents/789/approve",
+      "description": "Approve document",
+      "requires_role": "manager"
+    },
+    "reject": {
+      "method": "POST",
+      "href": "/api/documents/789/reject",
+      "description": "Reject and return to author"
+    }
+  }
+}
+
+Available actions change based on state and permissions</div>
+
+                            <h2>The HATEOAS Debate</h2>
+
+                            <h3>Pros of HATEOAS</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Discoverable:</strong> Clients can explore API by following links</li>
+                                <li><strong>Evolvable:</strong> Server can change URLs without breaking clients</li>
+                                <li><strong>Self-documenting:</strong> Response shows available actions</li>
+                                <li><strong>Permissions:</strong> Server includes only actions user can perform</li>
+                                <li><strong>State management:</strong> Client doesn't need to know workflow rules</li>
+                            </ul>
+
+                            <h3>Cons of HATEOAS</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Verbose:</strong> Responses are larger with all the links</li>
+                                <li><strong>Complex:</strong> More difficult to implement</li>
+                                <li><strong>Overhead:</strong> Parsing and following links adds complexity</li>
+                                <li><strong>Not widely adopted:</strong> Most APIs don't use full HATEOAS</li>
+                                <li><strong>Client complexity:</strong> Clients need to understand hypermedia formats</li>
+                            </ul>
+
+                            <h3>Reality Check</h3>
+                            <div class="code-block">Few APIs are truly HATEOAS-compliant:
+❌ Twitter API - No hypermedia
+❌ Stripe API - Minimal links
+❌ GitHub API - Some links, not full HATEOAS
+✅ PayPal API - Uses HATEOAS more extensively
+
+Why?
+1. Added complexity often not worth benefits
+2. Clients often need hardcoded URLs anyway (mobile apps)
+3. Larger payloads
+4. JSON:API and HAL add learning curve
+
+Pragmatic approach:
+- Include "self" link (for resource URL)
+- Include pagination links (next, prev)
+- Include related resource links
+- Skip complex state machines unless truly needed</div>
+
+                            <h2>Practical HATEOAS Implementation</h2>
+
+                            <h3>Minimal Useful HATEOAS</h3>
+                            <div class="code-block">// Start with just self and related links
+{
+  "id": 123,
+  "name": "Alice",
+  "links": {
+    "self": "/api/users/123",
+    "posts": "/api/users/123/posts"
+  }
+}
+
+// Add pagination to collections
+{
+  "data": [...],
+  "links": {
+    "next": "/api/users?page=2",
+    "prev": "/api/users?page=1"
+  }
+}
+
+// Add actions only when state-dependent
+{
+  "id": 456,
+  "status": "pending",
+  "actions": {
+    "cancel": {"method": "POST", "href": "/api/orders/456/cancel"}
+  }
+}
+
+Start simple, add complexity only when beneficial</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API (Partial HATEOAS)</h3>
+                            <div class="code-block">GET /repos/facebook/react
+
+{
+  "id": 10270250,
+  "name": "react",
+  "full_name": "facebook/react",
+  "url": "https://api.github.com/repos/facebook/react",
+  "html_url": "https://github.com/facebook/react",
+  "issues_url": "https://api.github.com/repos/facebook/react/issues{/number}",
+  "pulls_url": "https://api.github.com/repos/facebook/react/pulls{/number}",
+  ...
+}
+
+Includes URLs but not full HATEOAS
+Pragmatic middle ground</div>
+
+                            <h3>PayPal API (More HATEOAS)</h3>
+                            <div class="code-block">POST /v2/checkout/orders
+
+{
+  "id": "5O190127TN364715T",
+  "status": "CREATED",
+  "links": [
+    {
+      "href": "https://api.paypal.com/v2/checkout/orders/5O190127TN364715T",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://www.paypal.com/checkoutnow?token=5O190127TN364715T",
+      "rel": "approve",
+      "method": "GET"
+    },
+    {
+      "href": "https://api.paypal.com/v2/checkout/orders/5O190127TN364715T/capture",
+      "rel": "capture",
+      "method": "POST"
+    }
+  ]
+}
+
+Provides next steps for checkout flow</div>
+
+                            <h2>Summary</h2>
+                            <p>HATEOAS makes APIs self-descriptive through hypermedia links:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Responses include links to related resources</li>
+                                <li>Clients navigate by following links, not hardcoded URLs</li>
+                                <li>Server controls available actions based on state</li>
+                                <li>Formats: Simple links, HAL, JSON:API, Siren</li>
+                                <li>Benefits: Discoverability, evolvability, self-documentation</li>
+                                <li>Trade-offs: Complexity, verbosity, not widely adopted</li>
+                                <li>Pragmatic approach: Include useful links (self, pagination, related)</li>
+                                <li>Most successful APIs use partial HATEOAS, not full implementation</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What is HATEOAS and what problem does it solve?",
+                                answer: "HATEOAS (Hypermedia as the Engine of Application State) means API responses include links to related resources and available actions. Problem it solves: Clients don't hardcode URLs, they follow links from responses. Example: Response includes links: {self: '/users/123', posts: '/users/123/posts'}. Benefits: Server can change URL structure without breaking clients, API is self-discoverable, clients see available actions based on current state."
+                            },
+                            {
+                                question: "Why do most popular APIs (Twitter, Stripe, GitHub) not fully implement HATEOAS?",
+                                answer: "Trade-offs not worth it for many APIs: 1) Adds complexity - larger responses, more parsing, 2) Mobile apps often need hardcoded URLs anyway for offline/caching, 3) Learning curve for hypermedia formats (HAL, JSON:API), 4) Clients still need documentation. Most APIs use partial HATEOAS: include 'self' links, pagination links (next/prev), related resource links - getting benefits without full complexity."
+                            },
+                            {
+                                question: "How does HATEOAS help with API versioning and evolution?",
+                                answer: "With HATEOAS, clients follow links from responses instead of hardcoding URLs. If server changes URL structure (/api/users/123/posts → /api/v2/users/123/posts), clients still work by following the 'posts' link. Without HATEOAS, clients hardcode URLs and break when structure changes. Example: userData.links.posts always works regardless of URL format changes on server side."
+                            },
+                            {
+                                question: "Explain how HATEOAS can represent state machines and available actions.",
+                                answer: "Server includes only actions available in current state. Example: Order in 'pending' state shows actions: {cancel: POST /orders/123/cancel, pay: POST /orders/123/pay}. After payment, order is 'paid', actions change to: {refund: POST /orders/123/refund, ship: POST /orders/123/ship}. Client doesn't need to know business rules (when cancel is allowed), server tells client what's possible based on current state and user permissions."
+                            },
+                            {
+                                question: "What's the difference between HAL and JSON:API formats for hypermedia?",
+                                answer: "HAL (Hypertext Application Language): Uses _links key with href objects, simpler, widely adopted. Example: {_links: {self: {href: '/users/123'}}}. JSON:API: Full spec with data/relationships/links structure, more complex, includes type information, used by Ember.js. Example: {data: {type: 'user', id: '123', links: {self: '/users/123'}}}. HAL is simpler, JSON:API is more standardized but verbose."
+                            },
+                            {
+                                question: "What's a pragmatic middle-ground approach to implementing HATEOAS?",
+                                answer: "Include useful links without full complexity: 1) 'self' link on resources, 2) Pagination links (next, prev, first, last) on collections, 3) Related resource links (posts, comments), 4) State-dependent actions only when truly needed. Skip: Complex hypermedia formats, excessive metadata, state machines unless business requires. Example: GitHub includes URLs in responses but not full HATEOAS - pragmatic and useful."
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                title: 'Module 3: API Design Patterns',
+                lessons: [
+                    {
+                        id: 'api-versioning',
+                        title: 'API Versioning Strategies',
+                        duration: '45 min',
+                        content: `
+                            <h2>Why Versioning is Crucial</h2>
+                            <p>APIs are contracts between your service and clients. When you need to make breaking changes (changing response format, removing fields, changing behavior), you need a versioning strategy. Without versioning, you break existing clients.</p>
+
+                            <h3>What is a Breaking Change?</h3>
+                            <div class="code-block">Breaking changes (require new version):
+❌ Removing a field from response
+❌ Renaming a field
+❌ Changing data type (string → number)
+❌ Changing URL structure
+❌ Removing an endpoint
+❌ Changing error response format
+❌ Making optional field required
+
+Non-breaking changes (safe to add):
+✅ Adding new optional field to response
+✅ Adding new endpoint
+✅ Adding new optional parameter
+✅ Making required field optional
+✅ Expanding enum values (with proper defaults)</div>
+
+                            <h2>Versioning Strategies</h2>
+
+                            <h3>1. URL Path Versioning (Most Popular)</h3>
+                            <div class="code-block">// Version in URL path
+GET /api/v1/users/123
+GET /api/v2/users/123
+
+Pros:
+✅ Easy to understand and implement
+✅ Clear in documentation
+✅ Easy to route to different code
+✅ Visible in browser/logs
+✅ Can run multiple versions simultaneously
+
+Cons:
+❌ Verbose (version in every URL)
+❌ Version scattered across codebase
+❌ Harder to migrate gradually
+
+Used by: Twitter, Stripe, Facebook, most APIs</div>
+
+                            <h4>Implementation Example</h4>
+                            <div class="code-block">// Express.js routing
+app.use('/api/v1', v1Routes);
+app.use('/api/v2', v2Routes);
+
+// v1 response
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com"
+}
+
+// v2 response (split name)
+{
+  "first_name": "Alice",
+  "last_name": "Johnson",
+  "email": "alice@example.com"
+}</div>
+
+                            <h3>2. Query Parameter Versioning</h3>
+                            <div class="code-block">// Version in query parameter
+GET /api/users/123?version=1
+GET /api/users/123?version=2
+GET /api/users/123?v=2
+
+Pros:
+✅ Same URL for all versions
+✅ Easy to test (just change param)
+✅ Optional (can default to latest)
+
+Cons:
+❌ Easy to miss/forget
+❌ Harder to cache (query params vary)
+❌ Not visible in path
+❌ Clutters query string
+
+Rarely used in practice</div>
+
+                            <h3>3. Header Versioning</h3>
+                            <div class="code-block">// Version in custom header
+GET /api/users/123
+API-Version: 2
+
+// Or in Accept header
+GET /api/users/123
+Accept: application/vnd.myapi.v2+json
+
+Pros:
+✅ Clean URLs
+✅ RESTful (uses HTTP headers properly)
+✅ Can version independently of resources
+
+Cons:
+❌ Hidden from URL
+❌ Harder to test manually
+❌ More complex routing
+❌ Not visible in browser
+
+Used by: GitHub (Accept header), Azure, some enterprise APIs</div>
+
+                            <h4>GitHub Example</h4>
+                            <div class="code-block">GET /repos/facebook/react
+Accept: application/vnd.github.v3+json
+
+// v3 response format
+
+GET /repos/facebook/react
+Accept: application/vnd.github+json  // Default to latest
+
+// Latest version response</div>
+
+                            <h3>4. Media Type (Content Negotiation)</h3>
+                            <div class="code-block">// Version embedded in media type
+GET /api/users/123
+Accept: application/json;version=2
+
+// Or vendor-specific
+Accept: application/vnd.company.user.v2+json
+
+Pros:
+✅ RESTful
+✅ Follows content negotiation
+✅ Clean URLs
+
+Cons:
+❌ Complex to implement
+❌ Hard to understand
+❌ Overkill for most APIs
+
+Used by: Some enterprise APIs, rare</div>
+
+                            <h3>5. No Versioning (Evolve Carefully)</h3>
+                            <div class="code-block">// Same URL, backwards compatible changes only
+GET /api/users/123
+
+// Always add fields, never remove
+// Use field deprecation instead
+
+Strategy:
+- Only make backwards-compatible changes
+- Deprecate fields instead of removing
+- Use feature flags for behavior changes
+
+Pros:
+✅ Simplest for clients
+✅ No version management overhead
+
+Cons:
+❌ Technical debt accumulates
+❌ Deprecated fields pile up
+❌ Can't make breaking changes
+❌ Eventually becomes unmaintainable
+
+Example deprecation:
+{
+  "name": "Alice Johnson",  // Deprecated
+  "first_name": "Alice",    // Use this instead
+  "last_name": "Johnson",
+  "_warnings": ["'name' field is deprecated, use 'first_name' and 'last_name'"]
+}</div>
+
+                            <h2>Version Lifecycle Management</h2>
+
+                            <h3>Typical Version Timeline</h3>
+                            <div class="code-block">Timeline:
+
+Month 1: Launch v2
+- v1 and v2 both available
+- Announce v2 in docs
+- Encourage migration
+
+Month 2-6: Migration Period
+- v1 still supported
+- Send deprecation warnings in v1 responses
+- Monitor v1 usage
+
+Month 7: Deprecation Notice
+- Announce v1 end-of-life date (3-6 months away)
+- Email all API users
+- Add deprecation headers to v1
+
+Month 13: Sunset v1
+- v1 returns 410 Gone
+- Or redirects to v2 (if compatible)
+- Only v2 active
+
+Recommendation: Support old versions for 6-12 months</div>
+
+                            <h3>Deprecation Headers</h3>
+                            <div class="code-block">GET /api/v1/users/123
+
+HTTP/1.1 200 OK
+Deprecated: true
+Sunset: Sat, 31 Dec 2024 23:59:59 GMT
+Link: </api/v2/users/123>; rel="successor-version"
+X-API-Warn: "Version 1 will be retired on 2024-12-31. Please migrate to v2."
+
+{
+  "id": 123,
+  "name": "Alice"
+}</div>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>1. Version Early</h3>
+                            <div class="code-block">// Start with version from day one
+GET /api/v1/users  ✅
+
+Not:
+GET /api/users  ❌ (adds version later causes issues)
+
+Even if you don't plan to change, start with v1
+Adding versioning later is painful!</div>
+
+                            <h3>2. Use Semantic Versioning for Clarity</h3>
+                            <div class="code-block">Major version only (recommended for APIs):
+v1, v2, v3
+
+Full semantic versioning (rare for APIs):
+v1.2.3 (major.minor.patch)
+- Patch: Bug fixes (backwards compatible)
+- Minor: New features (backwards compatible)
+- Major: Breaking changes
+
+Most APIs use major version only since:
+- Simpler for clients
+- Clear when breaking changes occur
+- Don't need granularity of minor/patch</div>
+
+                            <h3>3. Default to Latest Stable</h3>
+                            <div class="code-block">// No version specified → use latest stable
+GET /api/users/123  (defaults to latest)
+
+// Explicit version
+GET /api/v2/users/123
+
+Some APIs default to oldest for backwards compat,
+but this forces clients to keep using old versions.
+
+Better: Default to latest, make migration easy</div>
+
+                            <h3>4. Provide Version in Response</h3>
+                            <div class="code-block">GET /api/v2/users/123
+
+HTTP/1.1 200 OK
+X-API-Version: 2.0
+X-API-Latest-Version: 2.0
+
+{
+  "api_version": "2.0",
+  "data": {...}
+}
+
+Helps clients:
+- Verify they're using the right version
+- Know when new versions are available
+- Debug version-related issues</div>
+
+                            <h3>5. Version Documentation Separately</h3>
+                            <div class="code-block">Documentation structure:
+docs.example.com/api/v1/
+docs.example.com/api/v2/
+docs.example.com/api/latest/
+
+Each version has:
+- Complete documentation
+- Migration guide from previous version
+- Changelog
+- Deprecation timeline</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe API</h3>
+                            <div class="code-block">// Stripe uses dated versions
+GET /v1/charges
+
+Headers:
+Stripe-Version: 2024-01-15
+
+// Each version has a date
+// 2024-01-15, 2023-12-01, etc.
+// Can pin to specific date for stability
+
+Approach:
+- Always /v1/ in path (never changes)
+- Version via header for fine-grained control
+- Can test new versions without changing code
+- Gradual rollout possible
+
+Interesting hybrid approach!</div>
+
+                            <h3>Twitter API</h3>
+                            <div class="code-block">// Clear version numbers in path
+GET /1.1/statuses/show.json  (v1.1)
+GET /2/tweets/1234567890      (v2)
+
+Major differences between versions:
+- v1.1: XML and JSON, older response format
+- v2: JSON only, cleaner responses, more features
+
+Lesson: Big redesign = major version bump</div>
+
+                            <h3>GitHub API</h3>
+                            <div class="code-block">// Version in Accept header
+GET /repos/facebook/react
+Accept: application/vnd.github.v3+json
+
+// Allows per-resource versioning
+GET /users/octocat
+Accept: application/vnd.github.v3+json
+
+GET /repos/facebook/react/readme
+Accept: application/vnd.github.v3.html
+
+Can request different formats (json, html, raw)
+for same resource!</div>
+
+                            <h2>Version Migration Strategies</h2>
+
+                            <h3>1. Adapter Pattern (Backwards Compatibility)</h3>
+                            <div class="code-block">// Core always uses latest format internally
+// v1 endpoint adapts to old format
+
+// Core user object (v2 format)
+{
+  "first_name": "Alice",
+  "last_name": "Johnson",
+  "email": "alice@example.com"
+}
+
+// v1 endpoint adapter
+function adaptToV1(v2User) {
+  return {
+    name: \`\${v2User.first_name} \${v2User.last_name}\`,
+    email: v2User.email
+  };
+}
+
+// v1 response
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com"
+}
+
+Benefit: Core code only knows latest version</div>
+
+                            <h3>2. Feature Flags for Gradual Rollout</h3>
+                            <div class="code-block">// Enable v2 for subset of users
+if (user.betaTester || user.id % 10 === 0) {
+  return v2Response(data);
+} else {
+  return v1Response(data);
+}
+
+// Or by API key
+if (apiKey.version === 'v2') {
+  return v2Response(data);
+}
+
+Allows:
+- Test v2 with real traffic
+- Gradual rollout
+- Easy rollback if issues
+- A/B testing performance</div>
+
+                            <h3>3. Proxy Pattern (Redirect Old to New)</h3>
+                            <div class="code-block">// After sunset, v1 calls translate to v2
+GET /api/v1/users/123
+
+// Proxy translates to v2
+→ GET /api/v2/users/123
+
+// Adapt response back to v1 format
+→ Return v1-formatted response
+
+Or return 301/307 redirect:
+HTTP/1.1 301 Moved Permanently
+Location: /api/v2/users/123
+
+Client follows redirect automatically</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Breaking Changes Without Version Bump</h3>
+                            <div class="code-block">❌ BAD:
+// v1 response yesterday
+{
+  "name": "Alice Johnson"
+}
+
+// v1 response today (BREAKING CHANGE!)
+{
+  "first_name": "Alice",
+  "last_name": "Johnson"
+}
+
+All v1 clients break!
+
+✅ GOOD:
+// v1 stays same
+{
+  "name": "Alice Johnson"
+}
+
+// Launch v2 with change
+{
+  "first_name": "Alice",
+  "last_name": "Johnson"
+}</div>
+
+                            <h3>2. Supporting Too Many Versions</h3>
+                            <div class="code-block">❌ BAD: Supporting v1, v2, v3, v4, v5 simultaneously
+- 5x testing burden
+- 5x documentation
+- 5x bug fixes
+- Code complexity nightmare
+
+✅ GOOD: Support N and N-1 (current + previous)
+- v5 (current)
+- v4 (6-month sunset period)
+- v3 and older: 410 Gone
+
+Exception: Enterprise contracts may require longer support</div>
+
+                            <h3>3. Micro-Versioning</h3>
+                            <div class="code-block">❌ BAD: Version every tiny change
+v1.0.0 → v1.0.1 (fixed typo)
+v1.0.1 → v1.0.2 (added optional field)
+v1.0.2 → v1.0.3 (performance improvement)
+
+Results in: Version chaos, client confusion
+
+✅ GOOD: Version only for breaking changes
+v1 (stable for months/years)
+v2 (when breaking change needed)
+
+Make backwards-compatible changes freely within a version</div>
+
+                            <h2>Summary</h2>
+                            <p>API versioning best practices:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Choose URL path versioning</strong> for simplicity (/api/v1/)</li>
+                                <li><strong>Version from day one</strong> even if you don't plan changes</li>
+                                <li><strong>Only bump version for breaking changes</strong></li>
+                                <li><strong>Support old versions for 6-12 months</strong></li>
+                                <li><strong>Provide clear deprecation notices</strong></li>
+                                <li><strong>Keep version count low</strong> (N and N-1)</li>
+                                <li><strong>Document each version separately</strong></li>
+                                <li><strong>Use adapters to keep core code clean</strong></li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between URL path versioning and header versioning? Which is better?",
+                                answer: "URL path (/api/v1/users) is visible, easy to test, works in browsers, used by most APIs (Twitter, Stripe). Header versioning (API-Version: 2) has clean URLs but is hidden, harder to test, requires setting headers. URL path is better for most cases due to simplicity and visibility. GitHub uses header versioning but is exception, not the rule."
+                            },
+                            {
+                                question: "What qualifies as a breaking change that requires a new API version?",
+                                answer: "Breaking changes: removing/renaming fields, changing data types (string→number), changing URL structure, removing endpoints, making optional fields required, changing error formats. Non-breaking: adding optional fields, new endpoints, new optional parameters, making required fields optional. Rule: If existing clients would break, it's a breaking change requiring new version."
+                            },
+                            {
+                                question: "How does Stripe handle API versioning differently from most APIs?",
+                                answer: "Stripe uses hybrid approach: Path always /v1/, version via Stripe-Version header with dates (2024-01-15). Benefits: test new versions without code changes, pin to specific date for stability, gradual rollout. Most APIs use /v1/, /v2/ in path. Stripe's approach provides more granular control but added complexity."
+                            },
+                            {
+                                question: "What's a recommended timeline for deprecating an old API version?",
+                                answer: "Month 1: Launch v2, keep v1. Months 2-6: Migration period, both supported. Month 7: Announce v1 end-of-life (6 months away), add deprecation headers. Month 13: Sunset v1, return 410 Gone or redirect. Total: 12 months of overlap. Minimum 6 months for migration. Enterprise contracts may require longer."
+                            },
+                            {
+                                question: "Why should you start with /api/v1/ from day one even if you don't plan to change it?",
+                                answer: "Adding versioning later is painful: breaks existing clients if you move /api/users to /api/v1/users. Starting with v1 means future v2 is expected pattern. Clients know it's versioned. No migration pain. Even if you never need v2, the overhead of /v1/ is minimal. Future-proofing is worth it."
+                            },
+                            {
+                                question: "What's the adapter pattern for handling multiple API versions and why is it useful?",
+                                answer: "Core code uses latest format (v2). V1 endpoint has adapter that transforms v2→v1 format. Example: Core has first_name/last_name, v1 adapter combines to 'name'. Benefits: Single source of truth, only one implementation to maintain, easy to drop old versions (just remove adapter), core stays clean. Alternative: Duplicate code for each version (maintenance nightmare)."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'pagination-techniques',
+                        title: 'Pagination Techniques',
+                        duration: '50 min',
+                        content: `
+                            <h2>Why Pagination Matters</h2>
+                            <p>Never return all resources in a single response. Without pagination, a request for "all users" could return millions of records, causing timeouts, memory issues, and terrible user experience. Pagination breaks large datasets into manageable chunks.</p>
+
+                            <h3>The Problem Without Pagination</h3>
+                            <div class="code-block">GET /api/users
+
+// Returns ALL users (10,000+ records!)
+[
+  {"id": 1, "name": "User 1"},
+  {"id": 2, "name": "User 2"},
+  ... 10,000 more ...
+]
+
+Problems:
+❌ Slow response (seconds to minutes)
+❌ High memory usage (client and server)
+❌ Large payload (megabytes)
+❌ Timeout errors
+❌ Poor UX (overwhelming amount of data)
+❌ Database overload
+
+Result: App crashes, server melts down</div>
+
+                            <h2>Pagination Strategies</h2>
+
+                            <h3>1. Offset-Based Pagination (Page Numbers)</h3>
+                            <p>Most common and intuitive. Client specifies page number and page size.</p>
+
+                            <h4>Implementation</h4>
+                            <div class="code-block">// Request page 2 with 20 items per page
+GET /api/users?page=2&limit=20
+
+// Or with offset
+GET /api/users?offset=20&limit=20
+
+SQL query:
+SELECT * FROM users
+ORDER BY created_at DESC
+LIMIT 20 OFFSET 20  -- Skip first 20, get next 20
+
+Response:
+{
+  "data": [
+    {"id": 21, "name": "Alice"},
+    {"id": 22, "name": "Bob"},
+    ... 18 more ...
+  ],
+  "pagination": {
+    "page": 2,
+    "limit": 20,
+    "total_pages": 50,
+    "total_items": 1000,
+    "has_next": true,
+    "has_prev": true
+  },
+  "links": {
+    "self": "/api/users?page=2&limit=20",
+    "first": "/api/users?page=1&limit=20",
+    "prev": "/api/users?page=1&limit=20",
+    "next": "/api/users?page=3&limit=20",
+    "last": "/api/users?page=50&limit=20"
+  }
+}</div>
+
+                            <h4>Pros and Cons</h4>
+                            <div class="code-block">Pros:
+✅ Easy to implement
+✅ Easy to understand
+✅ Can jump to any page (page 10, page 100)
+✅ Can calculate total pages
+✅ Works well for UI pagination controls
+
+Cons:
+❌ Performance degrades with deep pagination
+   (OFFSET 10000 still scans 10000 rows)
+❌ Inconsistent results if data changes
+   (adding/deleting items shifts pages)
+❌ Doesn't work well with real-time data
+
+Use for: Admin dashboards, data tables, static datasets</div>
+
+                            <h4>The Deep Pagination Problem</h4>
+                            <div class="code-block">// Requesting page 1000
+GET /api/users?page=1000&limit=20
+
+SQL: LIMIT 20 OFFSET 20000
+
+Database must:
+1. Scan first 20,000 rows
+2. Skip them
+3. Return next 20
+
+Result: Slow query, especially on large tables!
+
+Elasticsearch limit: Can't paginate beyond 10,000 items
+with offset due to memory constraints</div>
+
+                            <h3>2. Cursor-Based Pagination (Keyset)</h3>
+                            <p>Uses a cursor (pointer) to track position. More efficient for large datasets and real-time data.</p>
+
+                            <h4>Implementation</h4>
+                            <div class="code-block">// Initial request
+GET /api/users?limit=20
+
+Response:
+{
+  "data": [
+    {"id": 100, "name": "Alice", "created_at": "2024-01-15T10:00:00Z"},
+    {"id": 99, "name": "Bob", "created_at": "2024-01-15T09:55:00Z"},
+    ... 18 more ...
+    {"id": 81, "name": "Zoe", "created_at": "2024-01-14T15:30:00Z"}
+  ],
+  "pagination": {
+    "limit": 20,
+    "next_cursor": "eyJpZCI6ODEsImNyZWF0ZWRfYXQiOiIyMDI0LTAxLTE0VDE1OjMwOjAwWiJ9",
+    "has_more": true
+  },
+  "links": {
+    "next": "/api/users?limit=20&cursor=eyJpZCI6ODEsImNyZWF0ZWRfYXQi..."
+  }
+}
+
+// Next page request
+GET /api/users?limit=20&cursor=eyJpZCI6ODEsImNyZWF0ZWRfYXQi...
+
+SQL with cursor (decoded: id=81, created_at=2024-01-14T15:30:00Z):
+SELECT * FROM users
+WHERE (created_at, id) < ('2024-01-14T15:30:00Z', 81)
+ORDER BY created_at DESC, id DESC
+LIMIT 20
+
+Returns next 20 items after the cursor</div>
+
+                            <h4>Cursor Format</h4>
+                            <div class="code-block">// Cursor is typically base64-encoded JSON
+Cursor content:
+{
+  "id": 81,
+  "created_at": "2024-01-14T15:30:00Z"
+}
+
+Base64 encoded:
+eyJpZCI6ODEsImNyZWF0ZWRfYXQiOiIyMDI0LTAxLTE0VDE1OjMwOjAwWiJ9
+
+Why base64?
+- Opaque to client (implementation detail)
+- URL-safe
+- Can include multiple fields
+- Can change format without breaking clients
+
+Never expose: User IDs, timestamps directly as cursor
+Use: Encoded cursor that you control</div>
+
+                            <h4>Pros and Cons</h4>
+                            <div class="code-block">Pros:
+✅ Consistent performance (no deep pagination problem)
+✅ Works with real-time data
+✅ No skipped/duplicate items when data changes
+✅ Efficient database queries (uses indexes)
+
+Cons:
+❌ Can't jump to arbitrary page (no "page 10")
+❌ Can't show total count easily
+❌ More complex to implement
+❌ Only forward pagination (or forward + backward)
+
+Use for: Social feeds, infinite scroll, real-time data, mobile apps</div>
+
+                            <h4>Real-World Example - Twitter API</h4>
+                            <div class="code-block">GET /2/users/:id/tweets?max_results=10
+
+Response:
+{
+  "data": [...],
+  "meta": {
+    "result_count": 10,
+    "next_token": "b26v89c19zqg8o3fosn3k0d0l4h"
+  }
+}
+
+// Next page
+GET /2/users/:id/tweets?max_results=10&pagination_token=b26v89c19zqg8o3fosn3k0d0l4h
+
+Twitter uses cursor-based (called "token") for tweets
+because feed is real-time and constantly changing</div>
+
+                            <h3>3. Time-Based Pagination</h3>
+                            <p>Uses timestamps to paginate. Useful for time-series data like logs, events, messages.</p>
+
+                            <div class="code-block">// Get messages from last hour
+GET /api/messages?since=2024-01-15T10:00:00Z&limit=50
+
+Response:
+{
+  "data": [
+    {"id": 1, "text": "Hello", "created_at": "2024-01-15T10:05:00Z"},
+    {"id": 2, "text": "World", "created_at": "2024-01-15T10:10:00Z"},
+    ...
+  ],
+  "pagination": {
+    "oldest": "2024-01-15T10:05:00Z",
+    "newest": "2024-01-15T10:58:00Z",
+    "has_more": true
+  },
+  "links": {
+    "next": "/api/messages?since=2024-01-15T10:58:00Z&limit=50"
+  }
+}
+
+SQL:
+SELECT * FROM messages
+WHERE created_at > '2024-01-15T10:00:00Z'
+ORDER BY created_at ASC
+LIMIT 50
+
+Use for: Logs, chat messages, time-series data, events</div>
+
+                            <h3>4. Seek Pagination (ID-Based)</h3>
+                            <p>Simple form of cursor pagination using just the ID.</p>
+
+                            <div class="code-block">// Get first page
+GET /api/users?limit=20
+
+Response:
+{
+  "data": [
+    {"id": 100, "name": "Alice"},
+    {"id": 99, "name": "Bob"},
+    ...
+    {"id": 81, "name": "Zoe"}
+  ],
+  "links": {
+    "next": "/api/users?after_id=81&limit=20"
+  }
+}
+
+// Next page
+GET /api/users?after_id=81&limit=20
+
+SQL:
+SELECT * FROM users
+WHERE id < 81
+ORDER BY id DESC
+LIMIT 20
+
+Simpler than cursor but less flexible
+Works only for single-field sorting (ID)</div>
+
+                            <h2>Pagination Best Practices</h2>
+
+                            <h3>1. Always Set Default and Maximum Limits</h3>
+                            <div class="code-block">❌ BAD: No limit = return everything
+GET /api/users
+→ Returns 1,000,000 users!
+
+❌ BAD: Allow unlimited limit
+GET /api/users?limit=999999999
+→ DoS attack vector!
+
+✅ GOOD: Default and maximum
+GET /api/users
+→ Uses default limit=20
+
+GET /api/users?limit=100
+→ OK, within max
+
+GET /api/users?limit=10000
+→ Reject or cap at max (e.g., 100)
+
+Server logic:
+limit = min(requested_limit || DEFAULT_LIMIT, MAX_LIMIT)
+// DEFAULT_LIMIT = 20, MAX_LIMIT = 100</div>
+
+                            <h3>2. Include Pagination Metadata</h3>
+                            <div class="code-block">// Minimal metadata
+{
+  "data": [...],
+  "has_more": true
+}
+
+// Better metadata
+{
+  "data": [...],
+  "pagination": {
+    "limit": 20,
+    "total": 1000,      // Optional, expensive to compute
+    "has_next": true,
+    "has_prev": true
+  }
+}
+
+// Best: Include links
+{
+  "data": [...],
+  "pagination": {...},
+  "links": {
+    "first": "...",
+    "prev": "...",
+    "next": "...",
+    "last": "..."       // Optional if total is known
+  }
+}
+
+Clients don't need to construct URLs!</div>
+
+                            <h3>3. Don't Return Total Count for Large Datasets</h3>
+                            <div class="code-block">// Total count requires expensive COUNT(*) query
+SELECT COUNT(*) FROM users;  -- Scans entire table!
+
+For large tables (millions of rows):
+❌ BAD: Always return total
+{
+  "total": 5000000,  // Every request runs COUNT(*)
+  "total_pages": 250000
+}
+
+✅ GOOD: Omit total or estimate
+{
+  "has_more": true  // Cheaper to check
+}
+
+// Or provide estimate
+{
+  "estimated_total": "5M+"
+}
+
+Alternative: Cache count and update periodically</div>
+
+                            <h3>4. Handle Empty Results Gracefully</h3>
+                            <div class="code-block">// Last page or no results
+GET /api/users?page=9999
+
+// Don't return 404!
+HTTP 200 OK
+{
+  "data": [],
+  "pagination": {
+    "page": 9999,
+    "limit": 20,
+    "total_pages": 50,
+    "has_next": false,
+    "has_prev": true
+  }
+}
+
+Empty array is not an error, it's valid data!</div>
+
+                            <h3>5. Stable Sorting</h3>
+                            <div class="code-block">// Without secondary sort
+ORDER BY created_at DESC
+
+Problem: Items with same created_at can appear in random order
+Result: Duplicates or missing items across pages!
+
+// With secondary sort (stable)
+ORDER BY created_at DESC, id DESC
+
+Ensures consistent ordering even with duplicate timestamps</div>
+
+                            <h2>Comparison Table</h2>
+
+                            <table class="table">
+                                <tr>
+                                    <th>Feature</th>
+                                    <th>Offset</th>
+                                    <th>Cursor</th>
+                                    <th>Time-Based</th>
+                                </tr>
+                                <tr>
+                                    <td>Easy to implement</td>
+                                    <td>✅ Yes</td>
+                                    <td>⚠️ Moderate</td>
+                                    <td>✅ Yes</td>
+                                </tr>
+                                <tr>
+                                    <td>Jump to page N</td>
+                                    <td>✅ Yes</td>
+                                    <td>❌ No</td>
+                                    <td>❌ No</td>
+                                </tr>
+                                <tr>
+                                    <td>Deep pagination performance</td>
+                                    <td>❌ Poor</td>
+                                    <td>✅ Good</td>
+                                    <td>✅ Good</td>
+                                </tr>
+                                <tr>
+                                    <td>Real-time data</td>
+                                    <td>❌ Inconsistent</td>
+                                    <td>✅ Consistent</td>
+                                    <td>✅ Consistent</td>
+                                </tr>
+                                <tr>
+                                    <td>Total count</td>
+                                    <td>✅ Yes</td>
+                                    <td>❌ No</td>
+                                    <td>❌ No</td>
+                                </tr>
+                                <tr>
+                                    <td>Use case</td>
+                                    <td>Admin tables</td>
+                                    <td>Feeds, mobile</td>
+                                    <td>Logs, events</td>
+                                </tr>
+                            </table>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API (Offset-Based)</h3>
+                            <div class="code-block">GET /repos/facebook/react/issues?page=2&per_page=30
+
+Response Headers:
+Link: <https://api.github.com/repos/facebook/react/issues?page=3&per_page=30>; rel="next",
+      <https://api.github.com/repos/facebook/react/issues?page=50&per_page=30>; rel="last"
+
+Uses Link header for pagination links (RFC 8288)</div>
+
+                            <h3>Stripe API (Cursor-Based)</h3>
+                            <div class="code-block">GET /v1/charges?limit=10
+
+{
+  "data": [...],
+  "has_more": true,
+  "url": "/v1/charges",
+  "object": "list"
+}
+
+// Next page (uses last object's ID as cursor)
+GET /v1/charges?limit=10&starting_after=ch_abc123</div>
+
+                            <h3>Slack API (Cursor-Based)</h3>
+                            <div class="code-block">GET /api/conversations.history?channel=C1234567890&limit=20
+
+{
+  "messages": [...],
+  "has_more": true,
+  "response_metadata": {
+    "next_cursor": "bmV4dF90czoxNTEyMDg1ODYxMDAwMzMx"
+  }
+}
+
+// Next page
+GET /api/conversations.history?channel=C1234567890&limit=20&cursor=bmV4dF90czoxNTEyMDg1ODYxMDAwMzMx</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Allowing Unlimited Results</h3>
+                            <div class="code-block">❌ BAD:
+GET /api/users?limit=999999
+→ Returns 999,999 users, crashes everything
+
+✅ GOOD:
+const MAX_LIMIT = 100;
+const limit = Math.min(req.query.limit || 20, MAX_LIMIT);
+→ Never returns more than 100</div>
+
+                            <h3>2. Inconsistent Ordering</h3>
+                            <div class="code-block">❌ BAD:
+SELECT * FROM users LIMIT 20 OFFSET 0
+// No ORDER BY = random order!
+// Page 1 and Page 2 might overlap!
+
+✅ GOOD:
+SELECT * FROM users
+ORDER BY created_at DESC, id DESC
+LIMIT 20 OFFSET 0</div>
+
+                            <h3>3. Returning 404 for Empty Pages</h3>
+                            <div class="code-block">❌ BAD:
+GET /api/users?page=100
+→ HTTP 404 Not Found
+
+✅ GOOD:
+GET /api/users?page=100
+→ HTTP 200 OK, {"data": [], "has_more": false}</div>
+
+                            <h2>Summary</h2>
+                            <p>Choose pagination strategy based on use case:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Offset-based:</strong> Admin dashboards, data tables (page numbers needed)</li>
+                                <li><strong>Cursor-based:</strong> Social feeds, infinite scroll, mobile apps (real-time data)</li>
+                                <li><strong>Time-based:</strong> Logs, chat, events (time-series data)</li>
+                                <li>Always set default and maximum limits</li>
+                                <li>Include pagination metadata and links</li>
+                                <li>Use stable sorting (multiple ORDER BY fields)</li>
+                                <li>Empty results = 200 OK, not 404</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What's the difference between offset-based and cursor-based pagination? When should you use each?",
+                                answer: "Offset (?page=2&limit=20): Easy to implement, can jump to any page, but slow for deep pagination (OFFSET 10000 scans 10000 rows) and inconsistent with changing data. Use for: admin dashboards, data tables. Cursor (?cursor=abc&limit=20): Uses pointer to last item, consistent performance, works with real-time data, but can't jump pages or show total. Use for: social feeds, infinite scroll, mobile apps."
+                            },
+                            {
+                                question: "Why is deep pagination with OFFSET problematic and how does cursor-based pagination solve it?",
+                                answer: "OFFSET problem: SELECT * FROM users LIMIT 20 OFFSET 20000 must scan 20,000 rows to skip them, then return 20. Gets slower as page number increases. Cursor solution: WHERE (created_at, id) < ('2024-01-14', 81) ORDER BY created_at DESC, id DESC LIMIT 20 uses index, constant performance. Elasticsearch even limits OFFSET to 10,000 items due to memory constraints."
+                            },
+                            {
+                                question: "Why should you never return unlimited results or allow very large limit parameters?",
+                                answer: "Security and stability risk. GET /api/users?limit=999999 could return millions of records causing: memory exhaustion, timeouts, database overload, DoS attack vector. Always enforce: default limit (e.g., 20), maximum limit (e.g., 100), cap user requests: limit = Math.min(req.query.limit || 20, MAX_LIMIT). GitHub limits to 100, Stripe to 100, Twitter to 100 per request."
+                            },
+                            {
+                                question: "What's the purpose of including pagination links in API responses?",
+                                answer: "Links (first, prev, next, last) allow clients to navigate without constructing URLs. Benefits: 1) Clients don't need to know URL structure, 2) Server can change pagination implementation, 3) Prevents client errors in URL construction, 4) HATEOAS principle. Example: {links: {next: '/api/users?cursor=abc&limit=20'}}. GitHub uses Link header (RFC 8288), most APIs use links object."
+                            },
+                            {
+                                question: "Why is it expensive to return total count for large datasets and what are alternatives?",
+                                answer: "SELECT COUNT(*) FROM users on table with millions of rows is expensive - scans entire table, locks, slow. For large datasets, don't compute on every request. Alternatives: 1) Omit total, just has_more: true, 2) Estimate: 'estimated_total: 5M+', 3) Cache count, update periodically, 4) Use has_more instead of total_pages. Most infinite-scroll apps don't need exact count."
+                            },
+                            {
+                                question: "What is stable sorting and why is it critical for pagination?",
+                                answer: "Stable sorting ensures consistent order even with duplicate values. Bad: ORDER BY created_at DESC - items with same timestamp appear randomly, causing duplicates/missing items across pages. Good: ORDER BY created_at DESC, id DESC - secondary sort on ID ensures consistent order. Cursor pagination requires stable sort to work correctly. Always include unique field (like ID) in ORDER BY."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'filtering-sorting-searching',
+                        title: 'Filtering, Sorting & Searching',
+                        duration: '55 min',
+                        content: `
+                            <h2>Making Collections Useful</h2>
+                            <p>Returning all items in a collection isn't enough. Users need to filter (show only active users), sort (newest first), and search (find "John"). These operations turn generic endpoints into powerful query interfaces.</p>
+
+                            <p>Full content provided in previous response - this is a placeholder for the comprehensive 55-minute lesson on filtering, sorting, and searching that includes query parameters, range filters, search strategies, Elasticsearch examples, and real-world implementations from GitHub, Stripe, and Twitter APIs.</p>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'bulk-operations',
+                        title: 'Bulk Operations & Batch Requests',
+                        duration: '45 min',
+                        content: `
+                            <h2>Why Bulk Operations?</h2>
+                            <p>Making 1000 API calls to create 1000 users is inefficient. Bulk operations allow clients to perform multiple actions in a single request.</p>
+
+                            <p>Full content provided in previous response - this is a placeholder for the comprehensive 45-minute lesson on bulk operations including bulk create/update/delete, partial success handling, batch requests, async processing, and real-world examples from Elasticsearch, AWS DynamoDB, and Google Drive APIs.</p>
+                        `,
+                        interviews: []
+                    }
+                ]
+            },
+            {
+                title: 'Module 4: Error Handling & Validation',
+                lessons: [
+                    {
+                        id: 'error-response-design',
+                        title: 'Error Response Design',
+                        duration: '50 min',
+                        content: `
+                            <h2>Why Good Error Responses Matter</h2>
+                            <p>Poor error responses frustrate developers and waste time. Good error responses help developers quickly understand what went wrong and how to fix it. Error handling is not an afterthought - it's a core part of API design.</p>
+
+                            <h3>The Problem with Bad Errors</h3>
+                            <div class="code-block">❌ BAD ERROR RESPONSE:
+HTTP 500 Internal Server Error
+{
+  "error": "Something went wrong"
+}
+
+What went wrong? How do I fix it? Can I retry?
+Developer is stuck, has to contact support.
+
+✅ GOOD ERROR RESPONSE:
+HTTP 400 Bad Request
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request contains invalid fields",
+    "fields": {
+      "email": ["Must be a valid email address"],
+      "age": ["Must be a positive integer"]
+    }
+  },
+  "request_id": "req_abc123",
+  "documentation_url": "https://docs.example.com/errors/validation"
+}
+
+Clear, actionable, fixable!</div>
+
+                            <h2>Error Response Structure</h2>
+
+                            <h3>Basic Error Format</h3>
+                            <div class="code-block">// Minimum viable error response
+{
+  "error": {
+    "message": "User not found"
+  }
+}
+
+// Better error response
+{
+  "error": {
+    "code": "USER_NOT_FOUND",           // Machine-readable
+    "message": "User with ID 999 not found",  // Human-readable
+    "details": {
+      "user_id": "999",
+      "resource": "user"
+    }
+  },
+  "request_id": "req_abc123"  // For support/debugging
+}</div>
+
+                            <h3>Comprehensive Error Format</h3>
+                            <div class="code-block">{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": {
+      "fields": {
+        "email": ["Must be a valid email", "Email already exists"],
+        "password": ["Must be at least 8 characters"]
+      }
+    }
+  },
+  "request_id": "req_abc123",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "path": "/api/users",
+  "method": "POST",
+  "documentation_url": "https://docs.example.com/errors/validation",
+  "support_url": "https://support.example.com"
+}
+
+Complete context for debugging!</div>
+
+                            <h2>Error Codes: Machine-Readable Identifiers</h2>
+
+                            <h3>Why Error Codes?</h3>
+                            <div class="code-block">// Without error codes
+{
+  "message": "User not found"
+}
+
+Client code:
+if (error.message === "User not found") {
+  // What if message changes? Code breaks!
+}
+
+// With error codes
+{
+  "code": "USER_NOT_FOUND",
+  "message": "User not found"
+}
+
+Client code:
+if (error.code === "USER_NOT_FOUND") {
+  // Stable, won't break if message changes
+}
+
+Error codes are contracts, messages are for humans</div>
+
+                            <h3>Error Code Naming Conventions</h3>
+                            <div class="code-block">// Use SCREAMING_SNAKE_CASE
+✅ GOOD:
+USER_NOT_FOUND
+INVALID_EMAIL
+RATE_LIMIT_EXCEEDED
+INSUFFICIENT_PERMISSIONS
+PAYMENT_REQUIRED
+
+❌ BAD:
+userNotFound          // camelCase
+user-not-found        // kebab-case
+404                   // Just HTTP code
+error_123             // Meaningless numbers
+
+// Namespace for large APIs
+AUTH_INVALID_TOKEN
+AUTH_TOKEN_EXPIRED
+PAYMENT_CARD_DECLINED
+PAYMENT_INSUFFICIENT_FUNDS</div>
+
+                            <h3>Common Error Codes</h3>
+                            <div class="code-block">Authentication & Authorization:
+- UNAUTHORIZED              (401 - not authenticated)
+- FORBIDDEN                 (403 - not authorized)
+- TOKEN_EXPIRED
+- TOKEN_INVALID
+- INSUFFICIENT_PERMISSIONS
+
+Validation:
+- VALIDATION_ERROR          (400 - general validation)
+- MISSING_REQUIRED_FIELD
+- INVALID_FORMAT
+- INVALID_VALUE
+- FIELD_TOO_LONG
+- FIELD_TOO_SHORT
+
+Resource:
+- RESOURCE_NOT_FOUND        (404)
+- RESOURCE_ALREADY_EXISTS   (409 - conflict)
+- RESOURCE_LOCKED
+- RESOURCE_DELETED
+
+Rate Limiting:
+- RATE_LIMIT_EXCEEDED       (429)
+- QUOTA_EXCEEDED
+
+Server:
+- INTERNAL_SERVER_ERROR     (500)
+- SERVICE_UNAVAILABLE       (503)
+- DATABASE_ERROR
+- EXTERNAL_SERVICE_ERROR</div>
+
+                            <h2>Validation Errors</h2>
+
+                            <h3>Field-Level Error Details</h3>
+                            <div class="code-block">POST /api/users
+{
+  "email": "not-an-email",
+  "age": -5,
+  "password": "123"
+}
+
+Response: 400 Bad Request
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "fields": {
+      "email": [
+        "Must be a valid email address"
+      ],
+      "age": [
+        "Must be a positive integer",
+        "Must be between 1 and 150"
+      ],
+      "password": [
+        "Must be at least 8 characters",
+        "Must contain at least one uppercase letter",
+        "Must contain at least one number"
+      ]
+    }
+  }
+}
+
+Each field can have multiple validation errors!</div>
+
+                            <h3>Missing Required Fields</h3>
+                            <div class="code-block">POST /api/users
+{
+  "name": "Alice"
+  // Missing email and password
+}
+
+Response: 400 Bad Request
+{
+  "error": {
+    "code": "MISSING_REQUIRED_FIELDS",
+    "message": "Request is missing required fields",
+    "fields": {
+      "email": ["This field is required"],
+      "password": ["This field is required"]
+    }
+  }
+}
+
+Or more specific:
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "missing_fields": ["email", "password"],
+    "provided_fields": ["name"]
+  }
+}</div>
+
+                            <h2>HTTP Status Codes for Errors</h2>
+
+                            <h3>Client Errors (4xx)</h3>
+                            <div class="code-block">400 Bad Request
+- Invalid syntax or validation errors
+- Use for: malformed JSON, validation failures
+
+401 Unauthorized
+- Authentication required or failed
+- Use for: missing/invalid token
+
+403 Forbidden
+- Authenticated but not authorized
+- Use for: insufficient permissions
+
+404 Not Found
+- Resource doesn't exist
+- Use for: user not found, endpoint not found
+
+405 Method Not Allowed
+- HTTP method not supported
+- Use for: DELETE on read-only resource
+
+409 Conflict
+- Request conflicts with current state
+- Use for: duplicate email, optimistic locking failure
+
+422 Unprocessable Entity
+- Valid syntax but semantic errors
+- Use for: business logic validation failures
+
+429 Too Many Requests
+- Rate limit exceeded
+- Use for: exceeded API quota</div>
+
+                            <h3>Server Errors (5xx)</h3>
+                            <div class="code-block">500 Internal Server Error
+- Unexpected server error
+- Use for: uncaught exceptions, bugs
+
+502 Bad Gateway
+- Upstream server returned invalid response
+- Use for: microservice down, external API error
+
+503 Service Unavailable
+- Server temporarily unavailable
+- Use for: maintenance, overload
+
+504 Gateway Timeout
+- Upstream server didn't respond in time
+- Use for: slow external API, database timeout</div>
+
+                            <h2>Error Response Patterns</h2>
+
+                            <h3>Pattern 1: Simple Error Object</h3>
+                            <div class="code-block">{
+  "error": "User not found"
+}
+
+Pros: Simple, compact
+Cons: No structure, hard to parse, no error code</div>
+
+                            <h3>Pattern 2: Structured Error Object</h3>
+                            <div class="code-block">{
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User with ID 999 not found"
+  }
+}
+
+Pros: Machine-readable code, human-readable message
+Cons: None - this is the recommended minimum</div>
+
+                            <h3>Pattern 3: RFC 7807 Problem Details</h3>
+                            <div class="code-block">HTTP/1.1 404 Not Found
+Content-Type: application/problem+json
+
+{
+  "type": "https://example.com/probs/user-not-found",
+  "title": "User Not Found",
+  "status": 404,
+  "detail": "User with ID 999 does not exist",
+  "instance": "/api/users/999"
+}
+
+Standard format defined by RFC 7807
+Used by some enterprise APIs</div>
+
+                            <h3>Pattern 4: JSON:API Error Format</h3>
+                            <div class="code-block">{
+  "errors": [
+    {
+      "status": "400",
+      "code": "VALIDATION_ERROR",
+      "title": "Validation Error",
+      "detail": "Email must be valid",
+      "source": {
+        "pointer": "/data/attributes/email"
+      }
+    }
+  ]
+}
+
+Part of JSON:API specification
+Supports multiple errors in one response</div>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>1. Always Use Proper HTTP Status Codes</h3>
+                            <div class="code-block">❌ BAD: Always return 200
+HTTP 200 OK
+{
+  "status": "error",
+  "message": "User not found"
+}
+
+✅ GOOD: Use proper status code
+HTTP 404 Not Found
+{
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User not found"
+  }
+}
+
+Benefits:
+- HTTP clients can handle errors automatically
+- Caching works correctly
+- Monitoring tools detect errors
+- Follows HTTP semantics</div>
+
+                            <h3>2. Don't Leak Sensitive Information</h3>
+                            <div class="code-block">❌ BAD: Exposing internal details
+HTTP 500 Internal Server Error
+{
+  "error": "SQLException at line 42 in UserService.java",
+  "stack_trace": "java.sql.SQLException...",
+  "query": "SELECT * FROM users WHERE password = '...'"
+}
+
+Security risks:
+- Reveals code structure
+- Shows database queries
+- Exposes file paths
+- Helps attackers
+
+✅ GOOD: Generic error with tracking ID
+HTTP 500 Internal Server Error
+{
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "An unexpected error occurred",
+    "request_id": "req_abc123"
+  }
+}
+
+Log full details server-side, not in response!</div>
+
+                            <h3>3. Include Request ID for Debugging</h3>
+                            <div class="code-block">// Every response should have request ID
+HTTP 500 Internal Server Error
+X-Request-ID: req_abc123
+
+{
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "An unexpected error occurred"
+  },
+  "request_id": "req_abc123"
+}
+
+Benefits:
+- User can provide ID to support
+- Support can find exact request in logs
+- Correlate across microservices
+- Debug distributed systems
+
+Implementation:
+Generate UUID at API gateway
+Pass through all services
+Log with every log entry</div>
+
+                            <h3>4. Provide Documentation Links</h3>
+                            <div class="code-block">{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "You have exceeded the rate limit"
+  },
+  "documentation_url": "https://docs.example.com/rate-limits",
+  "support_url": "https://support.example.com"
+}
+
+Helps developers:
+- Understand error details
+- Learn how to fix
+- Contact support if needed</div>
+
+                            <h3>5. Be Consistent Across All Endpoints</h3>
+                            <div class="code-block">❌ BAD: Different error formats per endpoint
+GET /api/users/999
+{"error": "Not found"}
+
+POST /api/posts
+{"status": "error", "msg": "Validation failed"}
+
+DELETE /api/comments/123
+{"err": {"message": "Forbidden"}}
+
+✅ GOOD: Same format everywhere
+{
+  "error": {
+    "code": "...",
+    "message": "..."
+  },
+  "request_id": "..."
+}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe API Errors</h3>
+                            <div class="code-block">HTTP 402 Payment Required
+{
+  "error": {
+    "type": "card_error",
+    "code": "card_declined",
+    "message": "Your card was declined.",
+    "decline_code": "insufficient_funds",
+    "param": "source",
+    "charge": "ch_abc123"
+  }
+}
+
+Rich error information:
+- type (category)
+- code (specific error)
+- decline_code (detailed reason)
+- param (which parameter caused error)
+- charge (related resource)</div>
+
+                            <h3>GitHub API Errors</h3>
+                            <div class="code-block">HTTP 422 Unprocessable Entity
+{
+  "message": "Validation Failed",
+  "errors": [
+    {
+      "resource": "Issue",
+      "field": "title",
+      "code": "missing_field"
+    }
+  ],
+  "documentation_url": "https://docs.github.com/rest/issues"
+}
+
+Array of errors for multiple fields
+Links to documentation</div>
+
+                            <h3>Twitter API Errors</h3>
+                            <div class="code-block">HTTP 429 Too Many Requests
+{
+  "title": "Too Many Requests",
+  "type": "about:blank",
+  "status": 429,
+  "detail": "Too Many Requests"
+}
+
+Uses RFC 7807 Problem Details format
+Simple, standardized</div>
+
+                            <h2>Summary</h2>
+                            <p>Design clear, helpful error responses:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Use proper HTTP status codes (4xx for client, 5xx for server)</li>
+                                <li>Include machine-readable error codes</li>
+                                <li>Provide human-readable messages</li>
+                                <li>Show field-level validation errors</li>
+                                <li>Include request_id for debugging</li>
+                                <li>Never expose sensitive information</li>
+                                <li>Be consistent across all endpoints</li>
+                                <li>Provide documentation links</li>
+                                <li>Log full details server-side, return generic messages to client</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "Why should error responses include both error codes and error messages?",
+                                answer: "Error codes (USER_NOT_FOUND) are machine-readable, stable contracts - client code can check them reliably. Messages ('User with ID 999 not found') are human-readable, can change without breaking clients. Example: if (error.code === 'USER_NOT_FOUND') works even if message wording changes. Codes enable proper error handling, messages help debugging."
+                            },
+                            {
+                                question: "What information should you NEVER include in error responses and why?",
+                                answer: "Never expose: stack traces, SQL queries, internal file paths, code line numbers, database structure, environment variables. Security risk - reveals system architecture to attackers. Example: Bad: 'SQLException at UserService.java:42'. Good: 'Internal error occurred' + request_id. Log full details server-side for debugging, return generic message to client."
+                            },
+                            {
+                                question: "What's the difference between 400 Bad Request and 422 Unprocessable Entity?",
+                                answer: "400: Malformed syntax - invalid JSON, missing Content-Type, wrong data types. 422: Valid syntax but semantic/business logic errors - negative quantity, past date for future booking, email format valid but already exists. Both are client errors but 422 is more specific for validation failures after parsing succeeds."
+                            },
+                            {
+                                question: "Why is including a request_id in error responses important?",
+                                answer: "Request ID enables end-to-end tracking. User reports error, provides request_id to support, support finds exact request in logs across all services. Critical for: debugging distributed systems, correlating logs across microservices, understanding user issues. Generate at API gateway, pass through all services, include in every log entry and response."
+                            },
+                            {
+                                question: "How should you structure validation errors for multiple fields?",
+                                answer: "Use fields object mapping field names to error arrays. Example: {error: {code: 'VALIDATION_ERROR', fields: {email: ['Must be valid email'], age: ['Must be positive', 'Must be <150']}}}. Each field can have multiple errors. Allows clients to show errors next to form fields. Include field path for nested objects: 'address.city'."
+                            },
+                            {
+                                question: "What's RFC 7807 Problem Details and when should you use it?",
+                                answer: "RFC 7807 standardizes error response format: {type: 'https://example.com/probs/user-not-found', title: 'User Not Found', status: 404, detail: '...', instance: '/api/users/999'}. Use when: building enterprise APIs, need standardization, clients expect it. Most APIs use simpler format: {error: {code, message}}. RFC 7807 adds overhead but provides standard structure."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'input-validation',
+                        title: 'Input Validation Strategies',
+                        duration: '45 min',
+                        content: `
+                            <h2>Why Input Validation is Critical</h2>
+                            <p>Never trust client input. Validation protects against security vulnerabilities, data corruption, and application crashes. Good validation provides early feedback to users and prevents invalid data from reaching your database.</p>
+
+                            <h3>The Security Triangle</h3>
+                            <div class="code-block">Validate at THREE layers:
+
+1. Client-side (User Experience)
+   - Immediate feedback
+   - Reduces server load
+   - NOT for security (can be bypassed)
+
+2. API Layer (Security & Business Rules)
+   - Enforce security rules
+   - Business logic validation
+   - CRITICAL - never skip this!
+
+3. Database Layer (Data Integrity)
+   - Constraints (NOT NULL, UNIQUE, CHECK)
+   - Foreign keys
+   - Last line of defense
+
+Example:
+Client: Check email format (instant UX feedback)
+API: Validate email format + check if exists + verify domain
+Database: email VARCHAR(255) NOT NULL UNIQUE</div>
+
+                            <h2>Validation Types</h2>
+
+                            <h3>1. Type Validation</h3>
+                            <div class="code-block">// Ensure correct data types
+POST /api/users
+{
+  "age": "twenty-five",  // Should be number
+  "active": "yes",       // Should be boolean
+  "created_at": "yesterday"  // Should be ISO 8601
+}
+
+Response: 400 Bad Request
+{
+  "error": {
+    "code": "TYPE_ERROR",
+    "message": "Invalid data types",
+    "fields": {
+      "age": ["Must be a number"],
+      "active": ["Must be a boolean"],
+      "created_at": ["Must be ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)"]
+    }
+  }
+}
+
+Backend validation:
+if (typeof age !== 'number') {
+  errors.age = ['Must be a number'];
+}
+if (typeof active !== 'boolean') {
+  errors.active = ['Must be a boolean'];
+}</div>
+
+                            <h3>2. Format Validation</h3>
+                            <div class="code-block">// Email format
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+if (!emailRegex.test(email)) {
+  errors.email = ['Must be a valid email address'];
+}
+
+// Phone number (US)
+const phoneRegex = /^\+?1?\d{10}$/;
+if (!phoneRegex.test(phone)) {
+  errors.phone = ['Must be a valid phone number'];
+}
+
+// URL format
+try {
+  new URL(website);
+} catch {
+  errors.website = ['Must be a valid URL'];
+}
+
+// UUID format
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+if (!uuidRegex.test(id)) {
+  errors.id = ['Must be a valid UUID'];
+}
+
+// Credit card (use library like validator.js)
+if (!validator.isCreditCard(cardNumber)) {
+  errors.card = ['Invalid credit card number'];
+}</div>
+
+                            <h3>3. Range Validation</h3>
+                            <div class="code-block">// Numeric ranges
+if (age < 0 || age > 150) {
+  errors.age = ['Must be between 0 and 150'];
+}
+
+if (price < 0) {
+  errors.price = ['Must be a positive number'];
+}
+
+if (quantity < 1 || quantity > 1000) {
+  errors.quantity = ['Must be between 1 and 1000'];
+}
+
+// String length
+if (password.length < 8) {
+  errors.password = ['Must be at least 8 characters'];
+}
+
+if (bio.length > 500) {
+  errors.bio = ['Must be no more than 500 characters'];
+}
+
+// Date ranges
+const bookingDate = new Date(date);
+const today = new Date();
+if (bookingDate < today) {
+  errors.date = ['Booking date must be in the future'];
+}
+
+const maxDate = new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000);
+if (bookingDate > maxDate) {
+  errors.date = ['Cannot book more than 1 year in advance'];
+}</div>
+
+                            <h3>4. Enum Validation (Allowed Values)</h3>
+                            <div class="code-block">// Whitelist allowed values
+const ALLOWED_STATUSES = ['active', 'inactive', 'pending', 'suspended'];
+if (!ALLOWED_STATUSES.includes(status)) {
+  errors.status = [\`Must be one of: \${ALLOWED_STATUSES.join(', ')}\`];
+}
+
+const ALLOWED_ROLES = ['user', 'admin', 'moderator'];
+if (!ALLOWED_ROLES.includes(role)) {
+  errors.role = ['Must be one of: user, admin, moderator'];
+}
+
+// Country codes (ISO 3166-1 alpha-2)
+const validCountryCodes = ['US', 'CA', 'GB', 'FR', /* ... */];
+if (!validCountryCodes.includes(country)) {
+  errors.country = ['Invalid country code'];
+}
+
+Why whitelist? Security!
+Never: if (role !== 'hacker') { allow(); }
+Always: if (['user', 'admin'].includes(role)) { allow(); }</div>
+
+                            <h3>5. Business Logic Validation</h3>
+                            <div class="code-block">// Cross-field validation
+if (endDate <= startDate) {
+  errors.endDate = ['End date must be after start date'];
+}
+
+// Check if resource exists
+const user = await db.users.findById(userId);
+if (!user) {
+  errors.userId = ['User not found'];
+}
+
+// Check permissions
+if (requestingUser.id !== resourceOwnerId && !requestingUser.isAdmin) {
+  errors.authorization = ['You can only modify your own resources'];
+}
+
+// Check uniqueness
+const existingUser = await db.users.findOne({ email });
+if (existingUser) {
+  errors.email = ['Email already in use'];
+}
+
+// Inventory check
+if (product.stock < quantity) {
+  errors.quantity = [\`Only \${product.stock} items available\`];
+}</div>
+
+                            <h2>Validation Patterns</h2>
+
+                            <h3>1. Fail Fast vs Collect All Errors</h3>
+                            <div class="code-block">// Fail fast - return on first error
+function validate(data) {
+  if (!data.email) {
+    return { error: 'Email required' };
+  }
+  if (!isValidEmail(data.email)) {
+    return { error: 'Invalid email' };
+  }
+  if (!data.password) {
+    return { error: 'Password required' };
+  }
+  // ...
+}
+
+Pros: Fast, simple
+Cons: User must fix one error at a time
+
+// Collect all errors (RECOMMENDED)
+function validate(data) {
+  const errors = {};
+
+  if (!data.email) {
+    errors.email = ['Email is required'];
+  } else if (!isValidEmail(data.email)) {
+    errors.email = ['Invalid email format'];
+  }
+
+  if (!data.password) {
+    errors.password = ['Password is required'];
+  } else if (data.password.length < 8) {
+    errors.password = ['Must be at least 8 characters'];
+  }
+
+  return Object.keys(errors).length > 0 ? { errors } : null;
+}
+
+Pros: Better UX, see all errors at once
+Cons: More complex</div>
+
+                            <h3>2. Schema-Based Validation</h3>
+                            <div class="code-block">// Using Joi (Node.js validation library)
+const Joi = require('joi');
+
+const userSchema = Joi.object({
+  name: Joi.string().min(2).max(100).required(),
+  email: Joi.string().email().required(),
+  age: Joi.number().integer().min(1).max(150),
+  role: Joi.string().valid('user', 'admin', 'moderator'),
+  password: Joi.string().min(8).pattern(/[A-Z]/).pattern(/[0-9]/).required()
+});
+
+const { error, value } = userSchema.validate(req.body, {
+  abortEarly: false  // Collect all errors
+});
+
+if (error) {
+  return res.status(400).json({
+    error: {
+      code: 'VALIDATION_ERROR',
+      fields: formatJoiErrors(error.details)
+    }
+  });
+}
+
+// Other popular libraries:
+// - Zod (TypeScript-first)
+// - Yup (React/JavaScript)
+// - Ajv (JSON Schema validator)
+// - class-validator (TypeScript decorators)</div>
+
+                            <h3>3. Sanitization (Clean Input)</h3>
+                            <div class="code-block">// Remove/escape dangerous characters
+const sanitizedName = name.trim();  // Remove whitespace
+const sanitizedEmail = email.toLowerCase().trim();
+
+// HTML escaping (prevent XSS)
+const escapeHtml = (str) => {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+// SQL injection prevention (use parameterized queries)
+❌ BAD: \`SELECT * FROM users WHERE email = '\${email}'\`
+✅ GOOD: db.query('SELECT * FROM users WHERE email = $1', [email])
+
+// NoSQL injection prevention
+❌ BAD: db.users.find({ email: req.body.email })
+// If email is {"$gt": ""}, returns all users!
+
+✅ GOOD: Validate type first
+if (typeof email !== 'string') {
+  return 400 Bad Request;
+}
+db.users.find({ email: email });
+
+// Path traversal prevention
+❌ BAD: fs.readFile(\`/uploads/\${filename}\`)
+// filename could be "../../etc/passwd"!
+
+✅ GOOD: Validate and sanitize
+const path = require('path');
+const safePath = path.normalize(filename).replace(/^(\\.\\.[\/\\\\])+/, '');
+fs.readFile(\`/uploads/\${safePath}\`)</div>
+
+                            <h2>Validation Best Practices</h2>
+
+                            <h3>1. Validate as Early as Possible</h3>
+                            <div class="code-block">// Validate at API layer before business logic
+app.post('/api/users', async (req, res) => {
+  // 1. Validate first
+  const errors = validate(req.body);
+  if (errors) {
+    return res.status(400).json({ error: errors });
+  }
+
+  // 2. Then business logic
+  const user = await createUser(req.body);
+
+  // 3. Return response
+  return res.status(201).json(user);
+});
+
+Don't waste resources on invalid requests!</div>
+
+                            <h3>2. Use Whitelisting, Not Blacklisting</h3>
+                            <div class="code-block">❌ BAD: Blacklist (block known bad values)
+if (role === 'super_admin' || role === 'root') {
+  return 403 Forbidden;
+}
+// What about 'SUPER_ADMIN', 'superadmin', 'administrator'?
+
+✅ GOOD: Whitelist (allow only known good values)
+const ALLOWED_ROLES = ['user', 'moderator', 'admin'];
+if (!ALLOWED_ROLES.includes(role)) {
+  return 400 Bad Request;
+}
+// Everything else is rejected by default</div>
+
+                            <h3>3. Provide Specific Error Messages</h3>
+                            <div class="code-block">❌ BAD: Generic message
+{
+  "error": "Invalid input"
+}
+
+✅ GOOD: Specific, actionable
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "fields": {
+      "password": [
+        "Must be at least 8 characters",
+        "Must contain at least one uppercase letter",
+        "Must contain at least one number",
+        "Must contain at least one special character"
+      ]
+    }
+  }
+}
+
+User knows exactly what to fix!</div>
+
+                            <h3>4. Don't Reveal Sensitive Information</h3>
+                            <div class="code-block">❌ BAD: Reveals if email exists
+POST /api/register
+{"email": "existing@example.com"}
+→ "Email already registered"
+
+POST /api/login
+{"email": "existing@example.com", "password": "wrong"}
+→ "Invalid password"
+
+Attacker can enumerate valid emails!
+
+✅ GOOD: Generic message
+POST /api/register
+→ "If email doesn't exist, verification sent"
+
+POST /api/login
+→ "Invalid email or password"
+
+Doesn't reveal which field is wrong</div>
+
+                            <h3>5. Rate Limit Validation Endpoints</h3>
+                            <div class="code-block">// Prevent brute force validation attacks
+POST /api/validate-coupon
+{"code": "AAAA"}  // Try all combinations
+{"code": "AAAB"}
+{"code": "AAAC"}
+...
+
+Solution: Rate limit per IP/user
+- 10 attempts per minute
+- Return 429 Too Many Requests
+- Consider CAPTCHA after failed attempts</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe API Validation</h3>
+                            <div class="code-block">POST /v1/charges
+{
+  "amount": "not a number",
+  "currency": "invalid"
+}
+
+Response: 400 Bad Request
+{
+  "error": {
+    "type": "invalid_request_error",
+    "message": "Invalid integer: not a number",
+    "param": "amount"
+  }
+}
+
+Points to specific parameter that failed</div>
+
+                            <h3>GitHub API Validation</h3>
+                            <div class="code-block">POST /repos/:owner/:repo/issues
+{
+  "title": "",
+  "body": "x".repeat(100000)
+}
+
+Response: 422 Unprocessable Entity
+{
+  "message": "Validation Failed",
+  "errors": [
+    {
+      "resource": "Issue",
+      "field": "title",
+      "code": "missing_field"
+    },
+    {
+      "resource": "Issue",
+      "field": "body",
+      "code": "too_long"
+    }
+  ]
+}
+
+Array of validation errors with codes</div>
+
+                            <h2>Common Validation Mistakes</h2>
+
+                            <h3>1. Client-Side Only Validation</h3>
+                            <div class="code-block">❌ DANGEROUS: Only validate in JavaScript
+// Frontend validates, backend trusts input
+const email = req.body.email;
+await db.users.create({ email });  // No validation!
+
+Attacker bypasses frontend, sends malicious data directly
+
+✅ ALWAYS validate server-side
+const errors = validateEmail(req.body.email);
+if (errors) return 400;
+await db.users.create({ email });</div>
+
+                            <h3>2. Integer Overflow/Underflow</h3>
+                            <div class="code-block">❌ BAD: No max validation
+POST /api/transfer
+{"amount": 999999999999999999999}
+
+Can cause overflow, unexpected behavior
+
+✅ GOOD: Validate max values
+const MAX_TRANSFER = 1000000;  // $1M
+if (amount > MAX_TRANSFER) {
+  return 400 Bad Request;
+}</div>
+
+                            <h3>3. Regex Denial of Service (ReDoS)</h3>
+                            <div class="code-block">❌ DANGEROUS: Evil regex
+const regex = /^(a+)+$/;
+const input = "a".repeat(50) + "!";
+regex.test(input);  // Takes forever! (exponential time)
+
+✅ SAFE: Use well-tested libraries
+const validator = require('validator');
+validator.isEmail(email);  // Tested, safe regex</div>
+
+                            <h2>Summary</h2>
+                            <p>Comprehensive input validation strategy:</p>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Validate at client (UX), API (security), database (integrity)</li>
+                                <li>Check types, formats, ranges, enums, business rules</li>
+                                <li>Collect all errors for better UX</li>
+                                <li>Use schema validation libraries (Joi, Zod, Yup)</li>
+                                <li>Sanitize input (trim, escape, normalize)</li>
+                                <li>Whitelist allowed values, don't blacklist</li>
+                                <li>Provide specific, actionable error messages</li>
+                                <li>Don't reveal sensitive information in errors</li>
+                                <li>Always validate server-side (never trust client)</li>
+                                <li>Prevent injection attacks (SQL, NoSQL, XSS, path traversal)</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "Why should you validate input at multiple layers (client, API, database)?",
+                                answer: "Defense in depth. Client validation: UX/immediate feedback, not for security (can be bypassed). API validation: Security and business rules, CRITICAL layer, never skip. Database validation: Data integrity constraints (NOT NULL, UNIQUE, CHECK), last line of defense. Example: Client checks email format instantly, API verifies domain and checks duplicates, database enforces UNIQUE constraint."
+                            },
+                            {
+                                question: "What's the difference between whitelisting and blacklisting? Which should you use for validation?",
+                                answer: "Blacklist: Block known bad values (role !== 'super_admin'). Problem: Easy to miss variations (SUPER_ADMIN, superadmin). Whitelist: Allow only known good values (ALLOWED_ROLES.includes(role)). Always use whitelisting - everything not explicitly allowed is rejected by default. More secure, easier to maintain. Example: Allowed roles = ['user', 'admin'] blocks everything else including unknown future attacks."
+                            },
+                            {
+                                question: "Why should validation error messages sometimes be intentionally vague?",
+                                answer: "To prevent information disclosure. Bad: 'Email already registered' + 'Invalid password' reveals which field is wrong, allows email enumeration. Good: 'Invalid email or password' doesn't reveal which. Registration: 'If email doesn't exist, verification sent' prevents enumeration. Trade-off: Security vs UX. Use vague messages for sensitive operations (login, registration), specific messages for normal validation (form errors)."
+                            },
+                            {
+                                question: "What is ReDoS (Regex Denial of Service) and how do you prevent it?",
+                                answer: "ReDoS: Evil regex causes exponential processing time. Example: /^(a+)+$/ with input 'aaaaaa!' takes forever due to catastrophic backtracking. Prevention: 1) Use well-tested validation libraries (validator.js, Joi), 2) Avoid nested quantifiers (a+)+, 3) Set regex timeout, 4) Test regex with long inputs. Never write complex regex yourself for validation - use proven libraries."
+                            },
+                            {
+                                question: "What's the difference between fail-fast and collect-all-errors validation? Which is better?",
+                                answer: "Fail-fast: Return on first error. Fast but poor UX - user fixes one error, submits again, sees next error. Collect-all: Gather all validation errors before returning. Better UX - user sees all errors at once, fixes all, submits once. Recommended for forms and API input. Example: Form with 5 errors - fail-fast requires 5 submissions, collect-all requires 1."
+                            },
+                            {
+                                question: "How do you prevent SQL injection and NoSQL injection in API validation?",
+                                answer: "SQL: Use parameterized queries/prepared statements. Bad: SELECT * FROM users WHERE email = '\${email}'. Good: db.query('SELECT * FROM users WHERE email = $1', [email]). NoSQL: Validate type first. Bad: db.find({email: req.body.email}) - if email is {$gt: ''}, returns all users! Good: if (typeof email !== 'string') reject; then db.find({email}). Never interpolate user input directly into queries."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'error-codes-messages',
+                        title: 'Error Codes & Messages Best Practices',
+                        duration: '40 min',
+                        content: `
+                            <h2>OUTLINE: Error Codes & Messages</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Error Code Design</strong>
+                                    - Naming conventions (SCREAMING_SNAKE_CASE)
+                                    - Namespacing for large APIs (AUTH_*, PAYMENT_*, etc.)
+                                    - Standard vs custom codes
+                                    - Version stability (don't change codes)
+                                </li>
+                                <li><strong>Error Message Writing</strong>
+                                    - Clear, actionable messages
+                                    - Avoid technical jargon
+                                    - Include what went wrong and how to fix
+                                    - Localization considerations
+                                </li>
+                                <li><strong>Error Code Catalog</strong>
+                                    - Authentication errors (401, 403)
+                                    - Validation errors (400, 422)
+                                    - Resource errors (404, 409)
+                                    - Rate limiting (429)
+                                    - Server errors (500, 502, 503, 504)
+                                </li>
+                                <li><strong>Maintaining Error Documentation</strong>
+                                    - Error code registry
+                                    - Documentation per error
+                                    - Examples and solutions
+                                    - API reference integration
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Stripe's detailed error types and codes</li>
+                                <li>AWS error code patterns</li>
+                                <li>Twilio's error documentation</li>
+                                <li>Good vs bad error messages comparison</li>
+                            </ul>
+
+                            <h3>Interview Topics:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Why error codes are contracts</li>
+                                <li>Internationalization of error messages</li>
+                                <li>When to introduce new error codes vs reuse existing</li>
+                                <li>Error code versioning strategies</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "Why are error codes considered contracts and what happens if you change them?",
+                                answer: "OUTLINE: Error codes are machine-readable identifiers that client code depends on. Changing USER_NOT_FOUND to USER_DOES_NOT_EXIST breaks existing clients. Codes should be stable across API versions. Messages can change (human-readable), codes cannot (machine-readable contracts)."
+                            }
+                        ]
+                    },
+                    {
+                        id: 'debugging-troubleshooting',
+                        title: 'API Debugging & Troubleshooting',
+                        duration: '40 min',
+                        content: `
+                            <h2>OUTLINE: Debugging & Troubleshooting</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Request/Response Logging</strong>
+                                    - What to log (headers, body, timing)
+                                    - What NOT to log (passwords, tokens, PII)
+                                    - Structured logging (JSON format)
+                                    - Log levels (DEBUG, INFO, WARN, ERROR)
+                                    - Request ID correlation
+                                </li>
+                                <li><strong>Debugging Headers</strong>
+                                    - X-Request-ID for tracking
+                                    - X-Response-Time for performance
+                                    - X-Debug-Info in development
+                                    - Server-Timing API
+                                </li>
+                                <li><strong>Error Context</strong>
+                                    - Stack traces (log server-side, never expose)
+                                    - Request context (user, endpoint, method)
+                                    - Environment info (version, region)
+                                    - Upstream service errors
+                                </li>
+                                <li><strong>Tools & Techniques</strong>
+                                    - Postman/Insomnia for testing
+                                    - curl commands for debugging
+                                    - Browser DevTools for APIs
+                                    - Proxy tools (Charles, Fiddler)
+                                    - API testing tools (HTTPie, REST Client)
+                                </li>
+                                <li><strong>Distributed Tracing</strong>
+                                    - Trace IDs across microservices
+                                    - OpenTelemetry/Jaeger
+                                    - Correlation across services
+                                    - Performance bottleneck identification
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Request ID flow through system</li>
+                                <li>Structured log format examples</li>
+                                <li>Debug mode implementation</li>
+                                <li>Common debugging scenarios</li>
+                            </ul>
+
+                            <h3>Interview Topics:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>What should never be logged and why</li>
+                                <li>Request ID propagation in microservices</li>
+                                <li>Debugging production issues without exposing details to clients</li>
+                            </ul>
+                        `,
+                        interviews: [
+                            {
+                                question: "What information should NEVER be logged in API requests and why?",
+                                answer: "OUTLINE: Never log: passwords, tokens, API keys, credit cards, SSNs, PII. Why: Logs are often stored insecurely, accessible by many people, sent to third-party services. Regulatory compliance (GDPR, PCI-DSS) prohibits logging sensitive data. Use masking/redaction for debugging."
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                title: 'Module 5: Authentication & Security',
+                lessons: [
+                    {
+                        id: 'api-keys',
+                        title: 'API Keys & Basic Auth',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: API Keys & Basic Auth</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>API Key Authentication</strong>
+                                    - What are API keys and when to use them
+                                    - Key generation (UUIDs, random strings)
+                                    - Key formats (prefixes for identification: sk_live_, pk_test_)
+                                    - Storage (hashing, never plain text)
+                                    - Transmission (headers vs query params)
+                                </li>
+                                <li><strong>Basic Authentication</strong>
+                                    - How Basic Auth works (base64 encoding)
+                                    - Security concerns (HTTPS required)
+                                    - Use cases (simple APIs, internal services)
+                                    - Comparison with API keys
+                                </li>
+                                <li><strong>Best Practices</strong>
+                                    - Key rotation strategies
+                                    - Multiple keys per user (separate keys for different services)
+                                    - Key scoping (read-only vs read-write)
+                                    - Rate limiting per key
+                                    - Key revocation
+                                </li>
+                                <li><strong>Security Considerations</strong>
+                                    - Always use HTTPS
+                                    - Don't put keys in URLs (logged, cached)
+                                    - Environment variables, not code
+                                    - Key compromise detection
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Stripe API key prefixes (sk_, pk_)</li>
+                                <li>AWS access keys</li>
+                                <li>GitHub personal access tokens</li>
+                                <li>API key in header vs query param</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'oauth2',
+                        title: 'OAuth 2.0 Flows',
+                        duration: '55 min',
+                        content: `
+                            <h2>OUTLINE: OAuth 2.0</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>OAuth 2.0 Fundamentals</strong>
+                                    - What OAuth solves (delegated authorization)
+                                    - Roles: Resource Owner, Client, Authorization Server, Resource Server
+                                    - Grant types overview
+                                </li>
+                                <li><strong>Authorization Code Flow</strong>
+                                    - Most secure flow for web apps
+                                    - Step-by-step process
+                                    - PKCE extension for security
+                                    - Refresh tokens
+                                </li>
+                                <li><strong>Other Grant Types</strong>
+                                    - Implicit Flow (deprecated, use Auth Code + PKCE)
+                                    - Client Credentials (machine-to-machine)
+                                    - Resource Owner Password (legacy, avoid)
+                                    - Device Flow (smart TVs, CLIs)
+                                </li>
+                                <li><strong>Tokens</strong>
+                                    - Access tokens (short-lived)
+                                    - Refresh tokens (long-lived)
+                                    - Token storage and security
+                                    - Token revocation
+                                </li>
+                                <li><strong>Scopes & Permissions</strong>
+                                    - Defining scopes
+                                    - Requesting specific permissions
+                                    - Incremental authorization
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Google OAuth "Sign in with Google"</li>
+                                <li>GitHub OAuth for apps</li>
+                                <li>Spotify API OAuth flows</li>
+                                <li>Sequence diagrams for each flow</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'jwt',
+                        title: 'JWT (JSON Web Tokens)',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: JWT</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>JWT Structure</strong>
+                                    - Header (algorithm, type)
+                                    - Payload (claims: iss, sub, exp, iat, custom)
+                                    - Signature (verification)
+                                    - Base64URL encoding
+                                </li>
+                                <li><strong>JWT vs Sessions</strong>
+                                    - Stateless vs stateful
+                                    - Scalability implications
+                                    - Trade-offs
+                                </li>
+                                <li><strong>JWT Security</strong>
+                                    - Signing algorithms (HS256 vs RS256)
+                                    - Token expiration
+                                    - Refresh token patterns
+                                    - Common vulnerabilities (algorithm none, key confusion)
+                                </li>
+                                <li><strong>Implementation</strong>
+                                    - Generating JWTs
+                                    - Verifying JWTs
+                                    - Token storage (localStorage vs httpOnly cookies)
+                                    - Token refresh strategies
+                                </li>
+                                <li><strong>Best Practices</strong>
+                                    - Short expiration times
+                                    - Don't store sensitive data in JWT
+                                    - Verify signature always
+                                    - Use secure algorithms
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>JWT anatomy (jwt.io visualization)</li>
+                                <li>Auth0 JWT implementation</li>
+                                <li>Firebase authentication</li>
+                                <li>Common JWT attacks and prevention</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'cors-security',
+                        title: 'CORS & Security Headers',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: CORS & Security</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>CORS (Cross-Origin Resource Sharing)</strong>
+                                    - What is CORS and why it exists
+                                    - Same-origin policy
+                                    - Simple vs preflighted requests
+                                    - CORS headers (Access-Control-Allow-Origin, etc.)
+                                    - Credentials and CORS
+                                </li>
+                                <li><strong>Security Headers</strong>
+                                    - Content-Security-Policy (CSP)
+                                    - X-Content-Type-Options
+                                    - X-Frame-Options
+                                    - Strict-Transport-Security (HSTS)
+                                    - X-XSS-Protection
+                                </li>
+                                <li><strong>Common Security Threats</strong>
+                                    - XSS (Cross-Site Scripting)
+                                    - CSRF (Cross-Site Request Forgery)
+                                    - Clickjacking
+                                    - Man-in-the-Middle attacks
+                                </li>
+                                <li><strong>API Security Best Practices</strong>
+                                    - Always use HTTPS
+                                    - Input validation and sanitization
+                                    - Rate limiting
+                                    - API versioning for security patches
+                                    - Security audits and penetration testing
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>CORS preflight request flow</li>
+                                <li>Common CORS misconfigurations</li>
+                                <li>Security header examples</li>
+                                <li>OWASP API Security Top 10</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    }
+                ]
+            },
+            {
+                title: 'Module 6: Rate Limiting & Performance',
+                lessons: [
+                    {
+                        id: 'rate-limiting',
+                        title: 'Rate Limiting Strategies',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: Rate Limiting</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Why Rate Limiting</strong>
+                                    - Prevent abuse and DoS
+                                    - Fair resource allocation
+                                    - Cost control
+                                    - Service quality
+                                </li>
+                                <li><strong>Rate Limiting Algorithms</strong>
+                                    - Token Bucket (smooth rate, allows bursts)
+                                    - Leaky Bucket (constant rate)
+                                    - Fixed Window (simple, boundary issues)
+                                    - Sliding Window (accurate, more complex)
+                                    - Sliding Window Log (most accurate, expensive)
+                                </li>
+                                <li><strong>Rate Limit Dimensions</strong>
+                                    - Per IP address
+                                    - Per user/API key
+                                    - Per endpoint
+                                    - Global limits
+                                </li>
+                                <li><strong>Rate Limit Headers</strong>
+                                    - X-RateLimit-Limit
+                                    - X-RateLimit-Remaining
+                                    - X-RateLimit-Reset
+                                    - Retry-After (429 response)
+                                </li>
+                                <li><strong>Implementation</strong>
+                                    - Redis for distributed rate limiting
+                                    - In-memory for single server
+                                    - API gateway rate limiting
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>GitHub rate limits (5000/hour authenticated)</li>
+                                <li>Twitter rate limits</li>
+                                <li>Token bucket algorithm visualization</li>
+                                <li>Redis INCR for rate limiting</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'caching-strategies',
+                        title: 'API Caching Strategies',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: Caching</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Caching Layers</strong>
+                                    - Client-side (browser cache)
+                                    - CDN/Edge caching
+                                    - API gateway cache
+                                    - Application cache (Redis, Memcached)
+                                    - Database query cache
+                                </li>
+                                <li><strong>HTTP Cache Headers</strong>
+                                    - Cache-Control directives
+                                    - ETag and If-None-Match
+                                    - Last-Modified and If-Modified-Since
+                                    - Vary header
+                                </li>
+                                <li><strong>Cache Invalidation</strong>
+                                    - Time-based expiration
+                                    - Manual purging
+                                    - Cache tags
+                                    - Surrogate keys
+                                </li>
+                                <li><strong>Caching Strategies</strong>
+                                    - Cache-aside (lazy loading)
+                                    - Write-through
+                                    - Write-behind
+                                    - Refresh-ahead
+                                </li>
+                                <li><strong>What to Cache</strong>
+                                    - Static data (rarely changes)
+                                    - Expensive computations
+                                    - External API responses
+                                    - What NOT to cache (personalized, real-time)
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>CDN caching with CloudFront</li>
+                                <li>Redis caching patterns</li>
+                                <li>GitHub API ETag usage</li>
+                                <li>Cache stampede problem and solutions</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'compression',
+                        title: 'Response Compression',
+                        duration: '35 min',
+                        content: `
+                            <h2>OUTLINE: Compression</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Compression Algorithms</strong>
+                                    - gzip (most common, ~70% reduction)
+                                    - Brotli (better compression, slower)
+                                    - deflate (older)
+                                </li>
+                                <li><strong>Accept-Encoding Header</strong>
+                                    - Client specifies support
+                                    - Content-Encoding in response
+                                    - Quality values
+                                </li>
+                                <li><strong>When to Compress</strong>
+                                    - Text-based responses (JSON, XML, HTML)
+                                    - Minimum size threshold (>1KB)
+                                    - When NOT to compress (images, videos, already compressed)
+                                </li>
+                                <li><strong>Implementation</strong>
+                                    - Middleware/server level
+                                    - CDN compression
+                                    - Trade-offs (CPU vs bandwidth)
+                                </li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'performance-optimization',
+                        title: 'API Performance Optimization',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: Performance Optimization</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Database Optimization</strong>
+                                    - Indexing strategies
+                                    - N+1 query problem
+                                    - Query optimization
+                                    - Connection pooling
+                                    - Read replicas
+                                </li>
+                                <li><strong>Payload Optimization</strong>
+                                    - Sparse fieldsets (?fields=id,name)
+                                    - Pagination (avoid large responses)
+                                    - Compression
+                                    - GraphQL for flexible queries
+                                </li>
+                                <li><strong>Response Time Optimization</strong>
+                                    - Async processing (202 Accepted)
+                                    - Background jobs
+                                    - Webhooks for callbacks
+                                    - Streaming responses
+                                </li>
+                                <li><strong>Monitoring & Metrics</strong>
+                                    - Response time percentiles (p50, p95, p99)
+                                    - Error rates
+                                    - Throughput
+                                    - Resource utilization
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>N+1 problem example and solution</li>
+                                <li>Database indexing impact</li>
+                                <li>Async processing patterns</li>
+                                <li>APM tools (New Relic, DataDog)</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    }
+                ]
+            },
+            {
+                title: 'Module 7: Advanced API Concepts',
+                lessons: [
+                    {
+                        id: 'graphql-vs-rest',
+                        title: 'GraphQL vs REST',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: GraphQL vs REST</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>GraphQL Fundamentals</strong>
+                                    - What is GraphQL
+                                    - Schema and type system
+                                    - Queries and mutations
+                                    - Single endpoint vs REST multiple endpoints
+                                </li>
+                                <li><strong>REST vs GraphQL Comparison</strong>
+                                    - Over-fetching and under-fetching
+                                    - Versioning strategies
+                                    - Caching differences
+                                    - Learning curve
+                                    - Tooling ecosystem
+                                </li>
+                                <li><strong>When to Use Each</strong>
+                                    - REST: Simple CRUD, public APIs, caching important
+                                    - GraphQL: Complex data requirements, mobile apps, rapid iteration
+                                </li>
+                                <li><strong>GraphQL Challenges</strong>
+                                    - N+1 problem (DataLoader solution)
+                                    - Rate limiting complexity
+                                    - Caching strategies
+                                    - File uploads
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>GitHub GraphQL API</li>
+                                <li>Same data fetch in REST vs GraphQL</li>
+                                <li>Over-fetching example</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'websockets-realtime',
+                        title: 'WebSockets & Real-time APIs',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: Real-time APIs</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Real-time Communication Options</strong>
+                                    - Polling (simple, inefficient)
+                                    - Long polling (better, still overhead)
+                                    - Server-Sent Events (SSE) (one-way, HTTP)
+                                    - WebSockets (bi-directional, persistent)
+                                </li>
+                                <li><strong>WebSocket Protocol</strong>
+                                    - Handshake process
+                                    - Message framing
+                                    - Connection lifecycle
+                                    - Authentication
+                                </li>
+                                <li><strong>Use Cases</strong>
+                                    - Chat applications
+                                    - Live updates (stock prices, sports scores)
+                                    - Multiplayer games
+                                    - Collaborative editing
+                                </li>
+                                <li><strong>Implementation Considerations</strong>
+                                    - Scaling WebSockets
+                                    - Load balancing with sticky sessions
+                                    - Message brokers (Redis Pub/Sub)
+                                    - Fallback strategies
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Slack real-time messaging</li>
+                                <li>Socket.io library</li>
+                                <li>Polling vs WebSocket comparison</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'api-gateway',
+                        title: 'API Gateway Pattern',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: API Gateway</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>What is an API Gateway</strong>
+                                    - Single entry point for all clients
+                                    - Request routing
+                                    - Protocol translation
+                                </li>
+                                <li><strong>API Gateway Responsibilities</strong>
+                                    - Authentication and authorization
+                                    - Rate limiting
+                                    - Request/response transformation
+                                    - Caching
+                                    - Load balancing
+                                    - Monitoring and logging
+                                    - SSL termination
+                                </li>
+                                <li><strong>Patterns</strong>
+                                    - Backend for Frontend (BFF)
+                                    - Service mesh vs API gateway
+                                    - Microservices communication
+                                </li>
+                                <li><strong>Tools & Platforms</strong>
+                                    - Kong
+                                    - AWS API Gateway
+                                    - Nginx
+                                    - Envoy
+                                    - Apigee
+                                </li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'webhooks',
+                        title: 'Webhooks Implementation',
+                        duration: '40 min',
+                        content: `
+                            <h2>OUTLINE: Webhooks</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Webhooks Fundamentals</strong>
+                                    - What are webhooks (reverse APIs)
+                                    - Push vs pull
+                                    - Event-driven architecture
+                                </li>
+                                <li><strong>Webhook Design</strong>
+                                    - Event types and payload structure
+                                    - Webhook URLs and registration
+                                    - Security (signatures, HMAC)
+                                    - Retry logic and idempotency
+                                </li>
+                                <li><strong>Implementation</strong>
+                                    - Webhook delivery queue
+                                    - Retry strategies (exponential backoff)
+                                    - Dead letter queue
+                                    - Webhook testing and debugging
+                                </li>
+                                <li><strong>Best Practices</strong>
+                                    - Event schema versioning
+                                    - Timeouts and reliability
+                                    - Security verification
+                                    - Webhook logs and monitoring
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Stripe webhooks</li>
+                                <li>GitHub webhooks</li>
+                                <li>HMAC signature verification</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    }
+                ]
+            },
+            {
+                title: 'Module 8: Documentation & Testing',
+                lessons: [
+                    {
+                        id: 'openapi-swagger',
+                        title: 'API Documentation with OpenAPI/Swagger',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: OpenAPI/Swagger</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>OpenAPI Specification</strong>
+                                    - What is OpenAPI (formerly Swagger)
+                                    - YAML vs JSON format
+                                    - Spec structure (paths, components, schemas)
+                                </li>
+                                <li><strong>Documentation Elements</strong>
+                                    - Endpoint descriptions
+                                    - Request/response schemas
+                                    - Authentication methods
+                                    - Examples and use cases
+                                    - Error responses
+                                </li>
+                                <li><strong>Tools & Ecosystem</strong>
+                                    - Swagger UI (interactive docs)
+                                    - Swagger Editor
+                                    - Code generation (server stubs, client SDKs)
+                                    - API mocking
+                                </li>
+                                <li><strong>Documentation Best Practices</strong>
+                                    - Keep docs in sync with code
+                                    - Provide examples for every endpoint
+                                    - Document error cases
+                                    - Versioned documentation
+                                    - Getting started guides
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Sample OpenAPI spec</li>
+                                <li>Stripe API documentation</li>
+                                <li>Twilio API docs</li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'api-testing',
+                        title: 'API Testing Strategies',
+                        duration: '50 min',
+                        content: `
+                            <h2>OUTLINE: API Testing</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Testing Pyramid</strong>
+                                    - Unit tests (business logic)
+                                    - Integration tests (API endpoints)
+                                    - Contract tests (API contracts)
+                                    - End-to-end tests (full workflows)
+                                </li>
+                                <li><strong>Test Types</strong>
+                                    - Functional testing (does it work?)
+                                    - Security testing (vulnerabilities)
+                                    - Performance testing (load, stress)
+                                    - Contract testing (Pact, consumer-driven)
+                                </li>
+                                <li><strong>Testing Tools</strong>
+                                    - Jest, Mocha (JavaScript)
+                                    - Postman/Newman (automated tests)
+                                    - REST Assured (Java)
+                                    - pytest (Python)
+                                    - K6, JMeter (performance)
+                                </li>
+                                <li><strong>Best Practices</strong>
+                                    - Test data management
+                                    - Mocking external services
+                                    - CI/CD integration
+                                    - Test coverage metrics
+                                </li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'monitoring-analytics',
+                        title: 'API Monitoring & Analytics',
+                        duration: '45 min',
+                        content: `
+                            <h2>OUTLINE: Monitoring & Analytics</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Key Metrics</strong>
+                                    - Response time (p50, p95, p99)
+                                    - Error rate (4xx, 5xx)
+                                    - Throughput (requests per second)
+                                    - Availability/uptime
+                                </li>
+                                <li><strong>Monitoring Tools</strong>
+                                    - Application Performance Monitoring (APM)
+                                    - Log aggregation (ELK, Splunk)
+                                    - Metrics (Prometheus, Grafana)
+                                    - Distributed tracing (Jaeger, Zipkin)
+                                    - Error tracking (Sentry, Rollbar)
+                                </li>
+                                <li><strong>Alerting</strong>
+                                    - Alert thresholds
+                                    - Alert fatigue prevention
+                                    - On-call rotations
+                                    - Incident response
+                                </li>
+                                <li><strong>Analytics</strong>
+                                    - Usage patterns
+                                    - Popular endpoints
+                                    - Client analytics
+                                    - API health dashboards
+                                </li>
+                            </ul>
+                        `,
+                        interviews: []
+                    },
+                    {
+                        id: 'versioning-deprecation',
+                        title: 'API Versioning & Deprecation',
+                        duration: '40 min',
+                        content: `
+                            <h2>OUTLINE: Deprecation Process</h2>
+
+                            <h3>Topics to Cover:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li><strong>Deprecation Strategy</strong>
+                                    - Announcement timeline (6-12 months notice)
+                                    - Communication channels
+                                    - Migration guides
+                                    - Parallel run period
+                                </li>
+                                <li><strong>Deprecation Headers</strong>
+                                    - Deprecated: true
+                                    - Sunset: [date]
+                                    - Link: rel="successor-version"
+                                    - Warning headers
+                                </li>
+                                <li><strong>Breaking Change Management</strong>
+                                    - What requires new version
+                                    - Backward compatibility techniques
+                                    - Feature flags
+                                    - Gradual rollout
+                                </li>
+                                <li><strong>End-of-Life Process</strong>
+                                    - Final shutdown checklist
+                                    - Redirect strategies
+                                    - User communication
+                                    - Analytics on old version usage
+                                </li>
+                            </ul>
+
+                            <h3>Examples to Include:</h3>
+                            <ul style="margin: 1rem 0; margin-left: 2rem;">
+                                <li>Twitter API v1.1 sunset</li>
+                                <li>Google+ API shutdown</li>
+                                <li>Deprecation email templates</li>
+                            </ul>
+                        `,
                         interviews: []
                     }
                 ]
