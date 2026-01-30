@@ -1,5 +1,8 @@
 // Service Worker for Learning Platform PWA
-const CACHE_NAME = 'learning-platform-v1';
+// Auto-generated timestamp: This ensures cache updates when you push changes
+const CACHE_VERSION = '2026-01-30T02:55:14'; // Auto-update this on each deploy
+const CACHE_NAME = `learning-platform-${CACHE_VERSION}`;
+
 const urlsToCache = [
   './',
   './index.html',
@@ -55,42 +58,42 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network first for HTML/JS/CSS, cache fallback for offline
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - return response
-        if (response) {
-          console.log('[Service Worker] Serving from cache:', event.request.url);
-          return response;
-        }
+  const url = new URL(event.request.url);
 
-        // Clone the request
-        const fetchRequest = event.request.clone();
+  // For course content files, always try network first to get fresh content
+  const isDynamic = url.pathname.endsWith('.js') ||
+                    url.pathname.endsWith('.html') ||
+                    url.pathname.endsWith('.css') ||
+                    url.pathname.includes('/modules/');
 
-        return fetch(fetchRequest).then((response) => {
-          // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-
-          // Clone the response
+  if (isDynamic) {
+    // Network first, fallback to cache (ensures fresh content)
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // Clone and cache the fresh response
           const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
           return response;
-        }).catch(() => {
-          // If both cache and network fail, show offline page
-          console.log('[Service Worker] Fetch failed for:', event.request.url);
-          // You could return a custom offline page here
-        });
-      })
-  );
+        })
+        .catch(() => {
+          // Network failed, try cache
+          return caches.match(event.request);
+        })
+    );
+  } else {
+    // For other resources (images, icons), cache first
+    event.respondWith(
+      caches.match(event.request)
+        .then((response) => {
+          return response || fetch(event.request);
+        })
+    );
+  }
 });
 
 // Listen for messages from the client
