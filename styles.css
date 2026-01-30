@@ -20,7 +20,7 @@ body.dark-mode {
 header {
     background-color: #ffffff;
     border-bottom: 1px solid #f0f0f0;
-    padding: 1rem;
+    padding: 0.5rem 1rem;
     position: sticky;
     top: 0;
     z-index: 100;
@@ -34,10 +34,23 @@ body.dark-mode header {
 .header-content {
     max-width: 1200px;
     margin: 0 auto;
+    padding: 0 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
+}
+
+@media (max-width: 768px) {
+    .header-content {
+        padding: 0 0.75rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .header-content {
+        padding: 0 0.5rem;
+    }
 }
 
 .nav-buttons {
@@ -48,7 +61,7 @@ body.dark-mode header {
 .nav-buttons button {
     background: none;
     border: none;
-    padding: 0.5rem 1rem;
+    padding: 0.25rem 0.5rem;
     cursor: pointer;
     font-size: 0.9rem;
     color: #000000;
@@ -75,12 +88,19 @@ body.dark-mode .nav-buttons button {
     vertical-align: middle;
     width: 48px;
     height: 24px;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .home-icon {
+    box-shadow: 0 2px 4px rgba(255, 255, 255, 0.1);
 }
 
 @media (min-width: 768px) {
     .home-icon {
         width: 96px;
         height: 48px;
+        border-radius: 8px;
     }
 }
 
@@ -239,10 +259,11 @@ body.dark-mode .contents-lesson-item .lesson-meta {
 .course-card {
     background: #ffffff;
     padding: 1.5rem;
-    border-radius: 8px;
+    border-radius: 12px;
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     border: 1px solid #e0e0e0;
+    transition: all 0.3s ease;
 }
 
 body.dark-mode .course-card {
@@ -253,6 +274,7 @@ body.dark-mode .course-card {
 
 .course-card:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
 }
 
 body.dark-mode .course-card:hover {
@@ -440,6 +462,50 @@ body.dark-mode .lesson-header p {
 
 body.dark-mode .lesson-body p {
     color: #ccc;
+}
+
+/* List styles - Fix bullet indentation */
+.lesson-body ul,
+.lesson-body ol {
+    margin-bottom: 0.8rem;
+    padding-left: 2rem;
+    font-size: 0.9rem;
+    color: #333;
+}
+
+body.dark-mode .lesson-body ul,
+body.dark-mode .lesson-body ol {
+    color: #ccc;
+}
+
+.lesson-body li {
+    margin-bottom: 0.4rem;
+    line-height: 1.6;
+}
+
+.lesson-body ul {
+    list-style-type: disc;
+}
+
+.lesson-body ol {
+    list-style-type: decimal;
+}
+
+/* Mobile list indentation fix */
+@media (max-width: 768px) {
+    .lesson-body ul,
+    .lesson-body ol {
+        padding-left: 1.5rem;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .lesson-body ul,
+    .lesson-body ol {
+        padding-left: 1.25rem;
+        margin-left: 0;
+    }
 }
 
 /* Code Block */
