@@ -8462,20 +8462,15 @@ If step fails → execute compensations in reverse</div>
     'data-engineering': {
         title: 'Data Engineering at Scale',
         duration: '14 weeks',
-        level: 'Advanced',
+        level: 'Intermediate',
         modules: [
-            {
-                title: 'Module 1: Basics',
+            // Module 0 loaded from modules/data-engineering-fundamentals.js
+            (typeof dataEngineeringFundamentals !== 'undefined' ? dataEngineeringFundamentals : {
+                title: 'Data Engineering Fundamentals',
                 lessons: [
-                    {
-                        id: 'batch-vs-stream',
-                        title: 'Batch vs Stream Processing',
-                        duration: '50 min',
-                        content: `<p>Content for batch vs stream processing...</p>`,
-                        interviews: []
-                    }
+                    { id: 'what-is-data-engineering', title: 'What is Data Engineering?', duration: '45 min', content: '<p>Loading...</p>', interviews: [] }
                 ]
-            }
+            })
         ]
     },
     'api-design': {
