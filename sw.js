@@ -1,22 +1,22 @@
 // Service Worker for Learning Platform PWA
 const CACHE_NAME = 'learning-platform-v1';
 const urlsToCache = [
-  '/courses/',
-  '/courses/index.html',
-  '/courses/styles.css',
-  '/courses/theme.js',
-  '/courses/courses.js',
-  '/courses/navigation.js',
-  '/courses/renderers.js',
-  '/courses/interviews.js',
-  '/courses/modules/module0-prerequisites.js',
-  '/courses/modules/module1-foundations.js',
-  '/courses/modules/module6-message-queues.js',
-  '/courses/modules/module7-apis.js',
-  '/courses/modules/module8-microservices.js',
-  '/courses/modules/module9-advanced-patterns.js',
-  '/courses/modules/module10-observability.js',
-  '/courses/modules/module11-real-designs.js'
+  './',
+  './index.html',
+  './styles.css',
+  './theme.js',
+  './courses.js',
+  './navigation.js',
+  './renderers.js',
+  './interviews.js',
+  './modules/module0-prerequisites.js',
+  './modules/module1-foundations.js',
+  './modules/module6-message-queues.js',
+  './modules/module7-apis.js',
+  './modules/module8-microservices.js',
+  './modules/module9-advanced-patterns.js',
+  './modules/module10-observability.js',
+  './modules/module11-real-designs.js'
 ];
 
 // Install event - cache all resources
