@@ -1,12 +1,14 @@
 {
-  "name": "Learning Platform",
+  "name": "Learning - System Design & Engineering Courses",
   "short_name": "Learning",
-  "description": "Educational courses with lessons, interview questions, and progress tracking",
-  "start_url": "/courses/",
+  "description": "Master system design, API development, microservices, and software engineering with free interactive courses and interview preparation",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
   "orientation": "any",
+  "categories": ["education", "productivity", "learning"],
   "icons": [
     {
       "src": "icons/favicon-96x96.png",

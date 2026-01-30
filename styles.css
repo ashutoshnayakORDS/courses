@@ -68,6 +68,22 @@ body.dark-mode .nav-buttons button {
     cursor: not-allowed;
 }
 
+/* Home icon responsive sizing */
+.home-icon {
+    object-fit: cover;
+    object-position: center;
+    vertical-align: middle;
+    width: 48px;
+    height: 24px;
+}
+
+@media (min-width: 768px) {
+    .home-icon {
+        width: 96px;
+        height: 48px;
+    }
+}
+
 .theme-toggle {
     background: none;
     border: none;

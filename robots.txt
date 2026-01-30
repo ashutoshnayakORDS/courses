@@ -1,0 +1,7 @@
+# robots.txt for https://ashutoshnayakords.github.io/
+
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://ashutoshnayakords.github.io/sitemap.xml
