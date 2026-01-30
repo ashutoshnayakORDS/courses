@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Icon Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="color"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        input[type="color"] {
+            width: 100px;
+            height: 50px;
+            cursor: pointer;
+        }
+        #preview {
+            margin: 20px 0;
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            max-width: 100%;
+        }
+        button {
+            background: #000;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #333;
+        }
+        .buttons {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .instructions {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PWA Icon Generator</h1>
+
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Customize your icon using the controls below</li>
+                <li>Click "Generate All Sizes" to create all required icons</li>
+                <li>Save each icon to the <code>icons/</code> folder</li>
+                <li>Push to GitHub Pages</li>
+            </ol>
+        </div>
+
+        <div class="controls">
+            <label for="text">Icon Text (1-2 characters):</label>
+            <input type="text" id="text" value="L" maxlength="2">
+
+            <label for="bgColor">Background Color:</label>
+            <input type="color" id="bgColor" value="#000000">
+
+            <label for="textColor">Text Color:</label>
+            <input type="color" id="textColor" value="#ffffff">
+        </div>
+
+        <div id="preview">
+            <h3>Preview (512x512)</h3>
+            <canvas id="canvas" width="512" height="512"></canvas>
+        </div>
+
+        <div class="buttons">
+            <button onclick="generateIcon()">Update Preview</button>
+            <button onclick="generateAllSizes()">Generate All Sizes</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+
+        function generateIcon() {
+            const text = document.getElementById('text').value || 'L';
+            const bgColor = document.getElementById('bgColor').value;
+            const textColor = document.getElementById('textColor').value;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, 512, 512);
+
+            // Draw background
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Draw text
+            ctx.fillStyle = textColor;
+            ctx.font = 'bold 280px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 256, 256);
+        }
+
+        function downloadIcon(size) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = size;
+            tempCanvas.height = size;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            const text = document.getElementById('text').value || 'L';
+            const bgColor = document.getElementById('bgColor').value;
+            const textColor = document.getElementById('textColor').value;
+
+            // Draw background
+            tempCtx.fillStyle = bgColor;
+            tempCtx.fillRect(0, 0, size, size);
+
+            // Draw text (scale font size)
+            tempCtx.fillStyle = textColor;
+            tempCtx.font = `bold ${size * 0.547}px Arial`;
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+            tempCtx.fillText(text, size / 2, size / 2);
+
+            // Download
+            tempCanvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `icon-${size}x${size}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        function generateAllSizes() {
+            sizes.forEach((size, index) => {
+                setTimeout(() => {
+                    downloadIcon(size);
+                }, index * 500); // Stagger downloads
+            });
+            alert('Downloading all icon sizes! Save them to the icons/ folder.');
+        }
+
+        // Initialize
+        generateIcon();
+
+        // Update on input change
+        document.getElementById('text').addEventListener('input', generateIcon);
+        document.getElementById('bgColor').addEventListener('input', generateIcon);
+        document.getElementById('textColor').addEventListener('input', generateIcon);
+    </script>
+</body>
+</html>

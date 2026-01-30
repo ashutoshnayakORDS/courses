@@ -8564,6 +8564,86 @@ GET /api/profile
 Headers: { "Authorization": "Bearer eyJhbGc..." }
 → Every request includes authentication</div>
 
+                            <h4>Edge Cases & Robustness Checks for Stateless:</h4>
+
+                            <div class="code-block">Edge Case 1: Token Expiration
+Problem: Token expires mid-session
+Client: GET /api/data (token expired 5 seconds ago)
+Server: 401 Unauthorized { "error": "TOKEN_EXPIRED" }
+Client: Refresh token → Get new token → Retry request
+
+// ✅ ROBUST: Include token refresh logic
+async function apiCall(url) {
+  let response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (response.status === 401) {
+    token = await refreshToken();  // Get new token
+    response = await fetch(url, {  // Retry with new token
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  return response;
+}
+
+Edge Case 2: Distributed Systems - Token Validation
+Problem: Multiple servers, token blacklisted on one server
+Solution: Shared blacklist (Redis) or short token expiry
+
+Server 1: User logs out → Add token to blacklist (Redis)
+Server 2: Receives request with same token
+Server 2: Checks Redis blacklist → Token found → 401 Unauthorized
+
+// Token blacklist check
+const isTokenBlacklisted = await redis.sismember('blacklist', tokenId);
+if (isTokenBlacklisted) {
+  return res.status(401).json({ error: 'TOKEN_REVOKED' });
+}
+
+Edge Case 3: Clock Skew Between Servers
+Problem: Token issued at 10:00:00, server clock is 09:59:50
+Server: Token not valid yet! (issued in the future)
+
+// ✅ ROBUST: Allow small clock skew (5 minutes)
+const now = Math.floor(Date.now() / 1000);
+const clockSkewTolerance = 300; // 5 minutes
+
+if (token.iat > now + clockSkewTolerance) {
+  return res.status(401).json({ error: 'TOKEN_FROM_FUTURE' });
+}
+
+Edge Case 4: Load Balancer Sticky Sessions (Anti-pattern)
+❌ BAD: Load balancer routes same user to same server
+→ Violates stateless principle
+→ Server failure loses all sessions for users on that server
+→ Can't scale horizontally (uneven load distribution)
+
+✅ GOOD: Any server can handle any request
+→ Use JWT/tokens validated against shared secret/public key
+→ Session data in shared store (Redis) if absolutely needed
+→ True horizontal scaling</div>
+
+                            <h4>Real-World Failure: Instagram's Stateful Design</h4>
+                            <div class="code-block">Instagram's Early Days (2010-2012):
+Problem: Used server-side sessions (stateful)
+Scale: Growing from 1M to 100M users
+
+What happened:
+- Load balancer used sticky sessions
+- Server crashes → Users logged out
+- Adding servers → Had to migrate sessions
+- Scaling nightmare
+
+Solution (2012): Moved to stateless JWT tokens
+- Any server can validate any request
+- Server crash → No lost sessions
+- Easy horizontal scaling
+- Now handles billions of requests/day
+
+Lesson: Stateless design is critical for scale</div>
+
                             <h3>3. Cacheable</h3>
                             <p>Responses must define themselves as cacheable or non-cacheable. If cacheable, the client can reuse the response data for equivalent requests later.</p>
 
@@ -8581,6 +8661,193 @@ Cache-Control: no-cache, no-store, must-revalidate
 
                             <p><strong>Real Example - GitHub:</strong> When you fetch repository information, GitHub tells your browser it can cache that data for several minutes. But when you check notifications, it's marked as non-cacheable since notifications change frequently.</p>
 
+                            <h4>Edge Cases & Robustness Checks for Caching:</h4>
+
+                            <div class="code-block">Edge Case 1: Cache Invalidation Problem
+Problem: User updates profile, but cached version still served
+
+Timeline:
+10:00 AM: GET /api/users/123 → Cache for 1 hour
+10:30 AM: PUT /api/users/123 (update name) → Cached data now stale!
+10:45 AM: GET /api/users/123 → Returns OLD cached name ❌
+
+// ✅ SOLUTION 1: Cache invalidation on update
+app.put('/api/users/:id', async (req, res) => {
+  await updateUser(req.params.id, req.body);
+
+  // Invalidate cache
+  await cache.del(`user:${req.params.id}`);
+
+  res.json({ success: true });
+});
+
+// ✅ SOLUTION 2: Use ETags for validation
+GET /api/users/123
+Response:
+  ETag: "33a64df5"
+  Cache-Control: max-age=3600
+
+// Next request with ETag
+GET /api/users/123
+If-None-Match: "33a64df5"
+
+// If not modified:
+304 Not Modified (use cached version)
+
+// If modified:
+200 OK (new data with new ETag)
+
+Edge Case 2: Thundering Herd Problem
+Problem: Cache expires → 1000 requests hit database simultaneously
+
+Scenario:
+11:59:59 AM: Cache expires for popular resource
+12:00:00 AM: 1000 concurrent requests
+All 1000 hit database (cache miss) → Database overload!
+
+// ✅ SOLUTION: Cache stampede protection
+async function getUser(id) {
+  const cacheKey = `user:${id}`;
+  const lockKey = `lock:user:${id}`;
+
+  // Try to get from cache
+  let user = await cache.get(cacheKey);
+  if (user) return user;
+
+  // Try to acquire lock
+  const lockAcquired = await cache.setnx(lockKey, '1', 'EX', 10);
+
+  if (lockAcquired) {
+    // This request rebuilds cache
+    user = await db.users.findOne({ id });
+    await cache.set(cacheKey, user, 'EX', 3600);
+    await cache.del(lockKey);
+    return user;
+  } else {
+    // Other requests wait and retry
+    await sleep(50); // Wait 50ms
+    return getUser(id); // Retry (cache should be populated now)
+  }
+}
+
+Edge Case 3: Cache Consistency in Distributed Systems
+Problem: Multiple servers, inconsistent caches
+
+Server 1: GET /users/123 → Cache locally
+Server 2: PUT /users/123 → Update DB, invalidate local cache
+Server 1: GET /users/123 → Returns stale cache! ❌
+
+// ✅ SOLUTION 1: Centralized cache (Redis)
+// All servers share same cache → Consistent
+
+// ✅ SOLUTION 2: Cache invalidation broadcast
+app.put('/api/users/:id', async (req, res) => {
+  await updateUser(req.params.id, req.body);
+
+  // Broadcast invalidation to all servers
+  await pubsub.publish('cache:invalidate', {
+    key: `user:${req.params.id}`
+  });
+
+  res.json({ success: true });
+});
+
+// All servers listen and invalidate local cache
+pubsub.subscribe('cache:invalidate', (message) => {
+  localCache.del(message.key);
+});
+
+Edge Case 4: Private vs Public Cache
+Problem: Caching user-specific data publicly
+
+❌ DANGEROUS:
+GET /api/users/me (returns current user's data)
+Cache-Control: max-age=3600, public
+→ CDN caches → Shows User A's data to User B! Security breach!
+
+✅ CORRECT:
+GET /api/users/me
+Cache-Control: max-age=3600, private
+→ Only browser caches → Secure
+
+GET /api/users/123 (public profile)
+Cache-Control: max-age=3600, public
+→ CDN can cache → No security issue
+
+Edge Case 5: Vary Header for Content Negotiation
+Problem: Same URL, different responses based on headers
+
+GET /api/users/123
+Accept: application/json
+→ Returns JSON
+
+GET /api/users/123
+Accept: application/xml
+→ Returns XML
+
+Without Vary header: Cache returns wrong format!
+
+✅ CORRECT:
+Response Headers:
+  Cache-Control: max-age=3600
+  Vary: Accept
+→ Cache separately for each Accept header value</div>
+
+                            <h4>Real-World Failure: Cloudflare Cache Poisoning (2019)</h4>
+                            <div class="code-block">What happened:
+Cloudflare CDN cached responses without checking Vary header
+Attacker: GET /page with malicious headers → Cached for all users
+Result: XSS attack served to millions from cache
+
+Timeline:
+1. Attacker: GET / with X-Forwarded-Host: evil.com
+2. Response includes: <script src="https://evil.com/malicious.js">
+3. Cloudflare caches response
+4. Normal users: GET / → Receive cached malicious response!
+5. Millions affected
+
+Fix: Properly respect Vary header for cache keys
+
+Lesson: Cache based on all relevant headers, not just URL</div>
+
+                            <h4>Cache Decision Matrix:</h4>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Resource Type</th>
+                                        <th>Cache-Control</th>
+                                        <th>Why</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Static assets (logo.png)</td>
+                                        <td>max-age=31536000, immutable</td>
+                                        <td>Never changes (use versioned URLs)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Public user profile</td>
+                                        <td>max-age=300, public</td>
+                                        <td>Changes occasionally, CDN cacheable</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Current user's data</td>
+                                        <td>max-age=60, private</td>
+                                        <td>User-specific, browser cache only</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Real-time stock prices</td>
+                                        <td>no-cache, no-store</td>
+                                        <td>Always needs fresh data</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Search results</td>
+                                        <td>max-age=60, private, must-revalidate</td>
+                                        <td>Personalized, short cache, validate</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
                             <h3>4. Uniform Interface</h3>
                             <p>This is the most important constraint. REST APIs should have a consistent, uniform way of interacting with resources. This includes:</p>
 
@@ -8590,6 +8857,104 @@ Cache-Control: no-cache, no-store, must-revalidate
 /users/123/posts     → All posts by user 123
 /posts/456           → Post with ID 456
 /posts/456/comments  → All comments on post 456</div>
+
+                            <h5>Edge Cases for URI Design:</h5>
+                            <div class="code-block">Edge Case 1: Special Characters in URLs
+Problem: Resource IDs contain special characters
+
+❌ PROBLEMATIC:
+/users/john@example.com/posts
+→ @ symbol needs URL encoding → /users/john%40example.com/posts
+→ Ugly, error-prone
+
+✅ BETTER: Use ID instead of email
+/users/123/posts
+→ Or use base64/slug: /users/am9obkBleGFtcGxlLmNvbQ/posts
+
+Edge Case 2: Deep Nesting Complexity
+❌ TOO DEEP (hard to understand):
+/organizations/1/departments/2/teams/3/members/4/tasks/5/comments/6
+→ 7 levels deep!
+→ Hard to query
+→ Brittle (what if team changes department?)
+
+✅ BETTER: Flatten where possible
+/tasks/5/comments/6
+→ Task already knows its org/dept/team via joins
+→ Simpler, more flexible
+
+// For queries across entities:
+GET /comments?task_id=5&member_id=4
+→ Query parameters instead of deep nesting
+
+Edge Case 3: Singular vs Plural Consistency
+❌ INCONSISTENT:
+/user/123        → Singular
+/posts/456       → Plural
+/comment/789     → Singular
+→ Confusing!
+
+✅ CONSISTENT: Always use plural
+/users/123
+/posts/456
+/comments/789
+→ Predictable pattern
+
+Exception: Singleton resources
+/users/me        → Current user (no ID needed)
+/settings        → App settings (only one)
+
+Edge Case 4: Version in URL vs Header
+Option 1: URL versioning
+/v1/users/123
+/v2/users/123
+
+Option 2: Header versioning
+GET /users/123
+Accept: application/vnd.myapi.v2+json
+
+Option 3: Query parameter
+/users/123?version=2
+
+✅ RECOMMENDED: URL versioning
+Why: Explicit, cacheable, easy to test
+GitHub, Stripe, Twitter use this approach
+
+Edge Case 5: Filtering vs Separate Resources
+Question: Best users - filter or separate resource?
+
+Option 1: Filter
+/users?sort=reputation&limit=10
+
+Option 2: Separate resource
+/users/top
+
+Both valid! Choose based on:
+- Filter: Generic, reusable
+- Separate: Common query, optimization opportunity
+
+Example: Stack Overflow
+/questions?sort=votes          → Generic filter
+/questions/week               → Separate (popular query)
+/questions/unanswered         → Separate (business logic)
+
+Edge Case 6: Trailing Slash Consistency
+/users vs /users/
+
+⚠️ DIFFERENT URLs (technically):
+/users → One resource
+/users/ → Another resource (with trailing slash)
+
+✅ SOLUTION: Redirect one to the other
+app.use((req, res, next) => {
+  if (req.path !== '/' && req.path.endsWith('/')) {
+    res.redirect(301, req.path.slice(0, -1));
+  } else {
+    next();
+  }
+});
+
+Or: Treat as equivalent (normalize in router)</div>
 
                             <h4>b) Resource Manipulation through Representations</h4>
                             <p>You work with representations of resources (usually JSON or XML), not the actual resource itself.</p>
@@ -8663,6 +9028,167 @@ Client doesn't know about all the layers in between</div>
 
                             <p><strong>Real Example - Stripe:</strong> When you call Stripe's API, your request might go through their load balancer, CDN, API gateway, rate limiter, and finally their application servers. But you just call <code>https://api.stripe.com</code> and it all works transparently.</p>
 
+                            <h4>Edge Cases & Robustness for Layered Systems:</h4>
+
+                            <div class="code-block">Edge Case 1: Header Pollution Across Layers
+Problem: Each layer adds headers, bloating response
+
+Layer 1 (Load Balancer): X-LB-ID: lb-123
+Layer 2 (API Gateway): X-Gateway-Version: 2.0
+Layer 3 (Cache): X-Cache: HIT, Age: 300
+Layer 4 (App): X-Request-ID: req-abc
+Layer 5 (Server): X-Server-ID: srv-456
+
+Result: 20+ headers added, 2KB overhead per response!
+
+✅ SOLUTION: Strip internal headers at edge
+// At edge/gateway, remove internal headers before sending to client
+const internalHeaders = ['X-Server-ID', 'X-Internal-*'];
+internalHeaders.forEach(h => res.removeHeader(h));
+
+// Only expose necessary headers to client
+Response to client:
+  X-Request-ID: req-abc (for debugging)
+  X-Cache: HIT (useful info)
+
+Edge Case 2: Layer Failure Cascades
+Problem: Layer 3 (cache) down → All requests hit Layer 4 (app)
+
+Timeline:
+12:00 PM: Cache layer crashes
+12:00:01: All requests bypass cache → App overloaded
+12:00:02: App crashes (can't handle full load)
+12:00:03: Entire system down!
+
+✅ SOLUTION: Circuit breaker pattern
+// If cache unavailable, serve stale data or degrade gracefully
+async function getData() {
+  try {
+    return await cache.get(key);
+  } catch (cacheError) {
+    // Cache down, log but don't fail
+    logger.error('Cache unavailable', cacheError);
+
+    // Try app layer with circuit breaker
+    if (circuitBreaker.isOpen()) {
+      // Too many failures, return fallback
+      return getFallbackData(); // Stale cache or default
+    }
+
+    try {
+      const data = await app.get(key);
+      circuitBreaker.recordSuccess();
+      return data;
+    } catch (appError) {
+      circuitBreaker.recordFailure();
+      throw appError;
+    }
+  }
+}
+
+Edge Case 3: Transparent Layer Proxying Issues
+Problem: Client IP address lost through layers
+
+Client (IP: 1.2.3.4)
+  → Load Balancer (sees 1.2.3.4)
+    → API Gateway (sees load balancer IP: 10.0.0.1)
+      → App Server (sees gateway IP: 10.0.0.2)
+
+App thinks all requests come from 10.0.0.2! ❌
+- Can't do rate limiting per client
+- Can't do geo-location
+- Can't block malicious IPs
+
+✅ SOLUTION: X-Forwarded-For header chain
+Load Balancer adds:
+  X-Forwarded-For: 1.2.3.4
+
+API Gateway appends:
+  X-Forwarded-For: 1.2.3.4, 10.0.0.1
+
+App reads original IP:
+const clientIP = req.headers['x-forwarded-for'].split(',')[0];
+// clientIP = '1.2.3.4' ✅
+
+⚠️ SECURITY: Validate X-Forwarded-For
+// Attacker can spoof this header!
+X-Forwarded-For: 127.0.0.1  // Fake localhost
+
+// ✅ SECURE: Trust only known proxies
+const trustedProxies = ['10.0.0.1', '10.0.0.2'];
+const forwardedIPs = req.headers['x-forwarded-for'].split(',');
+const clientIP = forwardedIPs[forwardedIPs.length - trustedProxies.length - 1];
+
+Edge Case 4: Layer Timeout Accumulation
+Problem: Each layer has timeout, accumulates to unacceptable total
+
+Load Balancer: 30s timeout
+API Gateway: 30s timeout
+Cache: 10s timeout
+App: 30s timeout
+Total possible wait: 100s! ❌
+
+✅ SOLUTION: Decreasing timeouts down the stack
+Load Balancer: 30s (client-facing, generous)
+API Gateway: 25s (must respond before LB timeout)
+Cache: 5s (fast or fail)
+App: 20s (must complete before gateway timeout)
+
+// Propagate deadline through headers
+Request:
+  X-Request-Deadline: 1640000030 (Unix timestamp)
+
+Each layer:
+const deadline = parseInt(req.headers['x-request-deadline']);
+const remainingTime = deadline - Date.now();
+if (remainingTime < 0) {
+  return res.status(408).json({ error: 'REQUEST_TIMEOUT' });
+}
+
+Edge Case 5: Layer Version Mismatch
+Problem: Gateway updated, but app expects old format
+
+Gateway v2: Sends requests with new header format
+App v1: Doesn't understand new headers → Crashes
+
+✅ SOLUTION: Backward compatibility + gradual rollout
+// Gateway maintains compatibility
+if (appVersion === 'v1') {
+  // Send old format headers
+} else {
+  // Send new format
+}
+
+// Or: Blue-green deployment
+// Update gateway → Test → Update app → Done</div>
+
+                            <h4>Real-World Failure: AWS Route 53 Outage (2019)</h4>
+                            <div class="code-block">What happened:
+Layer 1 (Route 53 DNS): Overloaded from DDoS
+Layer 2 (CloudFront CDN): Couldn't resolve DNS
+Layer 3+ (Applications): All became unreachable
+
+Timeline:
+1. DDoS attack on Route 53 DNS layer
+2. DNS resolution fails for millions of domains
+3. CloudFront can't route requests (no DNS)
+4. Applications unreachable even though healthy!
+
+Impact: Major sites down for 7 hours
+
+Root cause: Single layer failure cascaded
+Layers weren't truly independent - DNS was SPOF
+
+Lesson: Each layer needs redundancy
+- Multiple DNS providers (Route 53 + Cloudflare)
+- Fallback mechanisms at each layer
+- Health checks for layer dependencies
+
+Post-mortem fix:
+- Multi-provider DNS (failover)
+- CDN with cached DNS results
+- Layer independence monitoring</div>
+
                             <h3>6. Code on Demand (Optional)</h3>
                             <p>Servers can temporarily extend client functionality by transferring executable code (like JavaScript). This is the only optional constraint.</p>
 
@@ -8695,6 +9221,160 @@ PUT    /api/users/123   (Update user)
 DELETE /api/users/123   (Delete user)
 
 The HTTP method defines the action!</div>
+
+                            <h4>Edge Cases: When Actions Don't Map to Resources</h4>
+
+                            <div class="code-block">Edge Case 1: Complex Business Operations
+Problem: Some operations don't fit CRUD (Create/Read/Update/Delete)
+
+Examples:
+- Transfer money between accounts
+- Send email
+- Calculate shipping cost
+- Generate report
+- Archive old records
+- Publish draft article
+
+❌ AWKWARD (forcing into resource model):
+POST /transactions  // Too generic
+POST /emails       // Not really creating email resource
+POST /calculations // Calculation isn't persisted
+
+✅ SOLUTION 1: Action as sub-resource
+POST /accounts/123/transfers
+{
+  "to_account": 456,
+  "amount": 100.00,
+  "currency": "USD"
+}
+→ Creates transfer resource (RESTful!)
+
+POST /articles/123/publish
+→ Changes state of article (sub-resource action)
+
+✅ SOLUTION 2: Controller resource (when operation truly doesn't fit)
+POST /send-email  // Acceptable if email truly isn't a resource
+POST /calculate-shipping  // Acceptable for one-off calculation
+
+✅ SOLUTION 3: Model as state transition
+PUT /articles/123
+{
+  "status": "published"
+}
+→ Update status field (RESTful!)
+
+PUT /orders/456
+{
+  "status": "shipped",
+  "tracking_number": "1Z999..."
+}
+
+Edge Case 2: Batch Operations
+Problem: Update 100 users at once
+
+❌ INEFFICIENT:
+PUT /users/1 → Individual requests
+PUT /users/2
+... (100 requests)
+PUT /users/100
+
+✅ SOLUTION 1: Batch endpoint
+POST /users/batch
+{
+  "updates": [
+    { "id": 1, "status": "active" },
+    { "id": 2, "status": "active" },
+    ...
+  ]
+}
+
+✅ SOLUTION 2: Query-based update
+PUT /users?department=engineering
+{
+  "status": "active"
+}
+→ Update all users matching query
+
+Edge Case 3: Actions on Collections vs Items
+When does action apply to collection vs individual resource?
+
+Collection actions:
+POST /orders (create new order)
+GET /orders?status=pending (filter collection)
+DELETE /orders?before=2020-01-01 (bulk delete old orders)
+
+Item actions:
+GET /orders/123 (get specific order)
+PUT /orders/123 (update specific order)
+POST /orders/123/cancel (cancel this order)
+
+✅ PATTERN:
+Collection: Operates on multiple or creates new
+Item: Operates on single resource
+
+Edge Case 4: Nested Resources - Ownership Question
+Is this the right nesting?
+
+/users/123/posts/456
+
+What if:
+- Post 456 is transferred to user 789?
+- Post 456 is deleted but URL suggests it still belongs to user 123?
+
+✅ SOLUTION: Use independent resource URLs
+GET /posts/456  (post exists independently)
+GET /users/123/posts (convenience endpoint for filtering)
+
+Both valid! Depends on domain model:
+- Weak entity: /users/123/addresses/1 (address can't exist without user)
+- Strong entity: /posts/456 (post exists independently)
+
+Edge Case 5: Read-Only vs Read-Write Resources
+Some resources should only support certain operations
+
+❌ BAD: Allow all CRUD operations everywhere
+DELETE /system/config  // Dangerous!
+POST /audit-logs      // Audit logs should be write-only by system
+
+✅ GOOD: Restrict operations by resource type
+GET /system/config     // ✅ Allowed
+PUT /system/config     // ✅ Allowed (by admins)
+DELETE /system/config  // ❌ 405 Method Not Allowed
+
+GET /audit-logs        // ✅ Allowed (read-only)
+POST /audit-logs       // ❌ 403 Forbidden (system only)
+DELETE /audit-logs     // ❌ 405 Method Not Allowed (never delete)</div>
+
+                            <h4>Real Example: Stripe's API Design</h4>
+                            <div class="code-block">Stripe handles complex operations elegantly:
+
+1. Refunds (action as resource):
+POST /charges/ch_123/refunds
+{
+  "amount": 1000
+}
+→ Creates refund resource, refund belongs to charge
+
+2. Captures (state transition):
+POST /charges/ch_123/capture
+→ Changes charge state from authorized → captured
+→ Could also be: PUT /charges/ch_123 { "captured": true }
+
+3. Transfers (resource model):
+POST /transfers
+{
+  "amount": 1000,
+  "destination": "acct_456"
+}
+→ Transfer is first-class resource
+
+4. Balance (read-only resource):
+GET /balance
+→ Only supports GET, no POST/PUT/DELETE
+
+Lesson: Model operations as resources when possible,
+use sub-resource actions for state transitions,
+controller endpoints as last resort</div>
 
                             <h3>Resource Hierarchy</h3>
                             <div class="code-block">// Top-level collection
@@ -8764,6 +9444,157 @@ HTTP 404 Not Found
   "resource": "/api/users/999"
 }</div>
 
+                            <h4>Edge Cases for Anti-Patterns:</h4>
+
+                            <div class="code-block">Edge Case 1: Hybrid Approach - When Verbs Are OK
+Sometimes actions genuinely don't fit resource model:
+
+✅ ACCEPTABLE verb endpoints:
+POST /search  // Search isn't creating a resource
+POST /login   // Login isn't a resource
+POST /logout  // Logout isn't a resource
+POST /convert // Currency conversion (no persistent resource)
+POST /calculate // One-off calculation
+
+❌ Still avoid when resource model works:
+POST /authenticate → Use POST /sessions (session = resource)
+POST /sendEmail → Use POST /messages or /emails
+
+Rule: Use verbs only when truly no resource can be modeled
+
+Edge Case 2: REST vs GraphQL Decision Point
+When REST anti-patterns accumulate, consider GraphQL:
+
+Signs you might need GraphQL:
+- Too many endpoints for similar data
+  GET /users/123
+  GET /users/123/with-posts
+  GET /users/123/with-posts-and-comments
+  GET /users/123/minimal
+  → GraphQL: Single endpoint, client specifies fields
+
+- Over-fetching problem
+  GET /users/123 returns 50 fields, client needs 3
+  → GraphQL: Client requests only needed fields
+
+- Under-fetching (N+1 requests)
+  GET /posts → Then GET /users/:id for each post author
+  → GraphQL: Single request with nested queries
+
+✅ Stay with REST when:
+- Simple CRUD operations
+- Clear resource boundaries
+- Caching is critical (GraphQL harder to cache)
+- Public API (REST more familiar to consumers)
+
+Edge Case 3: PATCH vs PUT Confusion
+❌ COMMON MISTAKE:
+PUT /users/123 with partial data
+{
+  "email": "new@example.com"  // Only updating email
+}
+→ Expects to update just email
+→ But PUT should replace entire resource!
+
+✅ CORRECT: Use PATCH for partial updates
+PATCH /users/123
+{
+  "email": "new@example.com"
+}
+→ Updates only specified fields
+
+PUT /users/123
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "new@example.com",
+  "phone": "555-1234"
+  // All fields required
+}
+→ Replaces entire resource
+
+Edge Case 4: Soft Delete vs Hard Delete
+DELETE /users/123 - What should this do?
+
+Option 1: Hard delete (permanent)
+DELETE /users/123
+→ User removed from database forever
+
+Option 2: Soft delete (mark as deleted)
+DELETE /users/123
+→ Sets user.deleted_at = now()
+→ User still in database but hidden
+
+✅ RECOMMENDATION: Soft delete for most cases
+Why:
+- Data recovery if mistake
+- Audit trail
+- Foreign key integrity
+- GDPR: Can hard-delete later on schedule
+
+Implementation:
+DELETE /users/123
+→ Soft delete (set deleted_at)
+
+DELETE /users/123?permanent=true
+→ Hard delete (admin only, requires confirmation)
+
+Or separate endpoints:
+DELETE /users/123 → Soft delete
+POST /users/123/purge → Hard delete
+
+Edge Case 5: Exposing Internal IDs
+❌ SECURITY RISK:
+GET /users/123
+→ Exposes auto-increment ID
+→ Attacker can enumerate: /users/1, /users/2, ...
+→ Can estimate user count: ID 1000000 = ~1M users
+
+✅ BETTER: Use UUIDs or obfuscated IDs
+GET /users/550e8400-e29b-41d4-a716-446655440000
+→ Can't enumerate (UUID random)
+→ Can't estimate count
+
+GET /users/dGVzdA (base64 encoded)
+→ Obfuscated but still deterministic
+
+✅ BEST: Separate public and internal IDs
+Database: internal_id (auto-increment for performance)
+API: public_id (UUID for security)
+
+GET /users/550e8400-e29b-41d4-a716-446655440000
+→ Maps to internal_id 123
+→ API consumers never see internal ID</div>
+
+                            <h4>Real-World Anti-Pattern: SOAP to REST Migration</h4>
+                            <div class="code-block">Amazon Web Services (AWS) - Early Days (2006)
+
+Old SOAP API (Action-based):
+POST /
+Action: CreateBucket
+Action: DeleteBucket
+Action: GetObject
+→ All actions via POST to single endpoint
+→ Action specified in body/header
+→ Hard to cache, not intuitive
+
+New REST API (Resource-based):
+PUT /bucket-name (create bucket)
+DELETE /bucket-name (delete bucket)
+GET /bucket-name/object-key (get object)
+→ HTTP methods define actions
+→ URLs represent resources
+→ Cacheable, intuitive
+
+Timeline:
+2006: SOAP API launch
+2010: REST API introduced (parallel)
+2015: SOAP API deprecated
+2018: SOAP API shut down
+
+Lesson: REST is simpler and more web-friendly
+Migration took years due to backward compatibility needs</div>
+
                             <h2>Real-World REST API Examples</h2>
 
                             <h3>GitHub API</h3>
@@ -8817,27 +9648,847 @@ DELETE https://api.twitter.com/2/tweets/1234567890</div>
                         interviews: [
                             {
                                 question: "What does REST stand for and what are its main principles?",
-                                answer: "REST stands for Representational State Transfer. Main principles: 1) Client-Server separation, 2) Stateless communication (each request contains all needed info), 3) Cacheable responses, 4) Uniform interface (consistent URL structure), 5) Layered system (intermediaries like load balancers), 6) Code on demand (optional)."
+                                answer: `REST stands for Representational State Transfer. Main principles:
+
+1) Client-Server separation - Independent evolution
+2) Stateless communication - Each request contains all needed info
+3) Cacheable responses - Explicit cache controls
+4) Uniform interface - Consistent URL structure and HTTP methods
+5) Layered system - Intermediaries like load balancers
+6) Code on demand - Optional (JavaScript, applets)
+
+EDGE CASE 1: Stateless + Long-Running Operations
+❌ PROBLEM:
+POST /api/reports/generate
+→ Returns 200 OK immediately
+→ But where's the result? Need session state!
+
+✅ SOLUTION: Async pattern with resource creation
+POST /api/reports
+Response: 202 Accepted
+{
+  "report_id": "abc-123",
+  "status_url": "/api/reports/abc-123/status"
+}
+
+GET /api/reports/abc-123/status
+Response: 200 OK
+{
+  "status": "processing",
+  "progress": 45
+}
+
+Later:
+GET /api/reports/abc-123
+Response: 200 OK
+{
+  "status": "completed",
+  "download_url": "/api/reports/abc-123/download"
+}
+
+EDGE CASE 2: Client-Server Evolution
+❌ TIGHT COUPLING:
+Client hardcodes server implementation details
+→ Server can't change without breaking clients
+
+✅ LOOSE COUPLING:
+Client: GET /api/users/123
+Server v1: { "name": "John" }
+Server v2: { "first_name": "John", "last_name": "Doe", "name": "John Doe" }
+→ Backward compatible, old clients still work
+
+EDGE CASE 3: Layered System + Authentication
+Each layer adds headers:
+Client → Load Balancer → API Gateway → App Server
+
+Request at App Server:
+X-Forwarded-For: 203.0.113.1, 10.0.0.5
+X-Real-IP: 203.0.113.1
+Authorization: Bearer token123
+
+App must trust proxy headers only from known proxies:
+const trustedProxies = ['10.0.0.5'];
+const forwardedFor = req.headers['x-forwarded-for'];
+const ips = forwardedFor.split(',').map(ip => ip.trim());
+const clientIP = ips[ips.length - trustedProxies.length - 1];`
                             },
                             {
                                 question: "Why is statelessness important in REST APIs?",
-                                answer: "Statelessness means each request contains all needed information. Benefits: 1) Any server can handle any request (no session affinity), 2) Easy to scale horizontally, 3) Server crashes don't lose state, 4) Simplified load balancing. Each request includes auth tokens rather than relying on server-side sessions."
+                                answer: `Statelessness means each request contains all needed information. Benefits:
+1) Any server can handle any request (no session affinity)
+2) Easy to scale horizontally
+3) Server crashes don't lose state
+4) Simplified load balancing
+
+Each request includes auth tokens rather than relying on server-side sessions.
+
+EDGE CASE 1: Shopping Cart in Stateless API
+❌ STATEFUL (Server-side sessions):
+POST /api/cart/add
+→ Stores cart in server memory/session
+→ Requires sticky sessions (always route to same server)
+→ Server restart loses all carts
+
+✅ STATELESS:
+POST /api/carts
+{
+  "user_id": "123",
+  "items": [
+    {"product_id": "p1", "quantity": 2}
+  ]
+}
+Response: 201 Created
+{
+  "cart_id": "cart-abc-123",
+  "items": [...]
+}
+
+Every request includes cart_id:
+PUT /api/carts/cart-abc-123
+GET /api/carts/cart-abc-123
+
+Cart stored in database, any server can handle requests.
+
+EDGE CASE 2: Multi-Step Wizard
+❌ STATEFUL:
+Step 1: POST /api/wizard/start → Creates session
+Step 2: POST /api/wizard/next → Reads from session
+Step 3: POST /api/wizard/complete → Reads from session
+
+✅ STATELESS:
+Step 1: POST /api/applications
+{ "step": 1, "data": {"name": "John"} }
+Response: { "application_id": "app-123" }
+
+Step 2: PUT /api/applications/app-123
+{ "step": 2, "data": {"address": "123 Main St"} }
+
+Step 3: PUT /api/applications/app-123
+{ "step": 3, "data": {"completed": true} }
+
+Each request is independent, includes application_id.
+
+EDGE CASE 3: Token Refresh in Stateless System
+Access tokens expire after 15 minutes:
+GET /api/users/me
+Authorization: Bearer <expired_access_token>
+Response: 401 Unauthorized
+{
+  "error": "token_expired",
+  "expired_at": "2024-01-15T10:00:00Z"
+}
+
+Client automatically refreshes:
+POST /api/auth/refresh
+{
+  "refresh_token": "refresh_xyz"
+}
+Response: 200 OK
+{
+  "access_token": "new_token_abc",
+  "expires_in": 900
+}
+
+Retry original request with new token - all stateless!
+
+EDGE CASE 4: Horizontal Scaling with Statelessness
+Load Balancer distributes requests randomly:
+
+Request 1 → Server A: POST /api/orders { "cart_id": "cart-123" }
+Request 2 → Server B: GET /api/orders/order-456
+Request 3 → Server A: PUT /api/orders/order-456/status
+
+All servers can handle any request because:
+- Auth in JWT token (no session lookup)
+- Cart/Order in database (not server memory)
+- No sticky sessions required
+
+Facebook scaled to billions using stateless APIs:
+- Any web server can handle any request
+- Auto-scaling based on load
+- No session replication overhead`
                             },
                             {
                                 question: "What's wrong with URLs like POST /api/createUser or GET /api/getAllUsers?",
-                                answer: "These are action-based URLs (RPC style), not resource-based (REST style). REST uses resources (nouns) in URLs and HTTP methods for actions. Should be: POST /api/users (create), GET /api/users (get all), GET /api/users/123 (get one). The HTTP method defines the action, not the URL."
+                                answer: `These are action-based URLs (RPC style), not resource-based (REST style). REST uses resources (nouns) in URLs and HTTP methods for actions.
+
+❌ BAD (Action-based - RPC style):
+POST /api/createUser
+GET /api/getAllUsers
+POST /api/deleteUser?id=123
+GET /api/updateUserEmail?id=123&email=new@example.com
+
+✅ GOOD (Resource-based - REST style):
+POST /api/users (create)
+GET /api/users (get all)
+DELETE /api/users/123 (delete one)
+PATCH /api/users/123 { "email": "new@example.com" }
+
+The HTTP method defines the action, not the URL.
+
+EDGE CASE 1: Complex Business Operations
+❌ RPC-STYLE:
+POST /api/transferMoneyBetweenAccounts
+{
+  "from": 123,
+  "to": 456,
+  "amount": 100
+}
+
+✅ REST-STYLE Option 1 (Sub-resource):
+POST /api/accounts/123/transfers
+{
+  "to_account": 456,
+  "amount": 100,
+  "description": "Payment"
+}
+
+✅ REST-STYLE Option 2 (Transaction resource):
+POST /api/transactions
+{
+  "type": "transfer",
+  "from_account": 123,
+  "to_account": 456,
+  "amount": 100
+}
+
+Both model the operation as a resource, not an action.
+
+EDGE CASE 2: Batch Operations
+❌ RPC-STYLE:
+POST /api/deleteMultipleUsers
+{
+  "user_ids": [1, 2, 3, 4, 5]
+}
+
+✅ REST-STYLE Option 1 (Bulk resource):
+POST /api/users/bulk-delete
+{
+  "user_ids": [1, 2, 3, 4, 5]
+}
+
+✅ REST-STYLE Option 2 (Batch endpoint):
+POST /api/batch
+{
+  "operations": [
+    {"method": "DELETE", "path": "/users/1"},
+    {"method": "DELETE", "path": "/users/2"},
+    {"method": "DELETE", "path": "/users/3"}
+  ]
+}
+
+EDGE CASE 3: State Transitions
+❌ RPC-STYLE:
+POST /api/publishArticle?id=123
+POST /api/unpublishArticle?id=123
+POST /api/archiveArticle?id=123
+
+✅ REST-STYLE (State as attribute):
+PATCH /api/articles/123
+{ "status": "published" }
+
+PATCH /api/articles/123
+{ "status": "draft" }
+
+PATCH /api/articles/123
+{ "status": "archived" }
+
+Or with sub-resource for workflow:
+POST /api/articles/123/publish
+POST /api/articles/123/unpublish
+POST /api/articles/123/archive
+
+EDGE CASE 4: Search and Filter
+❌ RPC-STYLE:
+GET /api/searchUsers?name=john
+POST /api/findUsersByRoleAndStatus
+{
+  "role": "admin",
+  "status": "active"
+}
+
+✅ REST-STYLE:
+GET /api/users?name=john
+GET /api/users?role=admin&status=active
+
+For complex searches:
+POST /api/users/search (acceptable exception)
+{
+  "filters": {...},
+  "sort": {...}
+}
+
+EDGE CASE 5: Caching Benefits
+❌ RPC-STYLE:
+POST /api/getUser { "id": 123 }
+→ POST requests not cached by browsers/CDNs
+→ Every request hits server
+
+✅ REST-STYLE:
+GET /api/users/123
+→ Cacheable by default
+→ Can use Cache-Control, ETag headers
+→ CDNs can cache responses
+
+Real Example - Stripe API:
+✅ POST /v1/customers (create customer)
+✅ GET /v1/customers/cus_123 (retrieve)
+✅ POST /v1/customers/cus_123 (update - uses POST for updates)
+✅ DELETE /v1/customers/cus_123 (delete)
+
+Never: POST /v1/createCustomer`
                             },
                             {
                                 question: "What is HATEOAS and why is it useful?",
-                                answer: "HATEOAS (Hypermedia as Engine of Application State) means API responses include links to related resources. Example: GET /users/123 returns links to /users/123/posts, /users/123/followers. Benefits: self-documenting API, clients can discover available actions, reduces hardcoding of URLs in clients."
+                                answer: `HATEOAS (Hypermedia as Engine of Application State) means API responses include links to related resources.
+
+Benefits:
+1) Self-documenting API
+2) Clients can discover available actions
+3) Reduces hardcoding of URLs in clients
+4) Server can change URLs without breaking clients
+
+EDGE CASE 1: Basic HATEOAS Example
+❌ WITHOUT HATEOAS:
+GET /api/users/123
+Response:
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+
+Client must hardcode:
+- GET /api/users/123/posts to get posts
+- GET /api/users/123/followers to get followers
+
+✅ WITH HATEOAS:
+GET /api/users/123
+Response:
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "_links": {
+    "self": {"href": "/api/users/123"},
+    "posts": {"href": "/api/users/123/posts"},
+    "followers": {"href": "/api/users/123/followers"},
+    "following": {"href": "/api/users/123/following"},
+    "avatar": {"href": "/api/users/123/avatar"}
+  }
+}
+
+Client discovers available actions from response!
+
+EDGE CASE 2: State-Dependent Actions
+❌ WITHOUT HATEOAS:
+GET /api/orders/456
+{
+  "id": 456,
+  "status": "pending",
+  "total": 99.99
+}
+
+Client must know:
+- Can cancel if status=pending
+- Can't cancel if status=shipped
+- Can refund if status=delivered
+
+✅ WITH HATEOAS:
+GET /api/orders/456
+{
+  "id": 456,
+  "status": "pending",
+  "total": 99.99,
+  "_links": {
+    "self": {"href": "/api/orders/456"},
+    "cancel": {
+      "href": "/api/orders/456/cancel",
+      "method": "POST"
+    },
+    "pay": {
+      "href": "/api/orders/456/payment",
+      "method": "POST"
+    }
+  }
+}
+
+After shipping:
+GET /api/orders/456
+{
+  "id": 456,
+  "status": "shipped",
+  "total": 99.99,
+  "_links": {
+    "self": {"href": "/api/orders/456"},
+    "track": {"href": "/api/shipments/789"}
+    // No "cancel" link - not allowed anymore!
+  }
+}
+
+Server controls available actions based on state.
+
+EDGE CASE 3: Pagination with HATEOAS
+✅ GitHub API Style:
+GET /api/users?page=2&per_page=10
+Response:
+{
+  "data": [...],
+  "_links": {
+    "self": {"href": "/api/users?page=2&per_page=10"},
+    "first": {"href": "/api/users?page=1&per_page=10"},
+    "prev": {"href": "/api/users?page=1&per_page=10"},
+    "next": {"href": "/api/users?page=3&per_page=10"},
+    "last": {"href": "/api/users?page=10&per_page=10"}
+  }
+}
+
+Client doesn't build pagination URLs - just follows links!
+
+EDGE CASE 4: Versioning and URL Changes
+WITHOUT HATEOAS:
+Client hardcodes: const url = '/api/v1/users/123/posts';
+Server changes to: '/api/v2/users/123/articles'
+→ Client breaks!
+
+WITH HATEOAS:
+Client follows: response._links.posts.href
+Server changes href: "_links": { "posts": {"href": "/api/v2/users/123/articles"} }
+→ Client still works!
+
+EDGE CASE 5: Partial HATEOAS (Pragmatic Approach)
+Most APIs don't implement full HATEOAS, but use selective hypermedia:
+
+✅ PRACTICAL:
+GET /api/invoices/123
+{
+  "id": 123,
+  "amount": 1000,
+  "status": "pending",
+  "pdf_url": "https://cdn.example.com/invoices/123.pdf",
+  "payment_url": "https://checkout.example.com/pay/inv_123"
+}
+
+Only include links where:
+- URL is dynamic/computed (CDN URLs, checkout URLs)
+- Action availability depends on state
+- URL might change (external services)
+
+Real Example - PayPal API:
+{
+  "id": "PAY-123",
+  "state": "created",
+  "links": [
+    {
+      "href": "https://api.paypal.com/v1/payments/payment/PAY-123",
+      "rel": "self",
+      "method": "GET"
+    },
+    {
+      "href": "https://www.paypal.com/cgi-bin/webscr?cmd=_express-checkout&token=EC-123",
+      "rel": "approval_url",
+      "method": "REDIRECT"
+    },
+    {
+      "href": "https://api.paypal.com/v1/payments/payment/PAY-123/execute",
+      "rel": "execute",
+      "method": "POST"
+    }
+  ]
+}
+
+Client follows approval_url for checkout, then execute for completion.`
                             },
                             {
                                 question: "How do REST APIs handle caching?",
-                                answer: "REST APIs use HTTP cache headers in responses: Cache-Control, ETag, Last-Modified. Example: Cache-Control: max-age=3600 means cache for 1 hour. Cacheable data (user profiles) gets cache headers; real-time data (stock prices) uses Cache-Control: no-cache. This reduces server load and improves response times."
+                                answer: `REST APIs use HTTP cache headers: Cache-Control, ETag, Last-Modified.
+
+Example: Cache-Control: max-age=3600 means cache for 1 hour.
+
+Cacheable data (user profiles) gets cache headers; real-time data (stock prices) uses Cache-Control: no-cache.
+
+This reduces server load and improves response times.
+
+EDGE CASE 1: Cache-Control Directives
+✅ PUBLIC DATA (avatars, public profiles):
+GET /api/users/123/avatar
+Response:
+Cache-Control: public, max-age=86400
+→ Can be cached by browser AND CDN for 24 hours
+
+✅ PRIVATE DATA (user's email):
+GET /api/users/me
+Response:
+Cache-Control: private, max-age=300
+→ Only browser cache, not CDN, 5 minutes
+
+✅ NEVER CACHE (real-time stock prices):
+GET /api/stocks/AAPL/price
+Response:
+Cache-Control: no-store
+→ Don't cache at all
+
+✅ REVALIDATE BEFORE USE (news articles):
+GET /api/articles/123
+Response:
+Cache-Control: max-age=3600, must-revalidate
+→ Cache 1 hour, but check with server before using stale data
+
+EDGE CASE 2: ETag for Conditional Requests
+First Request:
+GET /api/users/123
+Response:
+ETag: "v1-abc123"
+{
+  "id": 123,
+  "name": "John Doe"
+}
+
+Later request (client sends ETag):
+GET /api/users/123
+If-None-Match: "v1-abc123"
+
+If data unchanged:
+Response: 304 Not Modified
+(No body - saves bandwidth!)
+
+If data changed:
+Response: 200 OK
+ETag: "v2-def456"
+{
+  "id": 123,
+  "name": "John Updated"
+}
+
+Implementation:
+const etag = generateETag(userData); // Hash of data
+if (req.headers['if-none-match'] === etag) {
+  return res.status(304).end();
+}
+res.set('ETag', etag).json(userData);
+
+EDGE CASE 3: Last-Modified for Time-Based Caching
+GET /api/articles/123
+Response:
+Last-Modified: Mon, 15 Jan 2024 10:00:00 GMT
+{
+  "title": "Article Title",
+  "updated_at": "2024-01-15T10:00:00Z"
+}
+
+Next request:
+GET /api/articles/123
+If-Modified-Since: Mon, 15 Jan 2024 10:00:00 GMT
+
+If not modified:
+Response: 304 Not Modified
+
+If modified:
+Response: 200 OK
+Last-Modified: Mon, 15 Jan 2024 11:30:00 GMT
+{ updated article }
+
+EDGE CASE 4: Vary Header for Multi-Version Caching
+GET /api/data
+Accept-Language: en
+Response:
+Vary: Accept-Language
+Cache-Control: max-age=3600
+{ "message": "Hello" }
+
+GET /api/data
+Accept-Language: es
+Response:
+Vary: Accept-Language
+Cache-Control: max-age=3600
+{ "message": "Hola" }
+
+Vary tells caches to store separate versions based on Accept-Language header.
+
+Common Vary values:
+Vary: Accept-Language (language versions)
+Vary: Accept-Encoding (compressed vs uncompressed)
+Vary: Authorization (different per user - careful!)
+
+EDGE CASE 5: Cache Invalidation on Updates
+❌ PROBLEM:
+PUT /api/users/123 { "name": "New Name" }
+→ Updates database
+→ Cached GET /api/users/123 still returns old data!
+
+✅ SOLUTION 1: Invalidate cache on update
+PUT /api/users/123
+Response:
+Cache-Control: no-cache
+→ Forces clients to revalidate
+
+✅ SOLUTION 2: Update ETag
+PUT /api/users/123
+Response:
+ETag: "v2-new-hash"
+→ Next GET will have different ETag, cache miss
+
+✅ SOLUTION 3: Purge CDN cache
+await cdnClient.purge('/api/users/123');
+
+EDGE CASE 6: Stale-While-Revalidate
+GET /api/products
+Response:
+Cache-Control: max-age=60, stale-while-revalidate=300
+
+Behavior:
+- 0-60s: Serve from cache (fresh)
+- 60-360s: Serve stale from cache, fetch fresh in background
+- 360s+: Fetch fresh, wait for response
+
+Benefits:
+- Always fast (serves stale while updating)
+- Eventually consistent
+- Good for product catalogs, article lists
+
+Real Example - Twitter API:
+GET /2/tweets/1234567890
+Response:
+Cache-Control: max-age=300, must-revalidate
+→ Cache tweet for 5 minutes, then revalidate
+
+GET /2/users/12345/tweets
+Response:
+Cache-Control: no-cache
+→ Timeline always fetches fresh (fast-moving data)
+
+EDGE CASE 7: Authorization and Caching
+❌ DANGEROUS:
+GET /api/users/me
+Authorization: Bearer user1_token
+Response:
+Cache-Control: public, max-age=3600
+→ CDN caches user1's data
+→ user2 makes same request
+→ Gets user1's private data! SECURITY BUG!
+
+✅ SAFE:
+Response:
+Cache-Control: private, max-age=300
+Vary: Authorization
+→ Only browser cache, different per user`
                             },
                             {
                                 question: "Give an example of a non-RESTful anti-pattern and how to fix it.",
-                                answer: "Anti-pattern: POST /api/users?action=delete&id=123 (using query params for actions). Fix: DELETE /api/users/123. Another: Returning HTTP 200 with {status: 'error'}. Fix: Use proper status codes like 404, 400, 500. REST uses HTTP features (methods, status codes) instead of reinventing them."
+                                answer: `Common anti-patterns violate REST principles by reinventing HTTP features.
+
+ANTI-PATTERN 1: Query Params for Actions
+❌ BAD:
+POST /api/users?action=delete&id=123
+GET /api/products?action=create&name=Widget
+POST /api/endpoint?operation=update
+
+✅ FIX:
+DELETE /api/users/123
+POST /api/products { "name": "Widget" }
+PUT /api/endpoint/123
+
+Use HTTP methods for actions, not query params!
+
+ANTI-PATTERN 2: Status in Response Body
+❌ BAD:
+POST /api/users
+Response: 200 OK
+{
+  "status": "error",
+  "message": "User already exists"
+}
+
+Problem:
+- HTTP says 200 OK (success)
+- Body says error (failure)
+- Monitoring tools count as success
+- Caches might cache error responses
+
+✅ FIX:
+POST /api/users
+Response: 409 Conflict
+{
+  "error": "user_exists",
+  "message": "User already exists"
+}
+
+Use proper HTTP status codes!
+
+ANTI-PATTERN 3: Verbs in URLs
+❌ BAD:
+POST /api/createOrder
+GET /api/getOrderById/123
+PUT /api/updateOrderStatus/123
+DELETE /api/removeOrder/123
+
+✅ FIX:
+POST /api/orders
+GET /api/orders/123
+PATCH /api/orders/123 { "status": "shipped" }
+DELETE /api/orders/123
+
+ANTI-PATTERN 4: Ignoring HTTP Methods
+❌ BAD:
+Everything uses POST:
+POST /api/endpoint?method=getUser&id=123
+POST /api/endpoint?method=deleteUser&id=123
+POST /api/endpoint?method=updateUser&id=123
+
+Problems:
+- Not cacheable (POST never cached)
+- Not idempotent (can't safely retry)
+- Can't use CDN
+- Breaks browser back/forward
+
+✅ FIX:
+GET /api/users/123 (cacheable, safe, idempotent)
+DELETE /api/users/123 (idempotent)
+PUT /api/users/123 (idempotent)
+
+ANTI-PATTERN 5: Single Endpoint for Everything
+❌ BAD (RPC style):
+POST /api/execute
+{
+  "method": "getUser",
+  "params": {"id": 123}
+}
+
+POST /api/execute
+{
+  "method": "createOrder",
+  "params": {"product": "widget"}
+}
+
+Problems:
+- Can't cache
+- Can't route/load balance by resource
+- Can't set resource-specific rate limits
+- Hard to monitor
+
+✅ FIX (REST style):
+GET /api/users/123
+POST /api/orders { "product": "widget" }
+
+ANTI-PATTERN 6: Inconsistent Response Formats
+❌ BAD:
+GET /api/users/123
+{ "id": 123, "name": "John" }
+
+GET /api/users/999 (not found)
+{ "error": "User not found" }
+
+GET /api/posts/456
+{ "data": { "id": 456, "title": "Hello" } }
+
+Different format for success vs error vs different resources!
+
+✅ FIX (Consistent):
+Success:
+GET /api/users/123
+Response: 200 OK
+{ "id": 123, "name": "John" }
+
+Not Found:
+GET /api/users/999
+Response: 404 Not Found
+{
+  "error": "not_found",
+  "message": "User not found",
+  "resource": "user",
+  "id": 999
+}
+
+All resources follow same pattern.
+
+ANTI-PATTERN 7: Deep Nesting
+❌ BAD:
+POST /api/organizations/1/departments/2/teams/3/members/4/tasks/5/comments
+→ Too deep, hard to understand
+→ What if you want all comments across teams?
+
+✅ FIX:
+POST /api/tasks/5/comments (2 levels max)
+
+Or flatten:
+POST /api/comments { "task_id": 5 }
+
+ANTI-PATTERN 8: Ignoring Idempotency
+❌ BAD:
+User clicks "Pay" button twice:
+POST /api/payments
+→ Creates 2 payments! Charges twice!
+
+✅ FIX 1: Idempotency Key (Stripe pattern)
+POST /api/payments
+Idempotency-Key: uuid-abc-123
+{
+  "amount": 1000,
+  "currency": "usd"
+}
+
+Server stores key. Duplicate requests return original response.
+
+✅ FIX 2: Client-side ID
+POST /api/payments
+{
+  "payment_id": "uuid-abc-123",
+  "amount": 1000
+}
+
+Database unique constraint on payment_id prevents duplicates.
+
+ANTI-PATTERN 9: No Pagination
+❌ BAD:
+GET /api/users
+→ Returns 1 million users
+→ Crashes browser
+→ Kills server memory
+
+✅ FIX:
+GET /api/users?page=1&per_page=20
+Response:
+{
+  "data": [...20 users...],
+  "pagination": {
+    "page": 1,
+    "per_page": 20,
+    "total": 1000000,
+    "total_pages": 50000
+  }
+}
+
+Always paginate collections!
+
+ANTI-PATTERN 10: Exposing Implementation Details
+❌ BAD:
+GET /api/users/mysql/table/users/row/123
+GET /api/getFromMongoDB?collection=users&id=123
+
+Exposes:
+- Database type
+- Table structure
+- Internal implementation
+
+✅ FIX:
+GET /api/users/123
+
+Abstract away implementation!
+
+Real Example - Early SOAP APIs (2000s):
+POST /api/soap
+Content-Type: application/xml
+<SOAP-ENV:Envelope>
+  <SOAP-ENV:Body>
+    <getUserById>
+      <id>123</id>
+    </getUserById>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+
+Everything was POST! Couldn't use HTTP caching, routing, or methods.
+
+AWS migrated from SOAP to REST (2006-2018) to use HTTP properly.`
                             }
                         ]
                     },
@@ -8908,6 +10559,160 @@ including all the "delete" links!
 Result: Accidentally deleted users, posts, and content.
 
 Lesson: Never use GET for actions that modify state!</div>
+
+                            <h4>GET Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Query String Length Limits
+❌ PROBLEM:
+GET /api/products?ids=1,2,3,4,5,6,7,8,9,10...(thousands)
+→ URL exceeds browser/server limits (2048 chars typical)
+→ Some proxies truncate URLs
+→ Data loss
+
+✅ SOLUTION: Use POST for large payloads
+POST /api/products/batch
+{
+  "ids": [1, 2, 3, 4, ..., 1000]
+}
+
+Or paginate:
+GET /api/products?ids=1,2,3,4,5&page=1
+GET /api/products?ids=6,7,8,9,10&page=2
+
+EDGE CASE 2: Sensitive Data in URLs
+❌ DANGEROUS:
+GET /api/reset-password?token=secret-token-123&email=user@example.com
+→ Logged in server access logs
+→ Logged in proxy logs
+→ Visible in browser history
+→ Sent in Referer header to external sites
+
+✅ SAFER: Use POST for sensitive operations
+POST /api/reset-password
+{
+  "token": "secret-token-123",
+  "email": "user@example.com"
+}
+
+Or at minimum, use path parameter:
+POST /api/reset-password/secret-token-123
+
+Real incident: Many sites leaked password reset tokens
+in server logs because they used GET requests.
+
+EDGE CASE 3: Special Characters in Query Params
+❌ IMPROPER ENCODING:
+GET /api/search?q=John&Doe  (& not encoded)
+GET /api/search?q=C++  (+ not encoded, treated as space)
+GET /api/search?q=user@example.com  (@ not encoded)
+
+✅ PROPERLY ENCODED:
+GET /api/search?q=John%26Doe  (& → %26)
+GET /api/search?q=C%2B%2B  (+ → %2B)
+GET /api/search?q=user%40example.com  (@ → %40)
+
+JavaScript:
+const query = encodeURIComponent('John&Doe');
+fetch(\`/api/search?q=\${query}\`);
+
+EDGE CASE 4: Cache Poisoning with Query Params
+❌ VULNERABLE:
+GET /api/data?callback=evilFunction
+Response (JSONP):
+evilFunction({"data": "..."})
+
+Cached by CDN, served to all users!
+
+✅ PROTECTED:
+Validate callback parameter:
+const allowedCallbacks = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+if (!allowedCallbacks.test(req.query.callback)) {
+  return res.status(400).json({ error: 'invalid_callback' });
+}
+
+Or don't cache JSONP:
+Cache-Control: no-store
+
+Or better: Stop using JSONP, use CORS instead!
+
+EDGE CASE 5: GET Request Body (Non-Standard)
+❌ PROBLEMATIC:
+GET /api/search
+Body: { "filters": {...} }
+
+Problem:
+- HTTP spec allows body, but semantics unclear
+- Many proxies/caches strip GET request bodies
+- Axios, fetch() ignore body in GET by default
+- Not cacheable if body needed
+
+✅ STANDARD OPTIONS:
+Option 1: Use query params
+GET /api/search?filter[status]=active&filter[role]=admin
+
+Option 2: Use POST
+POST /api/search
+{ "filters": {...} }
+
+EDGE CASE 6: Conditional GET with If-None-Match
+✅ EFFICIENT PATTERN:
+First request:
+GET /api/users/123
+Response: 200 OK
+ETag: "hash-abc123"
+{
+  "id": 123,
+  "name": "John Doe"
+}
+
+Client caches response with ETag.
+
+Later request:
+GET /api/users/123
+If-None-Match: "hash-abc123"
+
+If unchanged:
+Response: 304 Not Modified
+(Empty body - saves bandwidth!)
+
+If changed:
+Response: 200 OK
+ETag: "hash-def456"
+{
+  "id": 123,
+  "name": "John Updated"
+}
+
+Implementation:
+const currentETag = generateHash(userData);
+if (req.headers['if-none-match'] === currentETag) {
+  return res.status(304).end();
+}
+res.set('ETag', currentETag).json(userData);
+
+EDGE CASE 7: HEAD Method for Resource Existence
+✅ EFFICIENT CHECK:
+HEAD /api/files/large-video.mp4
+
+Returns:
+200 OK
+Content-Length: 524288000
+Content-Type: video/mp4
+Last-Modified: Mon, 15 Jan 2024 10:00:00 GMT
+(No body!)
+
+Use cases:
+- Check if file exists before downloading
+- Get file size before download
+- Check Last-Modified to see if update needed
+
+Example:
+const response = await fetch('/api/files/video.mp4', {
+  method: 'HEAD'
+});
+const fileSize = response.headers.get('content-length');
+if (fileSize > 100000000) {
+  // Warn user about large download
+}</div>
 
                             <h3>2. POST - Create New Resources</h3>
                             <p>POST is used to create new resources or submit data that causes server-side changes. It's neither safe nor idempotent.</p>
@@ -8995,6 +10800,222 @@ Server rejects if order_id already exists.</div>
 
                             <p><strong>Real Example - Stripe:</strong> Stripe requires an idempotency key for all POST requests that create resources. If you retry with the same key, you get the original result back, preventing duplicate charges.</p>
 
+                            <h4>POST Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Idempotency Key Expiration
+✅ ROBUST IMPLEMENTATION:
+POST /api/orders
+Idempotency-Key: uuid-abc-123
+{ "product_id": 123, "quantity": 1 }
+
+Server logic:
+const key = req.headers['idempotency-key'];
+const existing = await redis.get(\`idem:\${key}\`);
+
+if (existing) {
+  // Return cached response
+  return res.status(201).json(JSON.parse(existing));
+}
+
+// Create new resource
+const order = await createOrder(req.body);
+const response = { id: order.id, status: 'created' };
+
+// Cache for 24 hours
+await redis.setex(\`idem:\${key}\`, 86400, JSON.stringify(response));
+return res.status(201).json(response);
+
+Key decisions:
+- How long to cache? (Stripe: 24 hours)
+- What if request is still processing?
+- What if original request failed?
+
+EDGE CASE 2: 201 Created vs 200 OK
+❌ INCONSISTENT:
+POST /api/users
+Response: 200 OK  // Created user, but says "OK"?
+
+✅ CORRECT:
+POST /api/users
+Response: 201 Created
+Location: /api/users/126
+{
+  "id": 126,
+  "name": "Alice"
+}
+
+Benefits:
+- Clear semantics (201 = resource created)
+- Location header points to new resource
+- Clients can immediately GET new resource
+
+EDGE CASE 3: POST to Create vs POST to Action
+✅ CREATE RESOURCE:
+POST /api/articles
+{ "title": "Hello", "body": "World" }
+→ Creates new article, returns 201
+
+✅ TRIGGER ACTION (Controller pattern):
+POST /api/articles/123/publish
+{ "scheduled_at": "2024-01-20T10:00:00Z" }
+→ Publishes article, returns 200
+
+✅ SUBMIT DATA (No resource created):
+POST /api/contact
+{ "name": "John", "message": "Help!" }
+→ Sends email, returns 200 (or 202 Accepted)
+
+Different use cases, different status codes!
+
+EDGE CASE 4: Duplicate Detection Without Idempotency Key
+❌ PROBLEM:
+User submits form twice, no idempotency key:
+POST /api/registrations
+{ "email": "user@example.com", "name": "John" }
+
+Creates duplicate registrations!
+
+✅ SOLUTION 1: Unique constraint
+Database:
+CREATE UNIQUE INDEX idx_email ON registrations(email);
+
+Server handles:
+try {
+  await db.registrations.insert(data);
+  return res.status(201).json(result);
+} catch (err) {
+  if (err.code === 'UNIQUE_VIOLATION') {
+    return res.status(409).json({
+      error: 'duplicate_registration',
+      message: 'Email already registered'
+    });
+  }
+  throw err;
+}
+
+✅ SOLUTION 2: Check-then-create (race condition risk!)
+const existing = await db.registrations.findOne({ email });
+if (existing) {
+  return res.status(409).json({ error: 'already_exists' });
+}
+// RACE: Another request could create here!
+await db.registrations.insert(data);
+
+Better: Use database transaction with lock or unique constraint.
+
+EDGE CASE 5: Nested Resource Creation
+✅ GOOD: Create user and profile together
+POST /api/users
+{
+  "name": "John",
+  "email": "john@example.com",
+  "profile": {
+    "bio": "Software engineer",
+    "avatar_url": "https://..."
+  }
+}
+
+Response: 201 Created
+{
+  "id": 123,
+  "name": "John",
+  "profile": {
+    "id": 456,
+    "bio": "Software engineer"
+  }
+}
+
+Server handles atomically:
+await db.transaction(async (trx) => {
+  const user = await trx.users.insert({ name, email });
+  const profile = await trx.profiles.insert({
+    user_id: user.id,
+    ...profileData
+  });
+  return { user, profile };
+});
+
+EDGE CASE 6: Bulk Creation with Partial Failure
+❌ ALL-OR-NOTHING (Harsh):
+POST /api/users/bulk
+{
+  "users": [
+    {"name": "Alice", "email": "alice@example.com"},
+    {"name": "Bob", "email": "invalid-email"},
+    {"name": "Charlie", "email": "charlie@example.com"}
+  ]
+}
+
+Response: 400 Bad Request
+→ None created, even valid ones!
+
+✅ PARTIAL SUCCESS (Flexible):
+POST /api/users/bulk
+Response: 207 Multi-Status
+{
+  "results": [
+    {
+      "index": 0,
+      "status": 201,
+      "data": {"id": 1, "name": "Alice"}
+    },
+    {
+      "index": 1,
+      "status": 400,
+      "error": "invalid_email"
+    },
+    {
+      "index": 2,
+      "status": 201,
+      "data": {"id": 2, "name": "Charlie"}
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "created": 2,
+    "failed": 1
+  }
+}
+
+Client can retry failed items.
+
+EDGE CASE 7: Async Resource Creation
+✅ LONG-RUNNING OPERATION:
+POST /api/reports
+{
+  "type": "sales_summary",
+  "date_range": "2024-01-01/2024-12-31"
+}
+
+Response: 202 Accepted
+{
+  "task_id": "task-abc-123",
+  "status": "processing",
+  "status_url": "/api/tasks/task-abc-123"
+}
+
+Client polls:
+GET /api/tasks/task-abc-123
+Response: 200 OK
+{
+  "status": "completed",
+  "result_url": "/api/reports/report-xyz-789"
+}
+
+Or use webhooks:
+POST /api/reports
+{
+  "type": "sales_summary",
+  "callback_url": "https://client.com/webhook"
+}
+
+Server calls callback when done:
+POST https://client.com/webhook
+{
+  "task_id": "task-abc-123",
+  "status": "completed",
+  "report_url": "/api/reports/report-xyz-789"
+}</div>
+
                             <h3>3. PUT - Replace/Update Entire Resource</h3>
                             <p>PUT replaces an entire resource or creates it if it doesn't exist. It's idempotent.</p>
 
@@ -9045,6 +11066,261 @@ PUT /api/users/123
 → Still same result
 
 No matter how many times you call it, the result is the same!</div>
+
+                            <h4>PUT Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Partial PUT (Accidental Data Loss)
+❌ DANGEROUS:
+Current resource:
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "+1234567890",
+  "department": "Engineering"
+}
+
+Client only knows name and email:
+PUT /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com"
+}
+
+Server does full replacement:
+{
+  "id": 123,
+  "name": "John Updated",
+  "email": "john.new@example.com",
+  "phone": null,  // LOST!
+  "department": null  // LOST!
+}
+
+✅ SOLUTION 1: Reject partial PUT
+if (!req.body.phone || !req.body.department) {
+  return res.status(400).json({
+    error: 'incomplete_resource',
+    message: 'PUT requires all fields. Use PATCH for partial updates.',
+    missing_fields: ['phone', 'department']
+  });
+}
+
+✅ SOLUTION 2: Use PATCH instead
+PATCH /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com"
+}
+
+EDGE CASE 2: PUT Create-or-Update (Upsert)
+✅ OPTION 1: Allow creation
+PUT /api/users/999  (doesn't exist)
+{
+  "name": "New User",
+  "email": "new@example.com"
+}
+
+Response: 201 Created
+{
+  "id": 999,
+  "name": "New User"
+}
+
+Next request:
+PUT /api/users/999  (now exists)
+Response: 200 OK
+
+✅ OPTION 2: Disallow creation
+PUT /api/users/999  (doesn't exist)
+Response: 404 Not Found
+{
+  "error": "not_found",
+  "message": "User 999 does not exist. Use POST /api/users to create."
+}
+
+Choose based on your API design. Most APIs disallow PUT creation.
+
+EDGE CASE 3: Concurrent PUT Requests (Lost Update Problem)
+❌ PROBLEM:
+Initial state: {"name": "John", "age": 30}
+
+Request A: PUT /api/users/123 {"name": "John", "age": 31}
+Request B: PUT /api/users/123 {"name": "Jane", "age": 30}
+
+If B arrives after A: age change is lost!
+
+✅ SOLUTION 1: Optimistic Locking with ETags
+GET /api/users/123
+Response:
+ETag: "v1"
+{"name": "John", "age": 30}
+
+PUT /api/users/123
+If-Match: "v1"
+{"name": "John", "age": 31}
+
+If resource changed (ETag mismatch):
+Response: 412 Precondition Failed
+{
+  "error": "conflict",
+  "message": "Resource was modified. Please refetch and retry."
+}
+
+✅ SOLUTION 2: Version field
+PUT /api/users/123
+{
+  "version": 5,
+  "name": "John",
+  "age": 31
+}
+
+Server checks:
+if (req.body.version !== currentResource.version) {
+  return res.status(409).json({
+    error: 'version_conflict',
+    current_version: currentResource.version
+  });
+}
+
+EDGE CASE 4: PUT with Computed/Read-Only Fields
+❌ PROBLEM:
+PUT /api/users/123
+{
+  "name": "John",
+  "email": "john@example.com",
+  "created_at": "2020-01-01T00:00:00Z",  // Read-only!
+  "updated_at": "2024-01-15T10:00:00Z",  // Computed!
+  "id": 456  // Trying to change ID!
+}
+
+Should server reject? Ignore? Error?
+
+✅ SOLUTION 1: Reject read-only fields
+const readOnlyFields = ['id', 'created_at', 'updated_at'];
+const providedReadOnly = readOnlyFields.filter(f => f in req.body);
+
+if (providedReadOnly.length > 0) {
+  return res.status(400).json({
+    error: 'read_only_fields',
+    fields: providedReadOnly
+  });
+}
+
+✅ SOLUTION 2: Silently ignore
+const {id, created_at, updated_at, ...updateData} = req.body;
+await db.users.update(123, {
+  ...updateData,
+  updated_at: new Date()  // Force server value
+});
+
+✅ SOLUTION 3: Separate DTOs
+// Request DTO (only writable fields)
+interface UpdateUserDTO {
+  name: string;
+  email: string;
+  department?: string;
+}
+
+// Database model (all fields)
+interface User extends UpdateUserDTO {
+  id: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+EDGE CASE 5: PUT Idempotency with Side Effects
+❌ PROBLEM:
+PUT /api/users/123/role
+{
+  "role": "admin"
+}
+
+Server sends email notification every time:
+await db.users.update(123, { role: 'admin' });
+await sendEmail(user.email, 'You are now an admin!');
+
+Multiple retries = multiple emails!
+
+✅ SOLUTION: Check if change occurred
+const oldRole = currentUser.role;
+await db.users.update(123, { role: 'admin' });
+const newRole = 'admin';
+
+if (oldRole !== newRole) {
+  await sendEmail(user.email, 'You are now an admin!');
+}
+
+Idempotent: Same request multiple times = one email.
+
+EDGE CASE 6: 200 OK vs 204 No Content
+✅ OPTION 1: Return updated resource (200 OK)
+PUT /api/users/123
+Response: 200 OK
+{
+  "id": 123,
+  "name": "Updated",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+
+Benefits:
+- Client gets latest state
+- Useful for computed fields
+
+✅ OPTION 2: No content (204 No Content)
+PUT /api/users/123
+Response: 204 No Content
+(Empty body)
+
+Benefits:
+- Faster (no serialization)
+- Less bandwidth
+- Client already knows what they sent
+
+Choose based on whether client needs confirmation of computed fields.
+
+EDGE CASE 7: Nested Resource Updates
+❌ UNCLEAR:
+PUT /api/users/123
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St"
+  }
+}
+
+Does this:
+- Replace entire address? (street only, city/zip/state lost?)
+- Update only street field?
+
+✅ CLEAR OPTION 1: Full replacement required
+PUT /api/users/123
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St",
+    "city": "San Francisco",
+    "state": "CA",
+    "zip": "94102"
+  }
+}
+
+✅ CLEAR OPTION 2: Separate endpoint
+PUT /api/users/123/address
+{
+  "street": "123 Main St",
+  "city": "San Francisco",
+  "state": "CA",
+  "zip": "94102"
+}
+
+✅ CLEAR OPTION 3: Use PATCH for nested
+PATCH /api/users/123
+{
+  "address": {
+    "street": "123 Main St"
+  }
+}
+
+Merge semantics are clearer with PATCH.</div>
 
                             <h3>4. PATCH - Partial Update</h3>
                             <p>PATCH is used to partially update a resource. You only send the fields you want to change.</p>
@@ -9120,6 +11396,237 @@ JSON Patch operations: add, remove, replace, move, copy, test</div>
                                 </tr>
                             </table>
 
+                            <h4>PATCH Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: PATCH Idempotency
+❌ NON-IDEMPOTENT PATCH:
+PATCH /api/counters/123
+{
+  "increment": 1
+}
+
+Calling 3 times: counter += 1, counter += 1, counter += 1
+Different results each time! NOT idempotent.
+
+✅ IDEMPOTENT PATCH:
+PATCH /api/counters/123
+{
+  "value": 42
+}
+
+Calling 3 times: counter = 42, counter = 42, counter = 42
+Same result! Idempotent.
+
+Rule: PATCH should set values, not apply operations.
+
+EDGE CASE 2: Null vs Undefined in PATCH
+Original resource:
+{
+  "name": "John",
+  "email": "john@example.com",
+  "phone": "+1234567890"
+}
+
+PATCH /api/users/123
+{
+  "email": null,
+  "phone": <not included>
+}
+
+What happens?
+- email: null → Delete/clear email field?
+- phone: undefined → Leave unchanged?
+
+✅ CLEAR SEMANTICS (JSON Merge Patch RFC 7396):
+{
+  "email": null  → Remove email field
+}
+
+Omitted fields are left unchanged.
+
+✅ ALTERNATIVE: Use JSON Patch for explicit operations
+PATCH /api/users/123
+Content-Type: application/json-patch+json
+[
+  {"op": "remove", "path": "/email"},
+  {"op": "replace", "path": "/phone", "value": "+9876543210"}
+]
+
+EDGE CASE 3: Deep Merge vs Shallow Replace
+Original:
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St",
+    "city": "SF",
+    "zip": "94102"
+  }
+}
+
+PATCH /api/users/123
+{
+  "address": {
+    "street": "456 Oak Ave"
+  }
+}
+
+❌ SHALLOW REPLACE:
+{
+  "address": {
+    "street": "456 Oak Ave"
+    // city and zip LOST!
+  }
+}
+
+✅ DEEP MERGE:
+{
+  "address": {
+    "street": "456 Oak Ave",
+    "city": "SF",  // Preserved
+    "zip": "94102"  // Preserved
+  }
+}
+
+Document which behavior your API uses!
+
+Implementation (deep merge):
+const _ = require('lodash');
+const updated = _.merge({}, currentResource, req.body);
+
+EDGE CASE 4: Array Updates with PATCH
+Original:
+{
+  "name": "John",
+  "tags": ["developer", "javascript"]
+}
+
+PATCH /api/users/123
+{
+  "tags": ["python"]
+}
+
+❌ AMBIGUOUS:
+Does this:
+- Replace entire array? → tags = ["python"]
+- Add to array? → tags = ["developer", "javascript", "python"]
+- Remove duplicates? → ???
+
+✅ CLEAR: Use JSON Patch for array operations
+PATCH /api/users/123
+Content-Type: application/json-patch+json
+[
+  {"op": "add", "path": "/tags/-", "value": "python"}
+]
+
+Result: ["developer", "javascript", "python"]
+
+Or: Define operation in URL
+POST /api/users/123/tags
+{"tag": "python"}
+
+DELETE /api/users/123/tags/javascript
+
+EDGE CASE 5: Conditional PATCH with Optimistic Locking
+✅ SAFE CONCURRENT UPDATES:
+GET /api/users/123
+Response:
+ETag: "abc123"
+{"name": "John", "age": 30}
+
+PATCH /api/users/123
+If-Match: "abc123"
+{"age": 31}
+
+If resource was modified (ETag changed):
+Response: 412 Precondition Failed
+{
+  "error": "precondition_failed",
+  "message": "Resource was modified by another request",
+  "current_etag": "def456"
+}
+
+Client must refetch and retry:
+GET /api/users/123  // Get latest version
+PATCH with new ETag
+
+Real Example - Google Docs:
+Uses optimistic locking to prevent conflicting edits.
+
+EDGE CASE 6: PATCH Validation
+❌ PARTIAL VALIDATION PROBLEM:
+Original: {"email": "john@example.com", "phone": "+1234567890"}
+
+PATCH /api/users/123
+{
+  "email": "invalid-email"
+}
+
+Should server:
+- Validate just email field? → email is invalid, reject
+- Validate entire resource? → phone is required (not sent), reject?
+
+✅ VALIDATE PATCHED RESULT:
+const current = await db.users.findOne(123);
+const patched = { ...current, ...req.body };
+
+const errors = validate(patched);
+if (errors) {
+  return res.status(400).json({ errors });
+}
+
+await db.users.update(123, req.body);
+
+Ensures final state is valid.
+
+EDGE CASE 7: PATCH with Computed Fields
+Original:
+{
+  "first_name": "John",
+  "last_name": "Doe",
+  "full_name": "John Doe"  // Computed
+}
+
+PATCH /api/users/123
+{
+  "first_name": "Jane"
+}
+
+✅ SERVER RECOMPUTES:
+const updated = await db.users.update(123, {
+  first_name: "Jane"
+});
+
+// Recompute derived fields
+updated.full_name = \`\${updated.first_name} \${updated.last_name}\`;
+
+Response:
+{
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "full_name": "Jane Doe"  // Updated!
+}
+
+EDGE CASE 8: Testing Operations with JSON Patch
+✅ ATOMIC TEST-AND-UPDATE:
+PATCH /api/inventory/item-123
+Content-Type: application/json-patch+json
+[
+  {"op": "test", "path": "/quantity", "value": 10},
+  {"op": "replace", "path": "/quantity", "value": 9}
+]
+
+If test fails (quantity ≠ 10):
+Response: 409 Conflict
+{
+  "error": "test_failed",
+  "message": "Expected quantity=10, got quantity=5"
+}
+
+If test passes:
+Operations applied, quantity updated to 9.
+
+Use case: Prevent overselling in e-commerce:
+Test that quantity > 0 before decrementing.</div>
+
                             <h3>5. DELETE - Remove Resource</h3>
                             <p>DELETE removes a resource from the server. It's idempotent.</p>
 
@@ -9181,6 +11688,284 @@ POST /api/users/bulk-delete
 
 Note: HTTP spec says DELETE shouldn't have a body, but
 many modern APIs do this for practical reasons.</div>
+
+                            <h4>DELETE Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: DELETE Idempotency
+✅ IDEMPOTENT (Recommended):
+DELETE /api/users/123 → 204 No Content (deleted)
+DELETE /api/users/123 → 204 No Content (already gone, success)
+DELETE /api/users/123 → 204 No Content (still gone, success)
+
+All requests succeed! Client doesn't care if it was deleted now or before.
+
+❌ NON-IDEMPOTENT:
+DELETE /api/users/123 → 204 No Content (deleted)
+DELETE /api/users/123 → 404 Not Found (doesn't exist!)
+DELETE /api/users/123 → 404 Not Found (still doesn't exist)
+
+Client must handle 404 as special case.
+
+Implementation:
+app.delete('/api/users/:id', async (req, res) => {
+  const result = await db.users.delete(req.params.id);
+  // Return 204 regardless of whether row was found
+  return res.status(204).end();
+});
+
+EDGE CASE 2: Cascading Deletes
+❌ ORPHANED DATA:
+DELETE /api/users/123
+→ User deleted
+→ user's posts still exist with user_id=123
+→ Broken references!
+
+✅ CASCADE DELETE:
+DELETE /api/users/123
+
+Server does:
+await db.transaction(async (trx) => {
+  await trx.posts.delete({ user_id: 123 });
+  await trx.comments.delete({ user_id: 123 });
+  await trx.followers.delete({ user_id: 123 });
+  await trx.users.delete({ id: 123 });
+});
+
+Response: 200 OK
+{
+  "deleted": {
+    "user": 1,
+    "posts": 47,
+    "comments": 132,
+    "followers": 89
+  }
+}
+
+✅ PREVENT DELETE (Foreign key constraint):
+DELETE /api/users/123
+Response: 409 Conflict
+{
+  "error": "cannot_delete",
+  "message": "User has 47 posts. Delete posts first or use cascade=true",
+  "related_resources": {
+    "posts": 47,
+    "comments": 132
+  }
+}
+
+EDGE CASE 3: Soft Delete Implementation
+✅ SOFT DELETE:
+DELETE /api/users/123
+
+Server:
+await db.users.update(123, {
+  deleted_at: new Date(),
+  deleted_by: req.user.id
+});
+
+Response: 204 No Content
+
+GET /api/users → excludes deleted users
+SELECT * FROM users WHERE deleted_at IS NULL;
+
+GET /api/users?include_deleted=true → includes deleted (admin only)
+SELECT * FROM users;
+
+Restore:
+POST /api/users/123/restore
+await db.users.update(123, { deleted_at: null });
+
+Benefits:
+- Audit trail
+- Undo mistakes
+- Comply with regulations (keep data for X days)
+
+Drawbacks:
+- Takes up disk space
+- Slower queries (must filter deleted_at)
+- Unique constraints harder (email can exist if deleted)
+
+EDGE CASE 4: Conditional Delete
+✅ SAFE DELETE WITH PRECONDITIONS:
+DELETE /api/posts/123
+If-Match: "etag-abc-123"
+
+If post was modified (ETag changed):
+Response: 412 Precondition Failed
+{
+  "error": "precondition_failed",
+  "message": "Post was modified. Refetch before deleting."
+}
+
+Or check specific field:
+DELETE /api/posts/123
+X-Expected-Status: draft
+
+Server:
+const post = await db.posts.findOne(123);
+if (post.status !== req.headers['x-expected-status']) {
+  return res.status(412).json({
+    error: 'status_mismatch',
+    expected: 'draft',
+    actual: post.status
+  });
+}
+
+Use case: Prevent deleting a published post when you thought it was draft.
+
+EDGE CASE 5: DELETE with Dependencies Check
+✅ PREVENT ACCIDENTAL DELETION:
+DELETE /api/projects/123
+
+Server checks dependencies:
+const taskCount = await db.tasks.count({ project_id: 123 });
+const memberCount = await db.members.count({ project_id: 123 });
+
+if (taskCount > 0 || memberCount > 0) {
+  return res.status(409).json({
+    error: 'has_dependencies',
+    message: 'Cannot delete project with active tasks or members',
+    dependencies: {
+      tasks: taskCount,
+      members: memberCount
+    },
+    suggestion: 'Use DELETE /api/projects/123?force=true to cascade'
+  });
+}
+
+Force delete:
+DELETE /api/projects/123?force=true
+→ Cascades to all related resources
+
+EDGE CASE 6: Async Delete for Large Resources
+✅ LONG-RUNNING DELETE:
+DELETE /api/accounts/123
+(Account has millions of records)
+
+Response: 202 Accepted
+{
+  "task_id": "delete-task-abc-123",
+  "message": "Account deletion initiated",
+  "status_url": "/api/tasks/delete-task-abc-123"
+}
+
+Client polls:
+GET /api/tasks/delete-task-abc-123
+Response:
+{
+  "status": "in_progress",
+  "progress": 45,
+  "deleted_count": 450000,
+  "total_count": 1000000
+}
+
+Later:
+{
+  "status": "completed",
+  "deleted_count": 1000000,
+  "completed_at": "2024-01-15T11:30:00Z"
+}
+
+EDGE CASE 7: 204 No Content vs 200 OK
+✅ 204 NO CONTENT (Minimal):
+DELETE /api/users/123
+Response: 204 No Content
+(Empty body)
+
+Benefits:
+- Faster (no JSON serialization)
+- Less bandwidth
+- Standard HTTP semantics
+
+✅ 200 OK (Informative):
+DELETE /api/users/123
+Response: 200 OK
+{
+  "id": 123,
+  "deleted_at": "2024-01-15T10:45:00Z",
+  "affected_resources": {
+    "posts": 47,
+    "comments": 132
+  }
+}
+
+Benefits:
+- Provides confirmation
+- Useful for audit logs
+- Shows cascade results
+
+Choose based on client needs.
+
+EDGE CASE 8: Partial Bulk Delete
+❌ ALL-OR-NOTHING (Harsh):
+POST /api/users/bulk-delete
+{
+  "ids": [123, 456, 789]
+}
+
+If id=456 doesn't exist or can't be deleted:
+Response: 400 Bad Request
+→ None deleted, even valid ones!
+
+✅ PARTIAL SUCCESS:
+POST /api/users/bulk-delete
+Response: 207 Multi-Status
+{
+  "results": [
+    {
+      "id": 123,
+      "status": 204,
+      "deleted": true
+    },
+    {
+      "id": 456,
+      "status": 404,
+      "error": "not_found"
+    },
+    {
+      "id": 789,
+      "status": 409,
+      "error": "has_dependencies"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "deleted": 1,
+    "failed": 2
+  }
+}
+
+EDGE CASE 9: Rate Limiting Bulk Deletes
+✅ PROTECT AGAINST ABUSE:
+POST /api/users/bulk-delete
+{
+  "ids": [1, 2, 3, ..., 100000]  // 100k deletions!
+}
+
+Server limits:
+if (req.body.ids.length > 1000) {
+  return res.status(400).json({
+    error: 'too_many_items',
+    message: 'Maximum 1000 items per request',
+    provided: req.body.ids.length
+  });
+}
+
+For larger deletions:
+POST /api/users/bulk-delete
+{
+  "filter": {
+    "created_before": "2020-01-01",
+    "status": "inactive"
+  }
+}
+
+Response: 202 Accepted
+{
+  "task_id": "bulk-delete-xyz",
+  "estimated_count": 50000
+}
+
+Processes asynchronously.</div>
 
                             <h3>6. HEAD - Get Headers Only</h3>
                             <p>HEAD is identical to GET, but the server returns only headers, no body. Used to check if a resource exists or get metadata.</p>
@@ -9390,27 +12175,1141 @@ DELETE /api/users/123 → Returns 204 No Content</div>
                         interviews: [
                             {
                                 question: "What's the difference between PUT and PATCH?",
-                                answer: "PUT replaces the entire resource - you must send all fields. PATCH does partial updates - you only send fields to change. Example: PUT /users/123 with {name: 'John'} removes all other fields. PATCH /users/123 with {name: 'John'} only updates name, keeps other fields. Use PATCH for efficiency, especially on mobile."
+                                answer: `PUT replaces the entire resource - you must send all fields. PATCH does partial updates - you only send fields to change.
+
+Basic Difference:
+PUT /users/123 with {name: 'John'} → Removes all other fields
+PATCH /users/123 with {name: 'John'} → Only updates name, keeps other fields
+
+EDGE CASE 1: Accidental Data Loss with PUT
+Original resource:
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "+1234567890",
+  "address": "123 Main St"
+}
+
+❌ WRONG: Partial PUT
+PUT /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com"
+}
+
+Result (data loss!):
+{
+  "id": 123,
+  "name": "John Updated",
+  "email": "john.new@example.com",
+  "phone": null,  // LOST!
+  "address": null  // LOST!
+}
+
+✅ CORRECT Option 1: Full PUT
+PUT /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com",
+  "phone": "+1234567890",
+  "address": "123 Main St"
+}
+
+✅ CORRECT Option 2: Use PATCH
+PATCH /api/users/123
+{
+  "name": "John Updated",
+  "email": "john.new@example.com"
+}
+
+EDGE CASE 2: Idempotency Difference
+PUT is idempotent, PATCH may not be:
+
+PUT (always idempotent):
+PUT /api/users/123 { "age": 30 }
+→ Called 3 times: age = 30, 30, 30 (same result)
+
+PATCH (depends on operation):
+❌ NOT IDEMPOTENT:
+PATCH /api/counters/123 { "increment": 1 }
+→ Called 3 times: +1, +1, +1 = +3 (different results!)
+
+✅ IDEMPOTENT:
+PATCH /api/counters/123 { "value": 100 }
+→ Called 3 times: 100, 100, 100 (same result)
+
+EDGE CASE 3: Bandwidth Efficiency
+Mobile app updating user's status:
+
+❌ INEFFICIENT (PUT):
+PUT /api/users/123
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "+1234567890",
+  "address": "123 Main St, San Francisco, CA 94102",
+  "bio": "Software engineer with 10 years...",
+  "avatar_url": "https://cdn.example.com/avatars/123.jpg",
+  "status": "online"  // Only this changed!
+}
+→ Sends ~500 bytes
+
+✅ EFFICIENT (PATCH):
+PATCH /api/users/123
+{
+  "status": "online"
+}
+→ Sends ~30 bytes
+
+Critical for mobile with limited bandwidth!
+
+EDGE CASE 4: Nested Object Updates
+User profile with address:
+
+❌ UNCLEAR with PUT:
+PUT /api/users/123
+{
+  "name": "John",
+  "address": {
+    "street": "456 Oak Ave"
+  }
+}
+
+Does this replace entire address (losing city, state)?
+Or update just street field?
+
+✅ CLEAR with PATCH + merge semantics:
+PATCH /api/users/123
+{
+  "address": {
+    "street": "456 Oak Ave"
+  }
+}
+
+With deep merge: Updates street, keeps city/state.
+
+EDGE CASE 5: Client-Side Validation
+Client has form with 3 fields out of 20 total:
+
+With PUT:
+- Client must fetch full resource first (extra request!)
+- Client must include all 20 fields
+- Risk of overwriting concurrent changes to other fields
+
+With PATCH:
+- Client sends only 3 changed fields
+- No need to fetch first
+- Lower risk of conflicts
+
+Example - User Settings Page:
+PUT requires fetching all settings first.
+PATCH can update just "email_notifications" without knowing other settings.`
                             },
                             {
                                 question: "Why should you never use GET for operations that modify data?",
-                                answer: "GET is meant to be safe (no side effects). Browsers, proxies, and crawlers can prefetch GET requests. Real incident: Google Web Accelerator prefetched links like /delete?id=123, accidentally deleting data. Always use POST/PUT/DELETE for modifications. GET should only read, never write."
+                                answer: `GET is meant to be safe (no side effects). Browsers, proxies, and crawlers can prefetch GET requests, causing unintended modifications.
+
+Real Incident: Google Web Accelerator (2005)
+A website used: GET /admin/delete-user?id=123
+Google's Web Accelerator prefetched all links to speed up browsing.
+It "clicked" every link on admin pages, including all "delete" links!
+Result: Accidentally deleted users, posts, and content.
+
+Lesson: Never use GET for actions that modify state!
+
+EDGE CASE 1: Browser Prefetching
+Modern browsers prefetch links:
+
+❌ DANGEROUS:
+<a href="/api/logout">Logout</a>
+
+GET /api/logout:
+- Browser prefetches on hover
+- User hovers link (doesn't click)
+- Gets logged out accidentally!
+
+✅ SAFE:
+<form method="POST" action="/api/logout">
+  <button>Logout</button>
+</form>
+
+POST /api/logout:
+- Never prefetched
+- Only happens on actual click
+
+EDGE CASE 2: Link Sharing / Preview Generation
+User shares link in Slack/Discord:
+
+❌ DANGEROUS:
+Share: https://app.com/api/delete-account?user=123
+
+Slack fetches to generate preview:
+- Fetches URL to get title/description
+- Accidentally triggers account deletion!
+
+✅ SAFE:
+Account deletion requires POST:
+POST /api/delete-account { "user_id": 123 }
+
+Link sharing tools can't trigger it.
+
+EDGE CASE 3: Browser History / Bookmarks
+❌ PROBLEM:
+GET /api/transfer?from=123&to=456&amount=1000
+
+User bookmarks this URL.
+Later clicks bookmark:
+- Transfers money again!
+- Could be years later
+- Unintended duplicate transaction
+
+✅ SAFE:
+POST /api/transfers
+{
+  "from": 123,
+  "to": 456,
+  "amount": 1000
+}
+
+Can't be bookmarked or accidentally re-triggered.
+
+EDGE CASE 4: Search Engine Crawlers
+❌ DISASTER:
+Website with:
+GET /api/users/123/approve
+GET /api/users/456/reject
+
+Google crawler indexes website:
+- Follows all links
+- Approves/rejects users randomly!
+- Chaos in production database
+
+✅ PROTECTED:
+Require POST for state changes:
+POST /api/users/123/approve
+POST /api/users/456/reject
+
+Crawlers don't POST, only GET.
+
+robots.txt also helps:
+User-agent: *
+Disallow: /api/
+
+EDGE CASE 5: Proxy Caching
+❌ CACHED SIDE EFFECT:
+GET /api/increment-counter?page=home
+
+Corporate proxy caches this:
+- First user: counter = 1 (cached)
+- Second user: counter = 1 (served from cache!)
+- Third user: counter = 1 (still cached!)
+- Counter doesn't increment for cached requests
+
+✅ NOT CACHED:
+POST /api/track-visit { "page": "home" }
+
+POST never cached, always reaches server.
+
+EDGE CASE 6: CSRF Attacks
+❌ VULNERABLE:
+GET /api/transfer?to=attacker&amount=1000
+
+Attacker creates:
+<img src="https://yourbank.com/api/transfer?to=attacker&amount=1000">
+
+Victim visits attacker's site:
+- Browser automatically makes GET request (for "image")
+- Sends victim's cookies
+- Money transferred!
+
+✅ PROTECTED:
+POST /api/transfer
+{ "to": "attacker", "amount": 1000 }
+
+Requires CSRF token in POST body.
+<img> tag can't POST with body.
+
+EDGE CASE 7: Browser Back Button
+❌ CONFUSING:
+User flow:
+1. GET /api/add-to-cart?product=123 → Adds to cart
+2. Navigate to checkout page
+3. Clicks browser Back button
+4. Browser re-executes GET request
+5. Adds product to cart AGAIN!
+
+✅ CLEAR:
+POST /api/cart/items { "product_id": 123 }
+
+Back button doesn't re-POST (browser warns user).
+
+Real Example - Twitter:
+❌ Old design: GET /api/favorite?id=123
+Problem: Crawlers favorited random tweets!
+
+✅ Current: POST /2/users/:id/likes
+Safe from accidental triggering.`
                             },
                             {
                                 question: "What does it mean for an HTTP method to be idempotent? Give examples.",
-                                answer: "Idempotent means multiple identical requests have the same effect as one request. GET, PUT, DELETE are idempotent. POST is not. Example: DELETE /users/123 called 5 times still results in user 123 being deleted (same result). POST /orders called 5 times creates 5 orders (different results). Use idempotency keys with POST to make it safe to retry."
+                                answer: `Idempotent means making multiple identical requests has the same effect as making a single request.
+
+Idempotent methods: GET, PUT, DELETE, HEAD, OPTIONS
+Non-idempotent: POST
+
+Examples:
+- DELETE /users/123 called 5 times → user 123 deleted (same result)
+- POST /orders called 5 times → creates 5 orders (different results)
+
+EDGE CASE 1: Network Retries
+Client makes request:
+DELETE /api/users/123
+
+Network timeout (no response received).
+Was user deleted or not?
+
+❌ NON-IDEMPOTENT (can't retry safely):
+If DELETE wasn't idempotent:
+- Retry might fail with "User not found"
+- Can't distinguish: "deleted now" vs "already deleted"
+
+✅ IDEMPOTENT (safe to retry):
+DELETE /api/users/123 → 204 No Content (success)
+DELETE /api/users/123 → 204 No Content (success, idempotent!)
+DELETE /api/users/123 → 204 No Content (success, still idempotent!)
+
+Client can retry without worry.
+
+EDGE CASE 2: PUT Idempotency
+✅ IDEMPOTENT PUT:
+PUT /api/users/123
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "age": 30
+}
+
+Called 3 times:
+- Result: User 123 has name="John Doe", email="john@example.com", age=30
+- Same state every time!
+
+❌ NOT IDEMPOTENT:
+PUT /api/users/123/increment-age
+
+Called 3 times:
+- First call: age = 31
+- Second call: age = 32
+- Third call: age = 33
+- Different results! Not idempotent!
+
+Fix: Use PATCH with explicit value
+PATCH /api/users/123 { "age": 31 }
+
+EDGE CASE 3: POST Non-Idempotency
+❌ PROBLEM (Double-click submit):
+User clicks "Place Order" button twice (double-click):
+
+POST /api/orders
+{ "product": "laptop", "price": 1000 }
+
+Request sent twice:
+- Creates order #1 (total: $1000)
+- Creates order #2 (total: $2000!)
+- User charged twice!
+
+✅ SOLUTION 1: Idempotency Key
+POST /api/orders
+Idempotency-Key: client-generated-uuid-123
+{ "product": "laptop", "price": 1000 }
+
+Server logic:
+const key = req.headers['idempotency-key'];
+const cached = await redis.get(\`idem:\${key}\`);
+if (cached) {
+  return res.status(201).json(JSON.parse(cached));
+}
+
+Second request with same key → returns first order, doesn't create duplicate.
+
+✅ SOLUTION 2: Client-side UUID
+POST /api/orders
+{
+  "order_id": "client-uuid-456",
+  "product": "laptop"
+}
+
+Database unique constraint on order_id prevents duplicates.
+
+EDGE CASE 4: DELETE Idempotency Implementations
+✅ OPTION 1: Always return success
+DELETE /api/users/123 (exists) → 204 No Content
+DELETE /api/users/123 (gone) → 204 No Content
+DELETE /api/users/123 (gone) → 204 No Content
+
+Pro: Truly idempotent
+Con: Client can't tell if it was deleted now or before
+
+✅ OPTION 2: Return 404 when missing
+DELETE /api/users/123 (exists) → 204 No Content
+DELETE /api/users/123 (gone) → 404 Not Found
+DELETE /api/users/123 (gone) → 404 Not Found
+
+Pro: Client knows if resource existed
+Con: Client must handle 404 as success for idempotency
+
+Most APIs use Option 2 and document "404 is success for DELETE retry".
+
+EDGE CASE 5: Conditional Requests Breaking Idempotency
+❌ NOT IDEMPOTENT:
+PUT /api/users/123
+If-Match: "etag-abc"
+{ "name": "Updated" }
+
+First call:
+- ETag matches → 200 OK, updated
+- New ETag: "etag-def"
+
+Second call (same ETag):
+- ETag doesn't match (now "etag-def") → 412 Precondition Failed
+- Different result!
+
+This is INTENTIONAL - you want to know if resource changed.
+But technically not idempotent.
+
+EDGE CASE 6: Side Effects and Idempotency
+✅ IDEMPOTENT despite side effects:
+DELETE /api/users/123
+
+Server does:
+await db.users.delete(123);
+await sendEmail(admin, "User 123 was deleted");
+
+Problem: Multiple DELETEs send multiple emails!
+
+✅ FIX: Make side effects idempotent too
+const existed = await db.users.exists(123);
+await db.users.delete(123);
+
+if (existed) {
+  await sendEmail(admin, "User 123 was deleted");
+}
+
+Only send email if user actually existed and was deleted.
+
+EDGE CASE 7: Load Balancer Retries
+Load balancer timeout scenario:
+
+Client → Load Balancer → Server
+Client sends: POST /api/orders (not idempotent)
+
+Server processes request (takes 35s).
+Load balancer timeout: 30s.
+Load balancer thinks server died.
+Load balancer retries to different server!
+
+Result: Order created twice!
+
+✅ FIX 1: Idempotency keys (best)
+POST with Idempotency-Key header
+
+✅ FIX 2: Increase LB timeout
+But still need idempotency for client retries
+
+✅ FIX 3: Use idempotent methods
+POST creates order
+Return order_id
+Client can GET /api/orders/{id} to check status (idempotent)
+
+Real Example - Stripe:
+All POST requests require Idempotency-Key.
+Can safely retry any payment request.
+Prevents duplicate charges worth millions of dollars!`
                             },
                             {
                                 question: "How does Stripe handle duplicate POST requests?",
-                                answer: "Stripe requires an Idempotency-Key header for POST requests that create resources. Server stores the key with the response. If you retry with same key, you get the original response without creating duplicates. Example: POST /charges with Idempotency-Key: abc123. If retried, returns original charge instead of creating duplicate charge."
+                                answer: `Stripe requires an Idempotency-Key header for POST requests that create resources. Server stores the key with the response. If you retry with same key, you get the original response without creating duplicates.
+
+Basic Example:
+POST /v1/charges
+Idempotency-Key: abc123
+{
+  "amount": 1000,
+  "currency": "usd",
+  "source": "tok_visa"
+}
+
+First request → Creates charge ch_123, stores in cache with key "abc123"
+Retry (same key) → Returns cached charge ch_123, doesn't create duplicate
+
+EDGE CASE 1: Implementation Details
+Server-side logic:
+
+const idempotencyKey = req.headers['idempotency-key'];
+if (!idempotencyKey) {
+  return res.status(400).json({
+    error: 'missing_idempotency_key',
+    message: 'Idempotency-Key header required'
+  });
+}
+
+// Check cache (Redis)
+const cached = await redis.get(\`idem:\${idempotencyKey}\`);
+if (cached) {
+  const {status, body} = JSON.parse(cached);
+  return res.status(status).json(body);
+}
+
+// Process request
+const charge = await createCharge(req.body);
+const response = {status: 201, body: charge};
+
+// Cache for 24 hours
+await redis.setex(
+  \`idem:\${idempotencyKey}\`,
+  86400,
+  JSON.stringify(response)
+);
+
+return res.status(201).json(charge);
+
+EDGE CASE 2: Concurrent Requests with Same Key
+Two requests with same idempotency key arrive simultaneously:
+
+Request A: POST /charges (key: abc123)
+Request B: POST /charges (key: abc123)
+
+Both arrive at same time, before either completes.
+
+❌ WITHOUT LOCK:
+Both check cache → miss
+Both create charge → duplicate charges!
+
+✅ WITH DISTRIBUTED LOCK:
+const lockKey = \`lock:\${idempotencyKey}\`;
+const lockAcquired = await redis.setnx(lockKey, '1', 'EX', 30);
+
+if (!lockAcquired) {
+  // Another request is processing this key
+  await sleep(100);
+  // Retry - should hit cache this time
+  return handleRequest(req, res);
+}
+
+try {
+  // Process request
+  const charge = await createCharge(req.body);
+  await cacheResponse(idempotencyKey, charge);
+  return res.status(201).json(charge);
+} finally {
+  await redis.del(lockKey);
+}
+
+EDGE CASE 3: Failed Requests and Idempotency
+First request fails (validation error):
+
+POST /v1/charges
+Idempotency-Key: abc123
+{
+  "amount": -1000  // Invalid!
+}
+
+Response: 400 Bad Request
+{
+  "error": "invalid_amount",
+  "message": "Amount must be positive"
+}
+
+Question: Should this error be cached?
+
+✅ STRIPE APPROACH:
+Cache successful responses (2xx) for 24 hours.
+Don't cache client errors (4xx).
+Don't cache server errors (5xx).
+
+Retry with same key after fixing error:
+POST /v1/charges
+Idempotency-Key: abc123
+{
+  "amount": 1000  // Fixed!
+}
+
+→ Creates new charge (error wasn't cached)
+
+EDGE CASE 4: Different Request Bodies with Same Key
+❌ CONFLICT:
+POST /v1/charges
+Idempotency-Key: abc123
+{ "amount": 1000, "currency": "usd" }
+
+Later:
+POST /v1/charges
+Idempotency-Key: abc123
+{ "amount": 2000, "currency": "eur" }  // Different body!
+
+✅ STRIPE BEHAVIOR:
+Returns original response:
+Response: 201 Created
+{ "id": "ch_123", "amount": 1000, "currency": "usd" }
+
+Also sets header:
+Idempotent-Replayed: true
+
+Client must use different idempotency key for different requests!
+
+Best practice:
+const idempotencyKey = \`order-\${orderId}-\${Date.now()}\`;
+
+EDGE CASE 5: Key Expiration
+Stripe caches idempotency keys for 24 hours.
+
+POST /v1/charges
+Idempotency-Key: abc123
+→ Creates ch_123, caches for 24h
+
+After 24 hours:
+POST /v1/charges
+Idempotency-Key: abc123  // Same key!
+→ Cache expired, creates NEW charge ch_456
+
+Recommended: Use unique keys (UUIDs), don't reuse.
+
+EDGE CASE 6: Partial Success Scenarios
+POST /v1/charges
+Idempotency-Key: abc123
+
+Scenario: Charge created, but response lost (network error).
+
+Server state: Charge exists, key cached
+Client state: Request failed, no response
+
+Client retries:
+POST /v1/charges
+Idempotency-Key: abc123
+
+✅ RESULT:
+Server returns cached response for ch_123.
+Client receives charge details.
+No duplicate charge created!
+
+This is the PRIMARY use case for idempotency keys!
+
+EDGE CASE 7: Multi-Step Operations
+Complex operation: Create customer + charge + subscription
+
+❌ WRONG: Single idempotency key for all
+POST /v1/customers (key: abc123) → cus_123
+POST /v1/charges (key: abc123) → Returns cus_123! Wrong!
+
+✅ CORRECT: Separate keys per resource type
+POST /v1/customers
+Idempotency-Key: order-456-customer
+
+POST /v1/charges
+Idempotency-Key: order-456-charge
+
+POST /v1/subscriptions
+Idempotency-Key: order-456-subscription
+
+Or use transaction/batch API:
+POST /v1/batch
+Idempotency-Key: order-456-complete
+{
+  "operations": [...]
+}
+
+EDGE CASE 8: Key Format and Collision Risk
+❌ RISKY: Sequential keys
+Idempotency-Key: 1, 2, 3, 4...
+→ Risk of collision across users/tenants
+
+❌ RISKY: Timestamp-based
+Idempotency-Key: \${Date.now()}
+→ Risk of collision if requests within same millisecond
+
+✅ SAFE: UUID v4
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+→ 128-bit random, collision probability negligible
+
+✅ SAFE: Namespaced
+Idempotency-Key: user_123_order_456_\${uuid}
+→ Includes context + randomness
+
+Real-World Impact:
+Stripe processes billions of requests.
+Idempotency keys prevent duplicate charges worth millions.
+Saved customers from double-billing disasters.`
                             },
                             {
                                 question: "When should you use POST for search instead of GET?",
-                                answer: "Use GET for simple searches: GET /products?q=laptop&max=1000. Use POST for complex searches with: 1) Many filters (URL length limits), 2) Complex nested JSON structures, 3) Sensitive data in search criteria. POST /products/search with body containing complex filter object. Trade-off: POST search results aren't cacheable like GET."
+                                answer: `Use GET for simple searches, POST for complex searches.
+
+Simple (use GET):
+GET /products?q=laptop&max_price=1000
+
+Complex (use POST):
+POST /products/search
+{
+  "query": "laptop",
+  "filters": {...},
+  "sort": {...}
+}
+
+When to use POST for search:
+
+EDGE CASE 1: URL Length Limits
+❌ PROBLEM with GET:
+GET /api/products?ids=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,...,1000
+
+URL length limits:
+- Browsers: ~2048 characters (varies)
+- Servers: 8KB typical (nginx default)
+- Proxies: May have lower limits
+
+URL with 1000 IDs exceeds limits!
+
+✅ SOLUTION: Use POST
+POST /api/products/search
+{
+  "ids": [1, 2, 3, 4, ..., 1000]
+}
+
+No URL length restrictions.
+
+EDGE CASE 2: Complex Nested Filters
+❌ UGLY with GET:
+GET /api/users?filters[age][min]=25&filters[age][max]=40&filters[address][city]=SF&filters[address][zip]=94102&filters[skills][0]=javascript&filters[skills][1]=python&filters[employment][status]=active&filters[employment][salary][min]=100000
+
+Becomes unreadable and hard to construct!
+
+✅ CLEAN with POST:
+POST /api/users/search
+{
+  "filters": {
+    "age": {"min": 25, "max": 40},
+    "address": {"city": "SF", "zip": "94102"},
+    "skills": ["javascript", "python"],
+    "employment": {
+      "status": "active",
+      "salary": {"min": 100000}
+    }
+  }
+}
+
+Clear structure, easy to construct and parse.
+
+EDGE CASE 3: Sensitive Search Criteria
+❌ SECURITY RISK with GET:
+GET /api/transactions?ssn=123-45-6789&account=9876543210
+
+Problems:
+- SSN appears in server access logs
+- SSN appears in proxy logs
+- SSN appears in browser history
+- SSN sent in Referer header
+- SSN visible in browser address bar
+
+✅ SECURE with POST:
+POST /api/transactions/search
+{
+  "ssn": "123-45-6789",
+  "account": "9876543210"
+}
+
+Not logged in URLs, not in history, not in Referer.
+
+EDGE CASE 4: Caching Trade-offs
+✅ GET (cacheable):
+GET /api/products?category=electronics&sort=price
+
+- Browser caches response
+- CDN can cache
+- Repeat searches are instant
+
+❌ POST (not cacheable):
+POST /api/products/search
+{
+  "category": "electronics",
+  "sort": "price"
+}
+
+- Not cached (HTTP spec)
+- Every search hits server
+- Slower for repeat searches
+
+Solution for cacheable complex searches:
+✅ HYBRID: Search ID pattern
+POST /api/searches
+{
+  "category": "electronics",
+  "sort": "price"
+}
+
+Response: 201 Created
+{
+  "search_id": "s_abc123",
+  "results_url": "/api/searches/s_abc123/results"
+}
+
+Then:
+GET /api/searches/s_abc123/results
+→ Cacheable!
+
+EDGE CASE 5: Array/List Parameters
+❌ INCONSISTENT with GET:
+Different frameworks parse arrays differently:
+
+GET /api/users?roles=admin&roles=editor&roles=user
+GET /api/users?roles[]=admin&roles[]=editor
+GET /api/users?roles=admin,editor,user
+
+Which format to use? Inconsistent across frameworks!
+
+✅ CONSISTENT with POST:
+POST /api/users/search
+{
+  "roles": ["admin", "editor", "user"]
+}
+
+Standard JSON array, universally supported.
+
+EDGE CASE 6: Special Characters in Search Terms
+❌ ENCODING ISSUES with GET:
+Search for: "John & Jane's C++ Code"
+
+GET /api/search?q=John%20%26%20Jane%27s%20C%2B%2B%20Code
+
+Encoding problems:
+- & must be %26
+- + must be %2B
+- Space can be %20 or +
+- ' might need encoding
+- Easy to get wrong!
+
+✅ NO ENCODING NEEDED with POST:
+POST /api/search
+{
+  "q": "John & Jane's C++ Code"
+}
+
+JSON handles special characters natively.
+
+EDGE CASE 7: Elasticsearch-Style Queries
+❌ IMPOSSIBLE with GET:
+Complex query:
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"match": {"title": "laptop"}},
+        {"range": {"price": {"lte": 1000}}}
+      ],
+      "should": [
+        {"match": {"brand": "Apple"}},
+        {"match": {"brand": "Dell"}}
+      ],
+      "filter": {
+        "term": {"in_stock": true}
+      }
+    }
+  },
+  "sort": [{"price": "asc"}],
+  "from": 0,
+  "size": 20
+}
+
+Can't express in URL query string!
+
+✅ NATURAL with POST:
+POST /api/products/search
+<paste complex query above>
+
+EDGE CASE 8: Combining GET and POST Benefits
+❌ PROBLEM:
+- GET is cacheable but limited
+- POST is powerful but not cacheable
+
+✅ BEST OF BOTH WORLDS:
+1. Simple searches: Use GET
+GET /api/products?category=laptops
+
+2. Complex searches: POST to create, GET to retrieve
+POST /api/saved-searches
+{
+  "name": "My Complex Search",
+  "filters": {...complex...}
+}
+→ Returns: { "id": "search_123" }
+
+GET /api/saved-searches/search_123/results
+→ Cacheable, shareable URL!
+
+3. Frequently used complex searches become GET endpoints:
+POST /api/products/search {common filters}
+→ Server: "This is frequently searched, creating shortcut"
+→ Returns: { "shortcut_url": "/api/products/popular-laptops" }
+
+GET /api/products/popular-laptops
+→ Cached, fast, shareable!
+
+Real Examples:
+GitHub: GET /search?q=simple, but complex code search uses GraphQL (POST)
+Google: GET for web search, but Images/Shopping use POST for complex filters
+Elasticsearch: All searches use POST (complex query DSL)
+Algolia: GET for simple, POST for complex faceted search`
                             },
                             {
                                 question: "What's the difference between soft delete and hard delete? When would you use each?",
-                                answer: "Hard delete: DELETE /users/123 removes from database permanently, cannot recover. Soft delete: sets deleted_at timestamp, hides from queries but keeps in database, can be restored. Use hard delete for sensitive data (GDPR compliance). Use soft delete for: audit trails, accidental deletion recovery, preserving relationships. Can add POST /users/123/restore for soft deleted items."
+                                answer: `Hard delete: Actually removes from database (permanent, cannot recover)
+Soft delete: Sets deleted_at timestamp (hidden but keeps in database, can restore)
+
+Basic Implementations:
+
+HARD DELETE:
+DELETE /api/users/123
+→ Database: DELETE FROM users WHERE id = 123;
+→ Row physically removed
+→ Cannot recover
+
+SOFT DELETE:
+DELETE /api/users/123
+→ Database: UPDATE users SET deleted_at = NOW() WHERE id = 123;
+→ Row still exists, marked as deleted
+→ Can restore
+
+EDGE CASE 1: Query Complexity
+❌ SOFT DELETE COMPLEXITY:
+Every query must filter deleted rows:
+
+// Without soft delete (simple):
+SELECT * FROM users WHERE role = 'admin';
+
+// With soft delete (more complex):
+SELECT * FROM users
+WHERE role = 'admin'
+  AND deleted_at IS NULL;
+
+// Joins become complex:
+SELECT posts.*, users.name
+FROM posts
+JOIN users ON posts.user_id = users.id
+WHERE posts.deleted_at IS NULL
+  AND users.deleted_at IS NULL;
+
+Must remember to filter EVERY query!
+
+✅ SOLUTION: Database views
+CREATE VIEW active_users AS
+SELECT * FROM users WHERE deleted_at IS NULL;
+
+Then query:
+SELECT * FROM active_users WHERE role = 'admin';
+
+Or use ORM global scopes:
+User.find(123);  // Auto-filters deleted_at IS NULL
+
+EDGE CASE 2: Unique Constraints
+❌ PROBLEM with soft delete:
+Table: users (email UNIQUE)
+
+User signs up: email=john@example.com
+Later deletes account (soft delete)
+
+Tries to sign up again: email=john@example.com
+ERROR: Duplicate email! (deleted row still has email)
+
+✅ SOLUTION 1: Composite unique constraint
+CREATE UNIQUE INDEX idx_email_active
+ON users(email) WHERE deleted_at IS NULL;
+
+Allows same email if previous account is deleted.
+
+✅ SOLUTION 2: Nullify email on delete
+UPDATE users
+SET deleted_at = NOW(),
+    email = NULL
+WHERE id = 123;
+
+But loses data for audit trail.
+
+✅ SOLUTION 3: Append timestamp to email
+UPDATE users
+SET deleted_at = NOW(),
+    email = email || '_deleted_' || deleted_at
+WHERE id = 123;
+
+email becomes: john@example.com_deleted_2024-01-15
+
+EDGE CASE 3: Storage Costs
+Hard delete:
+- Rows deleted immediately
+- Disk space freed
+- Database smaller, faster queries
+
+Soft delete:
+- Rows accumulate forever (or until purged)
+- Database grows continuously
+- Slower queries (more rows to filter)
+
+Real scenario:
+E-commerce with 1M orders/month
+Soft delete for 5 years = 60M deleted orders
+Active orders: 2M
+Deleted orders: 60M (30x larger!)
+
+✅ SOLUTION: Archival strategy
+1. Soft delete for 90 days (recovery period)
+2. Move to archive table after 90 days
+3. Delete from archive after 5 years (compliance)
+
+CREATE TABLE orders_archive (LIKE orders);
+
+-- Nightly job:
+INSERT INTO orders_archive
+SELECT * FROM orders
+WHERE deleted_at < NOW() - INTERVAL '90 days';
+
+DELETE FROM orders
+WHERE deleted_at < NOW() - INTERVAL '90 days';
+
+EDGE CASE 4: Cascading Deletes
+User has: posts, comments, likes, followers
+
+❌ HARD DELETE CASCADE:
+DELETE /api/users/123
+→ Deletes user
+→ Database CASCADE deletes all posts, comments, likes
+→ All data GONE forever
+
+✅ SOFT DELETE CASCADE:
+DELETE /api/users/123
+
+Implementation:
+await db.transaction(async (trx) => {
+  const now = new Date();
+  await trx.users.update(123, { deleted_at: now });
+  await trx.posts.update({ user_id: 123 }, { deleted_at: now });
+  await trx.comments.update({ user_id: 123 }, { deleted_at: now });
+  await trx.likes.update({ user_id: 123 }, { deleted_at: now });
+});
+
+Can restore everything:
+POST /api/users/123/restore
+→ Restores user + all related data
+
+EDGE CASE 5: GDPR / Privacy Compliance
+European GDPR: "Right to be forgotten"
+
+❌ SOFT DELETE VIOLATES GDPR:
+Soft delete keeps personal data in database.
+User can request full data deletion.
+
+✅ HARD DELETE for GDPR:
+DELETE /api/users/123?gdpr=true
+
+Implementation:
+if (req.query.gdpr === 'true') {
+  // Hard delete everything
+  await db.users.hardDelete(123);
+  await db.posts.hardDelete({ user_id: 123 });
+  // Anonymize related data instead of deleting
+  await db.comments.update(
+    { user_id: 123 },
+    { user_id: null, author_name: '[deleted]' }
+  );
+} else {
+  // Soft delete
+  await db.users.update(123, { deleted_at: new Date() });
+}
+
+EDGE CASE 6: Audit Trail Requirements
+Financial systems need audit trails:
+
+❌ HARD DELETE (no audit):
+DELETE FROM transactions WHERE id = 123;
+→ No record of deletion
+→ Who deleted it? When? Why?
+
+✅ SOFT DELETE (audit):
+{
+  "id": 123,
+  "amount": 1000,
+  "deleted_at": "2024-01-15T10:30:00Z",
+  "deleted_by": "admin_user_456",
+  "deletion_reason": "duplicate_transaction"
+}
+
+Can query:
+SELECT * FROM transactions WHERE deleted_at IS NOT NULL;
+→ See all deleted transactions, who deleted them, when
+
+EDGE CASE 7: Restoration API
+With soft delete, allow restoration:
+
+POST /api/users/123/restore
+
+Implementation:
+const user = await db.users.findOne(123);
+
+if (!user) {
+  return res.status(404).json({ error: 'user_not_found' });
+}
+
+if (user.deleted_at === null) {
+  return res.status(400).json({ error: 'user_not_deleted' });
+}
+
+// Check if can restore (within 30-day window?)
+const daysSinceDeleted =
+  (Date.now() - user.deleted_at.getTime()) / (1000 * 60 * 60 * 24);
+
+if (daysSinceDeleted > 30) {
+  return res.status(409).json({
+    error: 'restore_period_expired',
+    message: 'Can only restore within 30 days of deletion'
+  });
+}
+
+// Restore
+await db.transaction(async (trx) => {
+  await trx.users.update(123, { deleted_at: null });
+  await trx.posts.update(
+    { user_id: 123, deleted_at: user.deleted_at },
+    { deleted_at: null }
+  );
+});
+
+return res.status(200).json({ message: 'User restored' });
+
+EDGE CASE 8: When to Use Each
+Use HARD DELETE when:
+✅ Sensitive data (passwords, SSNs, credit cards)
+✅ GDPR/privacy compliance required
+✅ Storage costs critical
+✅ No need for audit trail
+✅ Simple schema (no complex relationships)
+
+Use SOFT DELETE when:
+✅ Need audit trail
+✅ Accidental deletion recovery important
+✅ Complex data relationships (cascade restore)
+✅ Analytics on deleted data needed
+✅ Legal/compliance requires data retention
+✅ User might want to restore account
+
+Use HYBRID approach:
+✅ Soft delete by default
+✅ Hard delete after 90 days
+✅ Immediate hard delete for sensitive fields
+✅ Archive deleted data to separate storage
+
+Real Examples:
+GitHub: Soft delete repositories (can restore within 90 days)
+Gmail: Soft delete emails (Trash folder, 30 days)
+Stripe: Soft delete (audit trail for financial compliance)
+Facebook: Soft delete accounts (can reactivate within 30 days)
+Banking: Never hard delete transactions (regulatory requirement)`
                             }
                         ]
                     },
@@ -9517,6 +13416,129 @@ Response: 200 OK
 }</div>
 
                             <p><strong>Real Example - AWS S3:</strong> When you initiate a large file upload or a restore from Glacier, AWS returns 202 Accepted immediately and processes the request asynchronously.</p>
+
+                            <h4>202 Accepted Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Polling vs Webhooks
+❌ CLIENT POLLING (inefficient):
+POST /api/reports
+Response: 202 Accepted
+{ "task_id": "task-123", "status_url": "/api/tasks/task-123" }
+
+Client polls every second:
+while (true) {
+  const status = await fetch('/api/tasks/task-123');
+  if (status.data.state === 'completed') break;
+  await sleep(1000);  // Waste server resources!
+}
+
+Problem: Wastes bandwidth, server resources, slow notification.
+
+✅ WEBHOOK CALLBACK (efficient):
+POST /api/reports
+{
+  "callback_url": "https://client.com/webhook/report-done"
+}
+
+Response: 202 Accepted
+{ "task_id": "task-123" }
+
+Server calls webhook when done:
+POST https://client.com/webhook/report-done
+{
+  "task_id": "task-123",
+  "status": "completed",
+  "result_url": "/api/reports/report-456"
+}
+
+No polling! Instant notification!
+
+EDGE CASE 2: Task Expiration
+❌ PROBLEM: Tasks live forever
+POST /api/videos/process
+Response: 202 Accepted { "task_id": "task-xyz" }
+
+Client never checks status.
+Server keeps task in memory forever → memory leak!
+
+✅ SOLUTION: Task TTL (Time To Live)
+Response: 202 Accepted
+{
+  "task_id": "task-xyz",
+  "status_url": "/api/tasks/task-xyz",
+  "expires_at": "2024-01-16T10:00:00Z"
+}
+
+After 24 hours:
+GET /api/tasks/task-xyz
+Response: 410 Gone
+{
+  "error": "task_expired",
+  "message": "Task results expired after 24 hours"
+}
+
+Server deletes old tasks automatically.
+
+EDGE CASE 3: Failed Async Operations
+POST /api/videos/process
+Response: 202 Accepted
+
+Later processing fails (invalid format).
+
+GET /api/tasks/task-xyz
+Response: 200 OK
+{
+  "task_id": "task-xyz",
+  "status": "failed",
+  "error": {
+    "code": "invalid_video_format",
+    "message": "Video format not supported"
+  },
+  "failed_at": "2024-01-15T10:05:00Z"
+}
+
+Don't just return 500! Return 200 with failed status in body.
+
+EDGE CASE 4: Long-Running Task Progress
+✅ PROVIDE PROGRESS UPDATES:
+GET /api/tasks/task-xyz
+Response: 200 OK
+{
+  "task_id": "task-xyz",
+  "status": "processing",
+  "progress": {
+    "percent": 45,
+    "current_step": "transcoding",
+    "steps_total": 3,
+    "steps_completed": 1,
+    "estimated_completion": "2024-01-15T10:10:00Z"
+  }
+}
+
+Client can show progress bar to user!
+
+EDGE CASE 5: Idempotent Async Operations
+❌ PROBLEM: Duplicate submissions
+User clicks "Process" twice (double-click):
+
+POST /api/reports
+POST /api/reports (duplicate!)
+
+Both return 202 Accepted.
+Server processes report twice!
+
+✅ SOLUTION: Idempotency key
+POST /api/reports
+Idempotency-Key: client-uuid-123
+
+First request:
+Response: 202 Accepted
+{ "task_id": "task-abc" }
+
+Second request (same key):
+Response: 202 Accepted (or 200 OK)
+{ "task_id": "task-abc" }  // Same task!
+
+Server detects duplicate, returns existing task.</div>
 
                             <h3>204 No Content - Success with No Body</h3>
                             <p>The request succeeded but there's no content to return. Commonly used for DELETE operations.</p>
@@ -9639,6 +13661,128 @@ Response: 401 Unauthorized
   "message": "Token expired. Please login again."
 }</div>
 
+                            <h4>401 Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Expired Token with Refresh Capability
+❌ BASIC RESPONSE:
+Response: 401 Unauthorized
+{
+  "error": "token_expired"
+}
+
+Client doesn't know if token is fixable or needs re-login.
+
+✅ DETAILED RESPONSE:
+Response: 401 Unauthorized
+{
+  "error": "token_expired",
+  "message": "Access token expired",
+  "expired_at": "2024-01-15T10:00:00Z",
+  "can_refresh": true,
+  "refresh_url": "/api/auth/refresh"
+}
+
+Client can automatically refresh:
+POST /api/auth/refresh
+{
+  "refresh_token": "refresh_xyz"
+}
+
+Response: 200 OK
+{
+  "access_token": "new_token_abc",
+  "expires_in": 900
+}
+
+EDGE CASE 2: Multiple Authentication Schemes
+Server supports: Bearer tokens, API keys, Basic Auth
+
+❌ VAGUE:
+Response: 401 Unauthorized
+WWW-Authenticate: Bearer
+
+Only mentions Bearer, client doesn't know other options.
+
+✅ COMPLETE:
+Response: 401 Unauthorized
+WWW-Authenticate: Bearer realm="api", charset="UTF-8"
+WWW-Authenticate: ApiKey realm="api"
+WWW-Authenticate: Basic realm="api"
+
+Client sees all available auth methods.
+
+EDGE CASE 3: Partial Authentication
+Multi-factor authentication flow:
+
+Step 1: Username/password
+POST /api/auth/login
+{ "username": "john", "password": "pass123" }
+
+Response: 401 Unauthorized
+{
+  "error": "mfa_required",
+  "message": "Multi-factor authentication required",
+  "mfa_token": "temp_token_xyz",
+  "mfa_methods": ["sms", "totp", "email"]
+}
+
+Step 2: MFA code
+POST /api/auth/mfa
+{
+  "mfa_token": "temp_token_xyz",
+  "code": "123456",
+  "method": "totp"
+}
+
+Response: 200 OK
+{ "access_token": "final_token_abc" }
+
+EDGE CASE 4: 401 with Malformed Token
+❌ SECURITY LEAK:
+Authorization: Bearer invalid.jwt.token
+
+Response: 401 Unauthorized
+{
+  "error": "jwt_decode_error",
+  "message": "Invalid signature: Expected HS256, got RS256",
+  "stack_trace": "..."
+}
+
+Leaks implementation details!
+
+✅ SECURE:
+Response: 401 Unauthorized
+{
+  "error": "invalid_token",
+  "message": "Authentication failed"
+}
+
+Generic message, no details to attackers.
+
+EDGE CASE 5: Account Locked vs Invalid Credentials
+❌ SAME RESPONSE:
+Wrong password → 401 Unauthorized
+Account locked → 401 Unauthorized
+
+Attacker can't tell if password is correct but account locked.
+
+✅ DIFFERENT RESPONSES:
+Wrong password:
+Response: 401 Unauthorized
+{
+  "error": "invalid_credentials",
+  "message": "Invalid username or password"
+}
+
+Account locked:
+Response: 403 Forbidden (not 401!)
+{
+  "error": "account_locked",
+  "message": "Account locked due to too many failed login attempts",
+  "locked_until": "2024-01-15T11:00:00Z"
+}
+
+Use 403 for locked accounts (you know who they are).</div>
+
                             <h4>Common Mistake: 401 vs 403</h4>
                             <div class="code-block">401 Unauthorized:
 - "I don't know who you are"
@@ -9717,6 +13861,134 @@ Hides existence of resource
 Most APIs: Use 404 for security-sensitive resources
 Example: Private documents, other users' data</div>
 
+                            <h4>404 Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Soft Deleted Resources
+User was deleted (soft delete):
+{
+  "id": 123,
+  "name": "John",
+  "deleted_at": "2024-01-10T10:00:00Z"
+}
+
+GET /api/users/123
+
+❌ OPTION 1: Return data (leaks deleted user)
+Response: 200 OK
+{ "id": 123, "name": "John" }
+
+❌ OPTION 2: Return 403 (reveals existence)
+Response: 403 Forbidden
+{ "error": "user_deleted" }
+
+✅ OPTION 3: Return 404 (hide deleted state)
+Response: 404 Not Found
+{ "error": "not_found" }
+
+For privacy, treat deleted as not found.
+
+EDGE CASE 2: ID Enumeration Attack
+Attacker tries sequential IDs:
+GET /api/users/1 → 404
+GET /api/users/2 → 404
+GET /api/users/3 → 200 (exists!)
+GET /api/users/4 → 404
+...
+
+Can enumerate all user IDs!
+
+✅ SOLUTION 1: Use UUIDs instead of integers
+GET /api/users/550e8400-e29b-41d4-a716-446655440000
+
+Hard to guess/enumerate.
+
+✅ SOLUTION 2: Rate limit 404s
+Track 404 count per IP:
+if (recentNotFoundCount > 100) {
+  return res.status(429).json({ error: 'rate_limited' });
+}
+
+EDGE CASE 3: Parent Resource Missing
+GET /api/users/999/posts
+
+User 999 doesn't exist. What status?
+
+❌ CONFUSING:
+Response: 404 Not Found
+{ "error": "posts_not_found" }
+
+Implies user exists but has no posts.
+
+✅ CLEAR:
+Response: 404 Not Found
+{
+  "error": "parent_not_found",
+  "message": "User 999 not found",
+  "resource": "user"
+}
+
+Indicates parent is missing.
+
+EDGE CASE 4: 404 vs Empty Result
+GET /api/users/123/posts
+(User exists but has no posts)
+
+❌ WRONG: 404 Not Found
+Response: 404 Not Found
+{ "error": "no_posts" }
+
+❌ WRONG: Empty object
+Response: 200 OK
+{}
+
+✅ CORRECT: Empty array
+Response: 200 OK
+{
+  "data": [],
+  "total": 0
+}
+
+404 means endpoint or resource doesn't exist.
+Empty results are 200 with empty array.
+
+EDGE CASE 5: Detailed 404 Messages
+❌ SECURITY RISK:
+GET /api/users/admin
+Response: 404 Not Found
+{
+  "error": "User 'admin' exists but is disabled"
+}
+
+Leaks information!
+
+✅ SECURE:
+Response: 404 Not Found
+{
+  "error": "not_found",
+  "message": "Resource not found"
+}
+
+Generic message, no details.
+
+EDGE CASE 6: 410 Gone vs 404 Not Found
+Resource was deleted permanently:
+
+✅ USE 410 GONE:
+GET /api/posts/123
+Response: 410 Gone
+{
+  "error": "gone",
+  "message": "This post was permanently deleted",
+  "deleted_at": "2024-01-10T10:00:00Z"
+}
+
+Benefits:
+- Tells client resource existed but is gone
+- Client can stop retrying
+- Search engines remove from index
+
+404 means "maybe never existed"
+410 means "existed but gone forever"</div>
+
                             <h3>405 Method Not Allowed - Wrong HTTP Method</h3>
                             <p>The resource exists but doesn't support the HTTP method used.</p>
 
@@ -9759,6 +14031,150 @@ Response: 409 Conflict
   "error": "Conflict",
   "message": "Document was modified by another user",
   "current_etag": "new-etag"
+}</div>
+
+                            <h3>409 Conflict Edge Cases & Robustness</h3>
+                            <div class="code-block">EDGE CASE 1: Concurrent Update Conflict
+Two users edit same document simultaneously:
+
+User A: GET /api/documents/123 → ETag: "v1"
+User B: GET /api/documents/123 → ETag: "v1"
+
+User A updates first:
+PUT /api/documents/123
+If-Match: "v1"
+{ "content": "A's changes" }
+→ 200 OK, ETag: "v2"
+
+User B tries to update:
+PUT /api/documents/123
+If-Match: "v1"  // Stale!
+{ "content": "B's changes" }
+
+✅ RESPONSE:
+Response: 409 Conflict
+{
+  "error": "version_conflict",
+  "message": "Document was modified by another user",
+  "current_version": "v2",
+  "your_version": "v1",
+  "last_modified_by": "user_a",
+  "resolution_url": "/api/documents/123/conflicts"
+}
+
+Client must refetch and merge changes.
+
+EDGE CASE 2: Unique Constraint Violation
+POST /api/users
+{ "email": "john@example.com" }
+
+Database unique constraint fails.
+
+❌ GENERIC ERROR:
+Response: 500 Internal Server Error
+{ "error": "Database error" }
+
+Leaks internal implementation!
+
+✅ SPECIFIC ERROR:
+Response: 409 Conflict
+{
+  "error": "duplicate_email",
+  "message": "Email already registered",
+  "field": "email",
+  "existing_resource": "/api/users/123"  // Optional
+}
+
+Client can handle gracefully.
+
+EDGE CASE 3: State Transition Conflict
+Order state machine:
+pending → processing → shipped → delivered
+
+Trying invalid transition:
+PATCH /api/orders/123
+{ "status": "delivered" }
+
+Current status: "pending"
+
+✅ RESPONSE:
+Response: 409 Conflict
+{
+  "error": "invalid_state_transition",
+  "message": "Cannot transition from pending to delivered",
+  "current_state": "pending",
+  "allowed_transitions": ["processing", "cancelled"]
+}
+
+EDGE CASE 4: Resource Dependency Conflict
+Trying to delete user with active subscriptions:
+
+DELETE /api/users/123
+
+✅ RESPONSE:
+Response: 409 Conflict
+{
+  "error": "has_dependencies",
+  "message": "Cannot delete user with active subscriptions",
+  "dependencies": {
+    "subscriptions": 3,
+    "orders": 12
+  },
+  "resolution": "Cancel subscriptions first or use force=true"
+}
+
+EDGE CASE 5: Idempotency Key Conflict
+POST /api/orders
+Idempotency-Key: abc-123
+{ "product_id": 999, "quantity": 1 }
+
+Later, same key but different data:
+POST /api/orders
+Idempotency-Key: abc-123
+{ "product_id": 888, "quantity": 5 }  // Different!
+
+✅ RESPONSE:
+Response: 409 Conflict  (or 200 with original)
+{
+  "error": "idempotency_conflict",
+  "message": "Request with this key already processed",
+  "original_request": {
+    "product_id": 999,
+    "quantity": 1
+  },
+  "original_response": {
+    "order_id": "order-456"
+  }
+}
+
+Or return original response with header:
+Response: 201 Created
+Idempotent-Replayed: true
+{ "order_id": "order-456" }
+
+EDGE CASE 6: Optimistic Locking Best Practices
+❌ WITHOUT VERSION CHECK:
+PUT /api/documents/123
+{ "content": "New content" }
+
+Last write wins! Lost update problem.
+
+✅ WITH VERSION CHECK:
+PUT /api/documents/123
+If-Match: "current-etag"
+{ "content": "New content" }
+
+If-Match mismatch → 409 Conflict
+
+✅ ALTERNATIVE: Version field
+PUT /api/documents/123
+{
+  "version": 5,
+  "content": "New content"
+}
+
+if (req.body.version !== doc.version) {
+  return res.status(409).json({ error: 'version_mismatch' });
 }</div>
 
                             <h3>422 Unprocessable Entity - Semantic Errors</h3>
@@ -9810,6 +14226,197 @@ X-RateLimit-Reset: 1704123600
 }</div>
 
                             <p><strong>Real Example - GitHub API:</strong> GitHub limits API requests to 5000/hour for authenticated users and 60/hour for unauthenticated. When you exceed this, you get 429 with X-RateLimit headers.</p>
+
+                            <h4>429 Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: Per-User vs Per-IP Rate Limiting
+❌ IP-BASED ONLY:
+Corporate proxy with 1000 users behind same IP.
+One user hits rate limit → All users blocked!
+
+✅ MULTI-LAYER RATE LIMITING:
+// Check authenticated user first
+if (req.user) {
+  const userLimit = await checkUserRateLimit(req.user.id);
+  if (userLimit.exceeded) {
+    return res.status(429).json({
+      error: 'user_rate_limit_exceeded',
+      limit: userLimit.max,
+      reset: userLimit.reset
+    });
+  }
+}
+
+// Then check IP for unauthenticated/additional protection
+const ipLimit = await checkIPRateLimit(req.ip);
+if (ipLimit.exceeded) {
+  return res.status(429).json({
+    error: 'ip_rate_limit_exceeded',
+    limit: ipLimit.max,
+    reset: ipLimit.reset
+  });
+}
+
+EDGE CASE 2: Different Limits for Different Endpoints
+❌ ONE SIZE FITS ALL:
+All endpoints: 100 requests/hour
+
+Problem:
+- Read-only endpoints (GET /users) don't need strict limits
+- Write endpoints (POST /charges) need strict limits
+- Expensive endpoints (POST /search) need very strict limits
+
+✅ PER-ENDPOINT LIMITS:
+GET /api/users: 1000/hour (cheap reads)
+POST /api/users: 100/hour (writes)
+POST /api/search: 10/hour (expensive)
+
+Response headers reflect current endpoint:
+X-RateLimit-Limit: 10
+X-RateLimit-Resource: search
+
+EDGE CASE 3: Retry-After Header
+❌ WITHOUT RETRY-AFTER:
+Response: 429 Too Many Requests
+{
+  "error": "rate_limited"
+}
+
+Client doesn't know when to retry!
+
+✅ WITH RETRY-AFTER:
+Response: 429 Too Many Requests
+Retry-After: 3600
+X-RateLimit-Reset: 1704127200
+{
+  "error": "rate_limited",
+  "message": "Rate limit exceeded",
+  "retry_after": 3600,
+  "reset_at": "2024-01-15T11:00:00Z"
+}
+
+Client can retry after 3600 seconds.
+
+Exponential backoff:
+async function retryWithBackoff(fn, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.status === 429) {
+        const retryAfter = err.headers['retry-after'] || (2 ** i);
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+EDGE CASE 4: Burst vs Sustained Rate Limits
+❌ SIMPLE COUNTER:
+100 requests/hour limit.
+
+User sends 100 requests in first minute.
+Blocked for 59 minutes!
+
+✅ TOKEN BUCKET ALGORITHM:
+Bucket capacity: 100 tokens
+Refill rate: 100 tokens/hour (1.67/minute)
+
+Allows bursts up to capacity.
+Sustained rate limited to refill rate.
+
+User can:
+- Burst 100 requests immediately
+- Then ~1.67 requests/minute
+- Unused capacity accumulates
+
+✅ SLIDING WINDOW:
+Counts requests in last 60 minutes.
+More fair than fixed windows.
+
+Fixed window problem:
+11:59 - 100 requests
+12:00 - 100 requests (new hour!)
+→ 200 requests in 2 minutes!
+
+Sliding window:
+At 12:01, count requests from 11:01-12:01.
+
+EDGE CASE 5: Rate Limit Bypass for Critical Operations
+Some operations shouldn't be rate limited:
+
+✅ EXEMPT CRITICAL OPERATIONS:
+// Password reset
+POST /api/auth/reset-password
+→ Rate limit: 5/hour (prevent abuse)
+
+// But verification of reset token
+POST /api/auth/verify-reset-token
+→ No rate limit (user needs to reset!)
+
+// Failed login attempts
+POST /api/auth/login (failed)
+→ Strict rate limit: 5/hour
+
+// Successful login
+POST /api/auth/login (success)
+→ Doesn't count toward rate limit
+
+EDGE CASE 6: Distributed Rate Limiting
+❌ IN-MEMORY COUNTER (Single server):
+const counts = new Map();  // Lost on restart!
+
+Multiple servers → Different limits!
+
+✅ REDIS DISTRIBUTED COUNTER:
+const key = \`rate:\${userId}:\${endpoint}\`;
+const count = await redis.incr(key);
+
+if (count === 1) {
+  await redis.expire(key, 3600);  // 1 hour
+}
+
+if (count > limit) {
+  const ttl = await redis.ttl(key);
+  return res.status(429).set('Retry-After', ttl).json({
+    error: 'rate_limited',
+    retry_after: ttl
+  });
+}
+
+All servers share same Redis counter.
+
+EDGE CASE 7: Rate Limit Headers Best Practices
+✅ COMPLETE HEADERS:
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 47
+X-RateLimit-Reset: 1704127200
+X-RateLimit-Resource: search
+
+Real Examples:
+GitHub: Uses X-RateLimit-*
+Twitter: Uses X-Rate-Limit-* (different casing!)
+Stripe: Uses RateLimit-Limit (no X prefix)
+
+✅ STANDARD (RFC 6585):
+RateLimit-Limit: 100
+RateLimit-Remaining: 47
+RateLimit-Reset: 3600
+
+Better: Use standard headers when possible.
+
+EDGE CASE 8: 429 vs 503 Service Unavailable
+❌ CONFUSING: Use 503 for rate limiting
+Response: 503 Service Unavailable
+
+Implies server is down! Client might failover.
+
+✅ CORRECT: Use 429
+Response: 429 Too Many Requests
+Retry-After: 60
+
+Clear: Client made too many requests, retry later.</div>
 
                             <h2>5xx Server Error Codes</h2>
 
@@ -9897,6 +14504,232 @@ Response: 504 Gateway Timeout
 }
 
 Solution: Use 202 Accepted for long-running operations!</div>
+
+                            <h4>5xx Edge Cases & Robustness</h4>
+                            <div class="code-block">EDGE CASE 1: 500 vs 503 - Transient vs Permanent
+❌ ALWAYS RETURN 500:
+Database down → 500 Internal Server Error
+High load → 500 Internal Server Error
+Deployment → 500 Internal Server Error
+
+Client doesn't know if it should retry!
+
+✅ DIFFERENTIATE:
+Permanent/unknown error → 500 Internal Server Error
+Temporary/recoverable → 503 Service Unavailable
+Retry-After: 60
+
+Client knows 503 is temporary, can retry.
+
+EDGE CASE 2: Request ID for Debugging
+❌ NO TRACKING:
+Response: 500 Internal Server Error
+{ "error": "Something went wrong" }
+
+Customer contacts support: "I got an error!"
+Support: "When? Which endpoint? What data?"
+→ Impossible to debug!
+
+✅ WITH REQUEST ID:
+Response: 500 Internal Server Error
+{
+  "error": "internal_error",
+  "message": "An unexpected error occurred",
+  "request_id": "req_7f3b2c1a",
+  "timestamp": "2024-01-15T10:30:45Z"
+}
+
+Customer: "Got error req_7f3b2c1a"
+Support: grep logs for req_7f3b2c1a
+→ Finds exact error with full context!
+
+Implementation:
+const requestId = generateRequestId();
+req.id = requestId;
+res.set('X-Request-ID', requestId);
+
+On error:
+logger.error({
+  requestId,
+  error: err.stack,
+  userId: req.user?.id,
+  endpoint: req.path
+});
+
+EDGE CASE 3: Error Monitoring & Alerting
+❌ SILENT FAILURES:
+500 errors happen.
+Nobody notices until customer complains.
+
+✅ PROACTIVE MONITORING:
+On 500 error:
+await metrics.increment('api.errors.500');
+await alerting.notify({
+  level: 'critical',
+  message: \`500 error on \${req.path}\`,
+  requestId: req.id
+});
+
+Tools:
+- Sentry: Error tracking
+- DataDog: APM monitoring
+- PagerDuty: On-call alerts
+
+Alert on:
+- 500 error rate > 1%
+- Single endpoint: 10+ errors/minute
+- Specific error types spike
+
+EDGE CASE 4: Circuit Breaker Pattern
+❌ CASCADE FAILURE:
+Payment service down.
+Every checkout request tries to call it.
+All timeout after 30s.
+API overwhelmed with slow requests!
+
+✅ CIRCUIT BREAKER:
+State: CLOSED (normal)
+→ If 50% of requests fail in 1 minute
+State: OPEN (failing fast)
+→ Return 503 immediately, don't call payment service
+→ After 60s, try one request (half-open)
+→ If succeeds, return to CLOSED
+
+Implementation:
+const circuitBreaker = new CircuitBreaker(paymentService.charge, {
+  timeout: 5000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 60000
+});
+
+try {
+  const result = await circuitBreaker.fire(chargeData);
+  return res.status(200).json(result);
+} catch (err) {
+  if (err.message === 'Circuit breaker is OPEN') {
+    return res.status(503).json({
+      error: 'service_unavailable',
+      message: 'Payment service temporarily unavailable'
+    });
+  }
+  return res.status(500).json({ error: 'payment_failed' });
+}
+
+EDGE CASE 5: 502 vs 503 vs 504
+❌ CONFUSING: Always return 500
+
+✅ SPECIFIC:
+502 Bad Gateway:
+- Upstream service returned invalid response
+- Example: Payment API returned HTML instead of JSON
+- Indicates upstream bug/misconfiguration
+
+503 Service Unavailable:
+- Service intentionally unavailable
+- Examples: Maintenance, overload, deployment
+- Temporary, will return
+- Include Retry-After header
+
+504 Gateway Timeout:
+- Upstream service didn't respond in time
+- Example: Database query took 60s, API timeout is 30s
+- Might be processing, might be stuck
+
+EDGE CASE 6: Partial Failures (207 Multi-Status)
+Batch operation with mixed results:
+
+POST /api/users/bulk
+{
+  "users": [
+    {"email": "alice@example.com"},
+    {"email": "invalid-email"},
+    {"email": "bob@example.com"}
+  ]
+}
+
+❌ ALL-OR-NOTHING:
+Response: 400 Bad Request (none created)
+or
+Response: 201 Created (all created, including invalid!)
+
+✅ PARTIAL SUCCESS:
+Response: 207 Multi-Status
+{
+  "results": [
+    {
+      "index": 0,
+      "status": 201,
+      "id": "user-123"
+    },
+    {
+      "index": 1,
+      "status": 400,
+      "error": "invalid_email"
+    },
+    {
+      "index": 2,
+      "status": 201,
+      "id": "user-124"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "successful": 2,
+    "failed": 1
+  }
+}
+
+EDGE CASE 7: Graceful Degradation
+Primary feature fails, fallback to degraded mode:
+
+❌ COMPLETE FAILURE:
+Recommendation engine down → 500 error on homepage
+
+✅ GRACEFUL DEGRADATION:
+try {
+  recommendations = await recommendationService.get(userId);
+} catch (err) {
+  logger.error('Recommendation service failed', err);
+  // Fallback: Popular items
+  recommendations = await getPopularItems();
+}
+
+return res.status(200).json({
+  recommendations,
+  degraded: true,
+  message: 'Showing popular items'
+});
+
+User gets content, just not personalized.
+
+EDGE CASE 8: Error Response Format Consistency
+❌ INCONSISTENT:
+400: { "error": "bad_request" }
+401: { "message": "Unauthorized" }
+500: { "status": "error", "msg": "Failed" }
+
+✅ CONSISTENT:
+All errors follow same format:
+{
+  "error": "error_code",
+  "message": "Human readable message",
+  "request_id": "req_abc123",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+
+Optional fields:
+{
+  "details": {...},  // For 400/422
+  "retry_after": 60,  // For 429/503
+  "documentation_url": "https://docs.api.com/errors/..."
+}
+
+Real Example - GitHub:
+All errors return:
+{
+  "message": "Not Found",
+  "documentation_url": "https://docs.github.com/rest"
+}</div>
 
                             <h2>Status Code Selection Guide</h2>
 
@@ -10544,27 +15377,1425 @@ PUT /api/users/123</div>
                         interviews: [
                             {
                                 question: "Why should you use plural nouns instead of verbs in REST API URLs?",
-                                answer: "REST URLs represent resources (nouns), not actions (verbs). HTTP methods provide the verbs. Example: Instead of POST /createUser, use POST /users. This separation makes APIs predictable: GET /users (list), POST /users (create), GET /users/123 (read one), PUT /users/123 (update), DELETE /users/123 (delete). Same resource path, different methods."
+                                answer: `REST URLs represent resources (nouns), not actions (verbs). HTTP methods provide the verbs.
+
+Basic Example:
+❌ BAD (verbs in URLs):
+POST /createUser
+GET /getUser/123
+POST /updateUser/123
+POST /deleteUser/123
+
+✅ GOOD (nouns + HTTP methods):
+POST /users
+GET /users/123
+PUT /users/123
+DELETE /users/123
+
+Same resource path, different methods!
+
+EDGE CASE 1: Collection Operations
+❌ CONFUSING MIX:
+GET /user/123 (singular)
+GET /users (plural)
+
+Which is correct?
+
+✅ CONSISTENT (always plural):
+GET /users (collection)
+GET /users/123 (single item from collection)
+POST /users (add to collection)
+
+Even for singleton resources, plural is clearer:
+GET /users/me → One user, but from users collection
+
+EDGE CASE 2: Actions That Look Like Resources
+❌ UNCLEAR:
+POST /login
+POST /logout
+POST /search
+
+Are these resources or actions?
+
+✅ CLEAR Option 1: Subresource
+POST /auth/sessions (create session = login)
+DELETE /auth/sessions/current (delete session = logout)
+
+✅ CLEAR Option 2: Treat as resource
+POST /sessions (login)
+DELETE /sessions/:id (logout)
+POST /searches (search action creates search result)
+
+EDGE CASE 3: Uncountable Nouns
+Some resources don't have plural forms:
+- information
+- data
+- metadata
+- equipment
+
+✅ OPTIONS:
+/information (keep singular)
+/data-items (make countable)
+/equipment-list (make countable)
+
+Or use context:
+/users/123/information (user's information)
+
+EDGE CASE 4: Resource Hierarchies
+❌ INCONSISTENT:
+GET /user/123/post (singular parent, singular child)
+GET /users/123/posts (plural parent, plural child)
+GET /user/123/posts (mixed)
+
+✅ CONSISTENT:
+GET /users/123/posts (always plural)
+GET /users/123/posts/456 (plural collections, specific items)
+
+EDGE CASE 5: Abbreviations and Acronyms
+❌ CONFUSING:
+GET /api (is this a collection of APIs or the API itself?)
+GET /pdf/123 (PDF file or collection?)
+
+✅ CLEAR:
+GET /apis (collection of APIs)
+GET /pdfs/123 (PDF from collection)
+GET /documents/123.pdf (specific PDF document)
+
+Or avoid abbreviations:
+GET /application-interfaces
+GET /documents
+
+EDGE CASE 6: Verbs That Became Nouns
+Some actions are genuinely resources:
+- transfers (money transfers)
+- searches (saved searches)
+- exports (export jobs)
+
+✅ GOOD:
+POST /transfers { "from": 123, "to": 456 }
+GET /transfers/789 (view transfer)
+GET /searches (saved searches)
+POST /exports (create export job)
+GET /exports/456 (check export status)
+
+These are nouns representing the action itself!
+
+EDGE CASE 7: Predictability for API Consumers
+With verb-based URLs:
+❌ UNPREDICTABLE:
+POST /createUser
+POST /addUser
+POST /registerUser
+POST /insertUser
+
+All do the same thing! Which to use?
+
+✅ PREDICTABLE:
+POST /users
+
+Always the same! Developers don't guess.
+
+Real Example - AWS API Evolution:
+Early AWS (SOAP): CreateUser, DeleteUser, UpdateUser
+Modern AWS (REST): POST /users, DELETE /users/:id, PUT /users/:id
+
+REST version is clearer and more predictable.`
                             },
                             {
                                 question: "When should you nest resources vs keeping them flat? Give examples.",
-                                answer: "Nest when parent context matters and you need access control. Example: GET /users/123/orders (only user 123's orders, verify ownership). Flatten when resources are independent. Example: GET /orders?user_id=123 (orders exist independently). Avoid deep nesting (>3 levels): GET /users/123/posts/456/comments/789/likes is too deep, use GET /likes?comment_id=789 instead."
+                                answer: `Nest when parent context matters for access control or scoping. Flatten when resources are independent.
+
+Basic Guidelines:
+✅ NEST: GET /users/123/orders (scoped to user)
+✅ FLAT: GET /orders?user_id=123 (independent resource)
+
+EDGE CASE 1: Access Control with Nesting
+✅ NESTED (enforces ownership):
+GET /users/123/orders
+
+Server logic:
+if (req.user.id !== 123 && !req.user.isAdmin) {
+  return res.status(403).json({ error: 'forbidden' });
+}
+
+URL itself implies: "User 123's orders"
+Natural to check if requester = user 123.
+
+✅ FLAT (manual check needed):
+GET /orders?user_id=123
+
+Server must remember to filter:
+const orders = await db.orders.find({
+  user_id: 123,
+  // Must add auth check separately!
+});
+
+Easier to forget access control!
+
+EDGE CASE 2: When Resource Can Have Multiple Parents
+Orders can belong to both users AND companies:
+- Orders by user: GET /users/123/orders
+- Orders by company: GET /companies/456/orders
+- Specific order: GET /orders/789
+
+❌ PROBLEM: Which is canonical URL?
+GET /users/123/orders/789
+GET /companies/456/orders/789
+GET /orders/789
+
+All refer to same order!
+
+✅ SOLUTION: Flatten for canonical, nest for filtered views
+GET /orders/789 (canonical)
+GET /users/123/orders (user's orders)
+GET /companies/456/orders (company's orders)
+
+EDGE CASE 3: Deep Nesting (The 3-Level Rule)
+❌ TOO DEEP:
+GET /organizations/1/departments/2/teams/3/members/4/tasks/5/comments/6
+
+Problems:
+- Hard to read
+- Fragile (if org structure changes)
+- Long URLs
+- Unclear ownership
+
+✅ SOLUTION 1: Flatten at task level
+GET /tasks/5/comments/6
+GET /comments/6
+
+✅ SOLUTION 2: Use query params
+GET /comments?task_id=5&member_id=4
+
+✅ SOLUTION 3: Limit nesting to 2-3 levels
+GET /teams/3/tasks/5
+GET /tasks/5/comments/6
+
+EDGE CASE 4: Parent May Not Exist
+GET /users/999/orders (user 999 doesn't exist)
+
+❌ CONFUSING:
+Response: 404 Not Found
+{ "error": "orders_not_found" }
+
+Implies user exists but has no orders!
+
+✅ CLEAR:
+Response: 404 Not Found
+{
+  "error": "parent_not_found",
+  "message": "User 999 not found",
+  "resource": "user"
+}
+
+Or return 200 with empty array?
+Response: 200 OK
+{
+  "error": "user_not_found",
+  "data": []
+}
+
+Better: Return 404 to be explicit.
+
+EDGE CASE 5: Creating Nested Resources
+POST /users/123/orders
+{
+  "product_id": 456,
+  "quantity": 2
+}
+
+Parent ID (123) comes from URL.
+Do you also require it in body?
+
+❌ REDUNDANT:
+{
+  "user_id": 123,  // Already in URL!
+  "product_id": 456
+}
+
+✅ CLEAN:
+{
+  "product_id": 456,
+  "quantity": 2
+}
+
+Server infers: user_id = 123 from URL.
+
+But what if body says different user?
+{
+  "user_id": 999,  // Conflicts with URL!
+  "product_id": 456
+}
+
+✅ VALIDATION:
+if (req.body.user_id && req.body.user_id !== req.params.userId) {
+  return res.status(400).json({
+    error: 'user_id_mismatch',
+    message: 'user_id in body must match URL'
+  });
+}
+
+EDGE CASE 6: Circular Relationships
+Users follow users:
+GET /users/123/followers → Users who follow 123
+GET /users/123/following → Users that 123 follows
+
+But followers are also users!
+
+✅ APPROACH 1: Return user IDs
+GET /users/123/followers
+Response: {
+  "data": [
+    { "id": 456, "username": "alice" },
+    { "id": 789, "username": "bob" }
+  ]
+}
+
+✅ APPROACH 2: Return relationship resource
+GET /users/123/followers
+Response: {
+  "data": [
+    {
+      "follower_id": 456,
+      "follower": { "id": 456, "username": "alice" },
+      "followed_at": "2024-01-10T10:00:00Z"
+    }
+  ]
+}
+
+EDGE CASE 7: Nested vs Query Performance
+❌ NESTED (N+1 queries):
+GET /users/123/posts
+→ Query posts WHERE user_id = 123
+
+GET /users/456/posts
+→ Query posts WHERE user_id = 456
+
+Must make separate request per user!
+
+✅ FLAT (batch query):
+GET /posts?user_id=123,456,789
+→ Query posts WHERE user_id IN (123, 456, 789)
+
+Single request for multiple users!
+
+Better for performance when fetching related data for many parents.
+
+EDGE CASE 8: Real-World Examples
+GitHub (heavy nesting):
+✅ GET /repos/:owner/:repo/issues/:number/comments
+→ Clear hierarchy, enforces ownership
+
+Stripe (mostly flat):
+✅ GET /charges?customer=cus_123
+→ Independent resources, query params for filtering
+
+Twitter (mixed):
+✅ GET /users/:id/tweets (nested for user context)
+✅ GET /tweets/:id (flat for specific tweet)
+
+Decision Matrix:
+| Use Nested If...                  | Use Flat If...                    |
+|-----------------------------------|-----------------------------------|
+| Parent access control critical    | Resource exists independently     |
+| Clear 1:many relationship         | Multiple parents possible         |
+| 2-3 levels max                    | Need batch queries                |
+| Parent context aids understanding | Canonical URL needed              |
+
+When in doubt: Flatten and use query params!`
                             },
                             {
                                 question: "What's the difference between path parameters and query parameters? When should you use each?",
-                                answer: "Path parameters identify specific resources (required): GET /users/123. Query parameters filter, sort, paginate collections (optional): GET /users?role=admin&sort=name. Path params are part of resource identity. Query params modify the collection result. Example: /products/456 (specific product) vs /products?category=electronics (filtered list)."
+                                answer: `Path parameters identify specific resources (required, part of URL path).
+Query parameters filter, sort, or modify results (optional, after ?).
+
+Basic Examples:
+Path: GET /users/123 (specific user, ID is required)
+Query: GET /users?role=admin&sort=name (filter collection, optional)
+
+EDGE CASE 1: Resource Identity vs Filtering
+❌ CONFUSING:
+GET /users?id=123 (query param for resource ID)
+
+Problems:
+- Query params are optional, IDs aren't
+- Less semantic
+- Harder to cache
+- Not RESTful
+
+✅ CLEAR:
+GET /users/123 (path param for resource ID)
+
+Path params = resource identity
+Query params = how to view/filter resource
+
+EDGE CASE 2: Required vs Optional
+Path parameters are REQUIRED:
+GET /users/:userId/orders/:orderId
+→ Must provide both IDs
+
+Query parameters are OPTIONAL:
+GET /users?role=admin&status=active&page=1
+→ Can omit any: /users?role=admin
+→ Or all: /users
+
+❌ ANTI-PATTERN: Required query params
+GET /search?q=laptop (q is required!)
+
+Better:
+GET /searches/:query
+or
+POST /searches { "query": "laptop" }
+
+EDGE CASE 3: Caching Implications
+Path params are part of URL:
+GET /users/123
+GET /users/456
+→ Different URLs, cached separately ✅
+
+Query param order doesn't matter:
+GET /users?role=admin&status=active
+GET /users?status=active&role=admin
+→ Same logically, but different URLs!
+→ Cached as two separate entries ❌
+
+✅ SOLUTION: Normalize query params
+const params = new URLSearchParams(req.query);
+params.sort();
+const cacheKey = \`/users?\${params.toString()}\`;
+
+EDGE CASE 4: Multiple Values
+❌ PATH: Can't have multiple IDs easily
+GET /users/123,456,789 (awkward!)
+
+✅ QUERY: Natural for multiple values
+GET /users?id=123&id=456&id=789
+or
+GET /users?ids=123,456,789
+
+Server parses:
+const ids = Array.isArray(req.query.ids)
+  ? req.query.ids
+  : req.query.ids.split(',');
+
+EDGE CASE 5: Hierarchical vs Flat Filtering
+✅ PATH for hierarchy:
+GET /users/123/orders/456 (order 456 of user 123)
+→ Enforces parent-child relationship
+
+✅ QUERY for independent filtering:
+GET /orders?user_id=123&status=pending
+→ Orders can be queried without user context
+
+Mixed:
+GET /users/123/orders?status=pending
+→ User 123's pending orders (scoped + filtered)
+
+EDGE CASE 6: Special Characters
+Path params are URL-encoded automatically:
+GET /users/john%40example.com (email in path)
+
+Query params need encoding:
+GET /search?q=C%2B%2B (C++ encoded as C%2B%2B)
+
+❌ PROBLEM: Special chars in path
+GET /users/john@example.com (invalid URL!)
+
+✅ SOLUTION: Use ID instead
+GET /users/123
+or
+GET /users?email=john@example.com (query param)
+
+EDGE CASE 7: SEO and Readability
+For public-facing APIs:
+
+✅ PATH for SEO-friendly URLs:
+GET /products/wireless-headphones
+GET /articles/how-to-use-rest-apis
+→ Human-readable, good for SEO
+
+✅ QUERY for filters:
+GET /products?category=electronics&price_max=100
+→ Filtering doesn't need SEO
+
+EDGE CASE 8: Versioning
+❌ QUERY for version (bad):
+GET /users/123?version=2
+→ Same resource, different versions
+→ Caching nightmare!
+
+✅ PATH for version (good):
+GET /v1/users/123
+GET /v2/users/123
+→ Different resources, clear separation
+
+EDGE CASE 9: Pagination
+✅ ALWAYS use query params:
+GET /users?page=2&per_page=20
+
+Why not path?
+GET /users/page/2 (awkward)
+GET /users/2/20 (confusing)
+
+Query params are perfect for optional modifiers like pagination.
+
+EDGE CASE 10: Sorting and Ordering
+✅ QUERY params:
+GET /products?sort=price&order=asc
+GET /products?sort=-price (negative for desc)
+
+Multiple sorts:
+GET /products?sort=category,price
+
+Never path:
+GET /products/sorted-by-price (not a resource!)
+
+EDGE CASE 11: Composite Keys
+Resource identified by multiple IDs:
+
+❌ UGLY PATH:
+GET /users/:userId/posts/:postId
+vs
+GET /posts/:userId/:postId (which ID is which?)
+
+✅ CLEAR PATH:
+GET /users/:userId/posts/:postId
+→ Hierarchy makes it clear
+
+Or use composite:
+GET /posts/:userId-:postId
+GET /posts/123-456
+
+Or flatten with query:
+GET /posts?user_id=123&post_id=456
+
+EDGE CASE 12: Boolean Filters
+✅ QUERY for booleans:
+GET /users?active=true
+GET /users?verified=true&premium=false
+
+❌ PATH for booleans (awkward):
+GET /users/active (is "active" an ID or filter?)
+GET /users/active/true (unclear)
+
+EDGE CASE 13: Full-Text Search
+❌ PATH (limited):
+GET /search/laptop (only simple terms)
+
+✅ QUERY (flexible):
+GET /search?q=laptop&category=electronics&price_max=1000
+
+Or POST for complex:
+POST /search
+{ "query": "laptop", "filters": {...} }
+
+Decision Matrix:
+| Use Path Params When...           | Use Query Params When...          |
+|-----------------------------------|-----------------------------------|
+| Identifying specific resource     | Filtering collections             |
+| Required value                    | Optional value                    |
+| Part of resource hierarchy        | Modifying view (sort, page)       |
+| SEO-friendly slug                 | Multiple values                   |
+| Version number                    | Search/filter criteria            |
+| Clear parent-child relationship   | Independent parameters            |
+
+Golden Rule:
+Path = WHAT (which resource)
+Query = HOW (how to view it)
+
+Examples:
+GET /users/123 (what: user 123)
+GET /users?role=admin (how: view users where role=admin)
+GET /users/123/orders?status=pending (what: user 123's orders, how: pending only)`
                             },
                             {
                                 question: "What are the pros and cons of different API versioning strategies?",
-                                answer: "URL path (/api/v1/users): Most common, easy to route, clear in docs, but verbose. Header (Accept: vnd.api.v1+json): Clean URLs, RESTful, but hidden and harder to test. Query param (?version=1): Same path, optional, but not cacheable and easy to miss. Recommendation: Use URL path versioning for simplicity and clarity."
+                                answer: `Three main strategies: URL path, Header, Query parameter.
+
+Strategy 1: URL Path Versioning
+✅ /api/v1/users
+✅ /api/v2/users
+
+Pros:
+- Most common (Stripe, Twitter, GitHub use this)
+- Explicit and visible
+- Easy to route at load balancer
+- Clear in documentation
+- Cacheable (different URLs)
+- Works in browser address bar
+
+Cons:
+- Verbose URLs
+- Version in every endpoint
+- Not "RESTful" purist view
+
+EDGE CASE 1: Version Placement
+❌ VERSION AT END:
+/api/users/v1
+→ Inconsistent: /api/users/v1/123 vs /api/v1/users/123
+
+✅ VERSION AT START:
+/api/v1/users/123
+→ Consistent across all endpoints
+→ Easier to route by version
+
+EDGE CASE 2: Major vs Minor Versions
+✅ OPTION 1: Major only
+/api/v1/users (breaking changes)
+/api/v2/users (breaking changes)
+
+No minor versions in URL. Add features to existing version if backward compatible.
+
+✅ OPTION 2: Major.Minor
+/api/v2.1/users
+/api/v2.2/users (new features, backward compatible)
+/api/v3.0/users (breaking changes)
+
+Most APIs use major only for simplicity.
+
+EDGE CASE 3: Version Sunset
+2024-01: Launch /api/v2
+2024-02: Announce /api/v1 deprecation
+Response headers on v1:
+Sunset: Sat, 01 Aug 2024 00:00:00 GMT
+Deprecation: true
+Link: </api/v2/users>; rel="successor-version"
+
+2024-08: Shut down /api/v1
+Response: 410 Gone
+{
+  "error": "version_retired",
+  "message": "API v1 retired. Use v2",
+  "migration_guide": "https://docs.api.com/migrate-v1-to-v2"
+}
+
+Strategy 2: Header Versioning
+✅ GET /api/users
+✅ Accept: application/vnd.api.v1+json
+
+Pros:
+- Clean URLs (no version clutter)
+- More RESTful (same resource, different representations)
+- Can request specific version per request
+
+Cons:
+- Hidden (not visible in URL)
+- Harder to test (must set headers)
+- More complex routing
+- Not cacheable without Vary header
+- Can't use in browser easily
+
+EDGE CASE 4: Content Negotiation
+✅ VERSION IN ACCEPT HEADER:
+GET /api/users
+Accept: application/vnd.myapi.v2+json
+
+Server:
+if (req.headers.accept.includes('v2')) {
+  // Return v2 format
+} else if (req.headers.accept.includes('v1')) {
+  // Return v1 format
+} else {
+  // Default to latest
+}
+
+Response:
+Content-Type: application/vnd.myapi.v2+json
+
+EDGE CASE 5: Caching with Header Versioning
+❌ WITHOUT VARY:
+GET /api/users
+Accept: application/vnd.api.v1+json
+→ CDN caches response
+
+GET /api/users
+Accept: application/vnd.api.v2+json
+→ CDN returns v1 response (wrong!)
+
+✅ WITH VARY HEADER:
+Response:
+Vary: Accept
+
+Tells CDN to cache separately based on Accept header.
+
+Strategy 3: Query Parameter Versioning
+✅ /api/users?version=1
+✅ /api/users?v=2
+
+Pros:
+- Optional (can default to latest)
+- Same path
+- Visible in URL
+
+Cons:
+- Easy to miss
+- Caching issues (query params optional)
+- Inconsistent (/users vs /users?v=2 are same resource)
+- Not recommended by most
+
+EDGE CASE 6: Missing Version
+GET /api/users (no version specified)
+
+❌ OPTION 1: Reject
+Response: 400 Bad Request
+{ "error": "version_required" }
+
+Strict but annoying.
+
+✅ OPTION 2: Default to latest
+→ Returns v2 (current version)
+Warning: Breaking changes might break clients!
+
+✅ OPTION 3: Default to oldest supported
+→ Returns v1 (safest for compatibility)
+
+✅ OPTION 4: Default per endpoint
+New endpoints: Default to latest
+Old endpoints: Require explicit version
+
+EDGE CASE 7: Version per Resource vs Global
+❌ PER-RESOURCE VERSIONING:
+/api/users/v1
+/api/posts/v2
+/api/comments/v1
+
+Chaos! Which version is which?
+
+✅ GLOBAL VERSIONING:
+/api/v2/users (all v2)
+/api/v2/posts (all v2)
+/api/v2/comments (all v2)
+
+Everything in v2 is consistent.
+
+EDGE CASE 8: Breaking vs Non-Breaking Changes
+Non-breaking (add to existing version):
+✅ Adding new fields
+✅ Adding new endpoints
+✅ Adding optional parameters
+✅ Relaxing validation
+
+Breaking (require new version):
+❌ Removing fields
+❌ Renaming fields
+❌ Changing field types
+❌ Changing HTTP status codes
+❌ Changing URL structure
+
+Example:
+v1: { "name": "John Doe" }
+v2: { "first_name": "John", "last_name": "Doe" }
+→ Breaking change (renamed field) → New version
+
+EDGE CASE 9: Supporting Multiple Versions
+❌ DUPLICATE CODE:
+function getUserV1(id) {
+  // Old format
+}
+
+function getUserV2(id) {
+  // New format
+}
+
+Nightmare to maintain!
+
+✅ SHARED LOGIC:
+async function getUser(id, version) {
+  const user = await db.users.findOne(id);
+
+  if (version === 'v1') {
+    return { name: \`\${user.firstName} \${user.lastName}\` };
+  } else {
+    return {
+      first_name: user.firstName,
+      last_name: user.lastName
+    };
+  }
+}
+
+Or use transformers:
+const user = await db.users.findOne(id);
+return versionTransformers[version](user);
+
+EDGE CASE 10: API Gateway Routing
+✅ ROUTE BY PATH:
+if (req.path.startsWith('/api/v1/')) {
+  proxy.route(v1Service);
+} else if (req.path.startsWith('/api/v2/')) {
+  proxy.route(v2Service);
+}
+
+Easy with path versioning!
+
+❌ COMPLEX WITH HEADERS:
+const version = req.headers.accept.match(/v(\d+)/)?.[1];
+if (version === '1') {
+  proxy.route(v1Service);
+} else {
+  proxy.route(v2Service);
+}
+
+More complex to route.
+
+EDGE CASE 11: Deprecation Timeline
+Best practice: 12-month deprecation
+
+Month 0: Release v2
+Month 1: Announce v1 deprecation
+  - Add Sunset header
+  - Add deprecation warnings in docs
+  - Email all v1 users
+
+Month 6: Aggressive warnings
+  - Log warnings on every v1 request
+  - Show deprecation banner in developer dashboard
+
+Month 12: Shut down v1
+  - Return 410 Gone
+  - Provide migration guide URL
+
+Real Examples:
+Stripe: Uses path versioning with date-based versions
+  /v1/charges (default latest)
+  Can pin to specific date: Stripe-Version: 2020-08-27
+
+GitHub: Uses header versioning
+  Accept: application/vnd.github.v3+json
+
+Twitter: Uses path versioning
+  /2/tweets (version 2)
+  /1.1/statuses (version 1.1, legacy)
+
+Google: Mix of both
+  /v1/projects (path)
+  Also supports header versioning
+
+Recommendation: **Use URL path versioning** (/api/v1/)
+- Industry standard
+- Simplest for clients
+- Easiest to route
+- Clearest in documentation`
                             },
                             {
                                 question: "How do you handle actions that don't fit into standard CRUD operations?",
-                                answer: "Three approaches: 1) Subresources: POST /users/123/activate, 2) State updates: PATCH /orders/123 {status: 'cancelled'}, 3) Action as resource: POST /transfers {from, to, amount}. Example: Instead of POST /orders/123/cancel, use PATCH /orders/123 {status: 'cancelled'} to be more RESTful, treating action as state change."
+                                answer: `Three main approaches for non-CRUD actions:
+
+1) Subresources (action as endpoint)
+2) State updates (action as state change)
+3) Action as resource (reify the action)
+
+Approach 1: Subresources
+✅ POST /users/123/activate
+✅ POST /users/123/suspend
+✅ POST /articles/456/publish
+
+Action is a subresource under the main resource.
+
+EDGE CASE 1: Subresource vs State Update
+❌ ACTION (imperative):
+POST /articles/123/publish
+
+✅ STATE UPDATE (declarative):
+PATCH /articles/123
+{ "status": "published" }
+
+Both work! State update is more RESTful.
+
+When to use subresource:
+- Action has complex logic beyond state change
+- Action requires additional parameters
+- Action is a distinct operation (not just status)
+
+Example:
+POST /articles/123/publish
+{
+  "scheduled_at": "2024-01-20T10:00:00Z",
+  "notify_subscribers": true
+}
+
+Too complex for simple state update.
+
+EDGE CASE 2: Idempotency of Actions
+❌ NON-IDEMPOTENT:
+POST /accounts/123/charge
+{ "amount": 100 }
+
+Called twice → charged twice!
+
+✅ IDEMPOTENT with request ID:
+POST /accounts/123/charge
+{
+  "charge_id": "charge_abc123",
+  "amount": 100
+}
+
+Or idempotency key:
+POST /accounts/123/charge
+Idempotency-Key: uuid-abc-123
+{ "amount": 100 }
+
+EDGE CASE 3: Actions That Affect Multiple Resources
+Transferring money affects TWO accounts:
+
+❌ UNCLEAR:
+POST /accounts/123/transfer-to/456
+{ "amount": 100 }
+
+Which account is primary?
+
+✅ CLEAR: Treat transfer as resource
+POST /transfers
+{
+  "from_account": "123",
+  "to_account": "456",
+  "amount": 100
+}
+
+Response: 201 Created
+Location: /transfers/trans_789
+
+Approach 2: State Updates
+✅ PATCH /orders/123
+{ "status": "cancelled" }
+
+✅ PATCH /users/456
+{ "verified": true }
+
+Treat action as state transition.
+
+EDGE CASE 4: State Machine Validation
+Order states: pending → processing → shipped → delivered
+
+❌ INVALID TRANSITION:
+PATCH /orders/123
+{ "status": "delivered" }
+
+Current status: "pending"
+
+Response: 409 Conflict
+{
+  "error": "invalid_state_transition",
+  "current_state": "pending",
+  "allowed_transitions": ["processing", "cancelled"]
+}
+
+✅ VALID:
+PATCH /orders/123
+{ "status": "processing" }
+
+Server validates state machine:
+const transitions = {
+  pending: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
+  cancelled: []
+};
+
+if (!transitions[currentStatus].includes(newStatus)) {
+  return res.status(409).json({ error: 'invalid_transition' });
+}
+
+EDGE CASE 5: Action with Side Effects
+Activating user sends welcome email:
+
+✅ SUBRESOURCE:
+POST /users/123/activate
+
+Server:
+await db.users.update(123, { status: 'active' });
+await emailService.send({
+  to: user.email,
+  template: 'welcome'
+});
+
+Or STATE UPDATE:
+PATCH /users/123
+{ "status": "active" }
+
+Server automatically triggers welcome email when status becomes active.
+
+Subresource makes side effects explicit.
+State update makes them implicit.
+
+Approach 3: Action as Resource (Reification)
+Create a resource representing the action itself.
+
+✅ POST /transfers (money transfer)
+✅ POST /exports (data export)
+✅ POST /searches (saved search)
+
+EDGE CASE 6: Long-Running Actions
+Action takes time to complete:
+
+✅ CREATE ACTION RESOURCE:
+POST /exports
+{
+  "format": "csv",
+  "filters": {...}
+}
+
+Response: 202 Accepted
+{
+  "export_id": "exp_123",
+  "status": "processing",
+  "status_url": "/exports/exp_123"
+}
+
+Check status:
+GET /exports/exp_123
+Response:
+{
+  "export_id": "exp_123",
+  "status": "completed",
+  "download_url": "/exports/exp_123/download"
+}
+
+Download:
+GET /exports/exp_123/download
+
+Action becomes trackable resource!
+
+EDGE CASE 7: Batch Actions
+Activate multiple users:
+
+❌ LOOP:
+POST /users/123/activate
+POST /users/456/activate
+POST /users/789/activate
+
+Many requests!
+
+✅ BATCH ENDPOINT:
+POST /users/batch-activate
+{
+  "user_ids": [123, 456, 789]
+}
+
+Or BULK STATE UPDATE:
+PATCH /users/bulk
+{
+  "user_ids": [123, 456, 789],
+  "updates": { "status": "active" }
+}
+
+EDGE CASE 8: Actions vs Calculated Fields
+❌ ACTION for calculation:
+POST /carts/123/calculate-total
+
+No! Total is a calculated field, not an action.
+
+✅ JUST RETURN IT:
+GET /carts/123
+{
+  "id": 123,
+  "items": [...],
+  "total": 99.99,
+  "tax": 8.99,
+  "grand_total": 108.98
+}
+
+Calculations are automatic, not actions.
+
+EDGE CASE 9: Reversible Actions
+Archive and unarchive:
+
+✅ OPTION 1: Separate endpoints
+POST /documents/123/archive
+POST /documents/123/unarchive
+
+✅ OPTION 2: Toggle endpoint
+POST /documents/123/toggle-archive
+
+✅ OPTION 3: State update (best)
+PATCH /documents/123
+{ "archived": true }
+
+PATCH /documents/123
+{ "archived": false }
+
+EDGE CASE 10: Actions That Create Other Resources
+Cloning a repository:
+
+✅ POST /repositories/123/fork
+
+Creates new repository! Return location:
+Response: 201 Created
+Location: /repositories/456
+{
+  "id": 456,
+  "forked_from": 123,
+  "name": "user/repo-fork"
+}
+
+Or treat fork as resource:
+POST /forks
+{
+  "source_repository": 123,
+  "name": "my-fork"
+}
+
+Response: 201 Created
+{
+  "fork_id": 789,
+  "repository": {
+    "id": 456,
+    "url": "/repositories/456"
+  }
+}
+
+EDGE CASE 11: Actions Requiring Confirmation
+Delete account (dangerous action):
+
+✅ TWO-STEP PROCESS:
+Step 1: Request deletion
+POST /users/123/deletion-requests
+Response: 201 Created
+{
+  "deletion_request_id": "del_abc",
+  "confirmation_token": "token_xyz",
+  "expires_at": "2024-01-15T11:00:00Z"
+}
+
+Step 2: Confirm deletion
+DELETE /users/123
+{
+  "confirmation_token": "token_xyz"
+}
+
+Or use deletion request as resource:
+POST /deletion-requests/del_abc/confirm
+{
+  "confirmation_code": "123456"
+}
+
+Decision Tree:
+1. Can action be represented as state change?
+   → Use PATCH with status field
+
+2. Does action create a new resource?
+   → Treat action as resource (POST /transfers)
+
+3. Does action need tracking or is long-running?
+   → Create action resource (POST /exports)
+
+4. Is action complex with parameters?
+   → Use subresource (POST /users/123/activate)
+
+Real Examples:
+GitHub:
+- POST /repos/:owner/:repo/forks (create fork)
+- PUT /repos/:owner/:repo/subscription (watch repo)
+- POST /repos/:owner/:repo/issues/:number/lock (lock issue)
+
+Stripe:
+- POST /charges/:id/capture (capture payment)
+- POST /charges/:id/refund (refund payment)
+- POST /customers/:id/sources/:id/verify (verify bank account)
+
+All use subresources for actions!
+
+Slack:
+- POST /conversations.archive (archive channel)
+- POST /chat.postMessage (send message)
+- POST /users.setPresence (set user status)
+
+Uses RPC-style, not REST. Less common.`
                             },
                             {
                                 question: "Why should you avoid exposing implementation details in URLs?",
-                                answer: "URLs should reflect business domain, not internal structure. Example: Bad: GET /tbl_users, /user_profile_data (exposes database tables). Good: GET /users, /profiles. Reasons: 1) Internal changes break API, 2) Security risk (reveals architecture), 3) Confusing for API consumers, 4) Not domain-driven. URLs are public contracts, not implementation details."
+                                answer: `URLs should reflect business domain, not internal implementation.
+
+❌ BAD (exposes database):
+GET /tbl_users
+GET /user_profile_data
+GET /db/users/select
+
+✅ GOOD (business domain):
+GET /users
+GET /profiles
+GET /users
+
+Reasons to Avoid Implementation Details:
+
+1. COUPLING: Internal changes break API
+2. SECURITY: Reveals architecture
+3. CLARITY: Confusing for consumers
+4. DOMAIN: Not business-focused
+
+EDGE CASE 1: Database Table Names
+❌ EXPOSES TABLES:
+GET /tbl_users
+GET /usr_prf_tbl
+GET /customer_data_v2
+
+Problems:
+- Reveals database schema
+- If table renamed: API breaks!
+- Looks unprofessional
+- Makes architecture changes harder
+
+✅ DOMAIN NAMES:
+GET /users
+GET /profiles
+GET /customers
+
+Database can change independently:
+- Rename table: tbl_users → app_users
+- Split table: users → users + user_details
+- Merge tables: customers + accounts → entities
+
+API stays same!
+
+EDGE CASE 2: File Storage Implementation
+❌ EXPOSES STORAGE:
+GET /s3/bucket-name/profile-pics/user123.jpg
+GET /cdn/cloudflare/images/avatar.png
+GET /uploads/2024/01/15/photo.jpg
+
+Problems:
+- Migration from S3 to Google Cloud breaks URLs!
+- Reveals infrastructure
+- URLs change if storage changes
+
+✅ ABSTRACT:
+GET /users/123/avatar
+GET /images/avatar-uuid-123
+
+Server internally:
+const url = await storage.get(imageId);
+// Could be S3, local disk, CDN - client doesn't know!
+
+EDGE CASE 3: Technology Stack Exposure
+❌ EXPOSES TECH STACK:
+/api/mysql/users
+/api/mongodb/products
+/api/elasticsearch/search
+/api/redis/cache/user:123
+
+Reveals:
+- Database choices
+- Architecture decisions
+- Potential vulnerabilities
+
+Attacker knows:
+- MySQL version exploits to try
+- Redis commands to attempt
+
+✅ HIDE TECH:
+/api/users
+/api/products
+/api/search
+/api/cache/user:123 (or just GET /users/123 with cache)
+
+EDGE CASE 4: Version Control History
+❌ EXPOSES VERSIONS:
+GET /users_v2_final
+GET /products_new
+GET /orders_refactored
+GET /api_temp_backup
+
+Shows messy development process!
+
+✅ CLEAN:
+GET /users
+GET /products
+GET /orders
+
+Use API versioning instead:
+GET /v1/users (old)
+GET /v2/users (new)
+
+EDGE CASE 5: ORM/Framework Details
+❌ EXPOSES ORM:
+POST /users/create-active-record
+GET /products/where-available-true
+PUT /orders/update-attributes/123
+
+Reveals using ActiveRecord, Eloquent, etc.
+
+✅ GENERIC:
+POST /users
+GET /products?available=true
+PUT /orders/123
+
+EDGE CASE 6: Internal Services
+❌ EXPOSES MICROSERVICES:
+GET /user-service/api/users
+GET /payment-service/api/charges
+GET /inventory-service/api/products
+
+Reveals:
+- Microservice architecture
+- Service names
+- Internal structure
+
+If you consolidate services, URLs break!
+
+✅ UNIFIED:
+GET /api/users
+GET /api/charges
+GET /api/products
+
+API gateway routes internally:
+/api/users → user-service
+/api/charges → payment-service
+
+Microservices can be merged/split without breaking API.
+
+EDGE CASE 7: Data Format Hints
+❌ EXPOSES FORMAT:
+GET /users/123.json
+GET /users/456.xml
+GET /reports/export.csv
+
+What if you stop supporting XML?
+
+✅ USE HEADERS:
+GET /users/123
+Accept: application/json
+
+GET /users/123
+Accept: application/xml
+
+Format negotiation via headers, not URLs.
+
+EDGE CASE 8: Query Internals
+❌ EXPOSES QUERIES:
+GET /users?sql=SELECT * FROM users WHERE age > 25
+GET /search?query={match: {title: "laptop"}}
+
+HUGE security risk:
+- SQL injection possible!
+- Reveals database structure
+- Allows arbitrary queries
+
+✅ SAFE FILTERS:
+GET /users?age_min=25
+GET /search?q=laptop
+
+Server builds safe query internally.
+
+EDGE CASE 9: Cache Layer Exposure
+❌ EXPOSES CACHING:
+GET /cached/users/123
+GET /db/users/123
+
+Should client know if response is cached?
+
+✅ TRANSPARENT:
+GET /users/123
+
+Server:
+const cached = await redis.get(\`user:\${id}\`);
+if (cached) return cached;
+
+const user = await db.users.find(id);
+await redis.set(\`user:\${id}\`, user);
+return user;
+
+Client doesn't know or care about caching!
+
+Response headers can indicate cache:
+X-Cache: HIT
+Age: 120
+
+But URL stays clean.
+
+EDGE CASE 10: Processing Status
+❌ EXPOSES PROCESSING:
+GET /jobs/pending/123
+GET /jobs/processing/123
+GET /jobs/completed/123
+
+If job 123 changes status, URL changes!
+
+✅ STATUS AS FIELD:
+GET /jobs/123
+
+Response:
+{
+  "job_id": 123,
+  "status": "processing"
+}
+
+Same URL, different status.
+
+EDGE CASE 11: ID Generation Strategy
+❌ EXPOSES ID TYPE:
+GET /users/auto-increment/123
+GET /orders/uuid/550e8400-e29b-41d4-a716-446655440000
+
+Why reveal ID generation?
+
+✅ JUST THE ID:
+GET /users/123
+GET /orders/550e8400-e29b-41d4-a716-446655440000
+
+Server knows how to interpret each ID type.
+
+EDGE CASE 12: Business Logic Leaks
+❌ EXPOSES BUSINESS RULES:
+POST /orders/validate-inventory-then-charge-card-then-create
+GET /users/soft-delete/123
+POST /accounts/debit-then-credit-transfer
+
+URLs reveal implementation steps!
+
+✅ HIDE LOGIC:
+POST /orders (creates order, handles inventory/payment internally)
+DELETE /users/123 (soft vs hard delete is implementation detail)
+POST /transfers (handles debit/credit atomically)
+
+Real-World Example - Twitter API Evolution:
+
+❌ Old (revealed implementation):
+/statuses/update.json (exposes "statuses" table)
+/direct_messages/new.json (exposes storage format)
+
+✅ New (domain-focused):
+/2/tweets (business domain: "tweets")
+/2/dm_conversations (business domain: "DM conversations")
+
+Security Impact Example:
+
+❌ REVEALS VULNERABLE TECH:
+GET /api/wordpress/users
+→ Attacker knows it's WordPress
+→ Tries WordPress-specific exploits
+→ Finds unpatched vulnerability
+
+✅ HIDES TECH:
+GET /api/users
+→ Attacker doesn't know CMS
+→ Generic attacks harder
+
+Migration Example:
+
+Started with:
+GET /mysql/users/123
+
+Migrated to PostgreSQL:
+❌ Now must be: /postgresql/users/123
+→ Breaks all clients!
+
+Should have been:
+GET /users/123
+→ Database change is transparent
+
+Best Practices:
+1. URLs are contracts, not implementation
+2. Think domain language, not database schema
+3. Enable internal refactoring without breaking API
+4. Security through abstraction
+5. Professional appearance
+
+URLs should answer:
+✅ WHAT (business entity)
+❌ HOW (implementation)
+
+Good: GET /customers/123/orders
+Bad: GET /mysql/customer_orders_table/select_by_customer_id/123`
                             }
                         ]
                     }
