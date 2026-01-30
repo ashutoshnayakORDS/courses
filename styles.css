@@ -922,6 +922,11 @@ body.dark-mode .course-menu-lesson.active {
 }
 
 @media (max-width: 768px) {
+    /* Hide theme toggle in header on mobile (it's in bottom navbar) */
+    .theme-toggle-desktop {
+        display: none;
+    }
+
     /* Show bottom navbar on mobile */
     .bottom-navbar {
         display: block;
