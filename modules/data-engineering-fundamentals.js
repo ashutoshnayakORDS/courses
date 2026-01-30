@@ -1982,6 +1982,2849 @@ Otherwise: Stick with lake + warehouse hybrid</div>
                     answer: "Compare total cost: Lake = Storage + Query cost. Warehouse = Storage + Compute cost. Example: 1TB data, 100 queries/day. Lake: $23/mo storage + (100 queries × $5/TB × 0.1TB scanned × 30 days) = $1,523/mo. Warehouse: $40/mo storage + (small cluster 2hrs/day × $2/hr × 30) = $160/mo. Warehouse wins! But if 10 queries/month: Lake $23, Warehouse still $160. Lake wins. Rule: Frequent queries (>10/day) = warehouse. Rare queries = lake. Also factor: analyst time (warehouse faster = less waiting = more value)."
                 }
             ]
+        },
+        {
+            id: 'data-modeling',
+            title: 'Data Modeling: Making Data Usable',
+            duration: '50 min',
+            content: \`
+                <h2>Why Data Modeling Matters</h2>
+                <p>Raw data is like ingredients. Data modeling is the recipe. You can have the best ingredients, but without a good recipe, you get a mess.</p>
+
+                <p>A good data model makes queries fast, data easy to understand, and mistakes hard to make. A bad model? Slow queries, confused users, and constant "why don't these numbers match?" questions.</p>
+
+                <h2>Normalized vs Denormalized: The Core Tradeoff</h2>
+
+                <h3>Normalization (OLTP - Transactional Databases)</h3>
+
+                <div class="code-block">What It Is:
+- Break data into many small tables
+- Minimize redundancy
+- Each fact stored once
+
+Example - E-commerce (Normalized):
+
+orders
+- order_id
+- user_id (foreign key to users)
+- created_at
+
+order_items
+- item_id
+- order_id (foreign key to orders)
+- product_id (foreign key to products)
+- quantity
+- price
+
+users
+- user_id
+- name
+- email
+
+products
+- product_id
+- name
+- category
+
+Benefits:
+✓ No data duplication
+✓ Easy to update (change user email once)
+✓ Data integrity (foreign keys enforce consistency)
+✓ Saves storage
+
+Downsides:
+✗ Queries require many JOINs
+✗ Slow for analytics
+✗ Complex queries
+
+Best For: Production databases, OLTP workloads</div>
+
+                <h3>Denormalization (OLAP - Analytics Databases)</h3>
+
+                <div class="code-block">What It Is:
+- Combine data into fewer, wider tables
+- Duplicate data intentionally
+- Optimize for reads
+
+Example - Same E-commerce (Denormalized):
+
+fact_orders
+- order_id
+- user_id
+- user_name          ← duplicated
+- user_email         ← duplicated
+- product_id
+- product_name       ← duplicated
+- product_category   ← duplicated
+- quantity
+- price
+- order_date
+
+Benefits:
+✓ Fast queries (no JOINs needed)
+✓ Simple to understand
+✓ Great for analytics/reporting
+
+Downsides:
+✗ Data duplication
+✗ Takes more storage
+✗ Updates are complex (change user name in many places)
+
+Best For: Data warehouses, analytics, reporting</div>
+
+                <h3>The Real-World Approach</h3>
+
+                <div class="code-block">Production DB (Normalized):
+orders → order_items → products → users
+- Many tables, normalized
+- Fast writes, consistent data
+
+Analytics Warehouse (Denormalized):
+fact_orders (everything in one table)
+- Copied from production DB nightly
+- Denormalized for fast reads
+- Some duplication acceptable
+
+Result:
+✓ Production DB stays fast (normalized)
+✓ Warehouse enables fast analytics (denormalized)
+✓ Best of both worlds</div>
+
+                <h2>Star Schema: The Analytics Standard</h2>
+
+                <p>Star schema is the most common pattern for data warehouses. Named because it looks like a star: one central fact table surrounded by dimension tables.</p>
+
+                <h3>Anatomy of a Star Schema</h3>
+
+                <div class="code-block">Center: FACT Table (metrics/events/transactions)
+- Contains measurements/metrics
+- Contains foreign keys to dimensions
+- Many rows (millions to billions)
+
+Points: DIMENSION Tables (context/attributes)
+- Describes who/what/where/when
+- Relatively few rows (thousands to millions)
+- Contains descriptive attributes
+
+Example - Retail Sales:
+
+FACT: fact_sales
+- sale_id
+- date_id (FK → dim_date)
+- product_id (FK → dim_product)
+- store_id (FK → dim_store)
+- customer_id (FK → dim_customer)
+- quantity
+- revenue
+- cost
+
+DIM: dim_date
+- date_id
+- date
+- day_of_week
+- month
+- quarter
+- year
+- is_holiday
+
+DIM: dim_product
+- product_id
+- product_name
+- category
+- brand
+- price
+
+DIM: dim_store
+- store_id
+- store_name
+- city
+- state
+- region
+
+DIM: dim_customer
+- customer_id
+- name
+- age_group
+- income_bracket
+- join_date</div>
+
+                <h3>Why Star Schema Works</h3>
+
+                <div class="code-block">Query Example: "Revenue by product category last quarter"
+
+SELECT
+  p.category,
+  SUM(s.revenue) as total_revenue
+FROM fact_sales s
+JOIN dim_product p ON s.product_id = p.product_id
+JOIN dim_date d ON s.date_id = d.date_id
+WHERE d.quarter = 'Q4' AND d.year = 2024
+GROUP BY p.category
+ORDER BY total_revenue DESC;
+
+Benefits:
+✓ Only 2 JOINs (not 10+)
+✓ Query is readable
+✓ Warehouse can optimize (pre-aggregate)
+✓ Business users can write this
+
+Performance:
+- Without optimization: 5-10 seconds
+- With materialized aggregate: < 1 second</div>
+
+                <h3>Real Example: Walmart's Star Schema</h3>
+
+                <div class="code-block">Scale:
+- 500M+ transactions per day
+- 100,000+ products
+- 5,000+ stores
+- 10+ years of history
+
+Fact Table: fact_transactions (billions of rows)
+- Contains: sale_id, date_id, product_id, store_id, quantity, amount
+
+Dimension Tables:
+- dim_date: 3,650 rows (10 years of dates)
+- dim_product: 100,000 rows
+- dim_store: 5,000 rows
+- dim_time: 86,400 rows (every second of day)
+
+Key Optimizations:
+1. Fact table partitioned by date (query only needed dates)
+2. Dimensions pre-joined and cached
+3. Common queries materialized (pre-computed)
+
+Query Performance:
+"Top 10 products this week": < 2 seconds (scanning 3.5M rows)
+"Sales trend by region last year": < 5 seconds (with aggregation)
+
+Without star schema? Same queries would take minutes.</div>
+
+                <h2>Slowly Changing Dimensions (SCD)</h2>
+
+                <p>What happens when dimension data changes? Customer moves to new state. Product gets new category. Store changes region.</p>
+
+                <h3>Type 1: Overwrite (No History)</h3>
+
+                <div class="code-block">Approach: Just update the record
+
+Example:
+Customer moves from CA to NY
+
+Before:
+customer_id | name  | state
+1001        | Alice | CA
+
+After:
+customer_id | name  | state
+1001        | Alice | NY
+
+Result:
+✓ Simple
+✓ Current data always correct
+✗ Lost history (can't analyze by old state)
+
+Use When:
+- History doesn't matter (fixing typos)
+- State changes are rare
+- Simplicity preferred</div>
+
+                <h3>Type 2: Add New Row (Full History)</h3>
+
+                <div class="code-block">Approach: Keep old row, add new row with dates
+
+Example:
+Customer moves from CA to NY
+
+Before:
+id | customer_id | name  | state | valid_from | valid_to   | is_current
+1  | 1001        | Alice | CA    | 2020-01-01 | NULL       | TRUE
+
+After:
+id | customer_id | name  | state | valid_from | valid_to   | is_current
+1  | 1001        | Alice | CA    | 2020-01-01 | 2024-01-15 | FALSE
+2  | 1001        | Alice | NY    | 2024-01-15 | NULL       | TRUE
+
+Query for current:
+SELECT * FROM dim_customer WHERE is_current = TRUE
+
+Query for point-in-time (what state on 2023-06-01?):
+SELECT * FROM dim_customer
+WHERE customer_id = 1001
+  AND valid_from <= '2023-06-01'
+  AND (valid_to > '2023-06-01' OR valid_to IS NULL)
+
+Result:
+✓ Complete history preserved
+✓ Can analyze trends over time
+✗ More complex queries
+✗ Table grows larger
+
+Use When:
+- History matters for analysis
+- Need point-in-time reporting
+- Audit requirements</div>
+
+                <h3>Type 3: Add Column (Limited History)</h3>
+
+                <div class="code-block">Approach: Add columns for previous value
+
+Example:
+customer_id | name  | current_state | previous_state | effective_date
+1001        | Alice | NY            | CA             | 2024-01-15
+
+Result:
+✓ Simple (one row per customer)
+✓ Can see previous value
+✗ Only tracks one change
+✗ Limited history
+
+Use When:
+- Only need last value
+- Changes are rare
+- Don't need full history</div>
+
+                <h3>Real Example: LinkedIn's SCD Type 2</h3>
+
+                <div class="code-block">Problem: User changes job title, company
+
+Requirement: Analyze "how many software engineers in 2023 became managers?"
+
+Solution: SCD Type 2 on dim_user
+
+dim_user_profile:
+- profile_id
+- user_id
+- job_title
+- company
+- valid_from
+- valid_to
+- is_current
+
+When user updates profile:
+1. Set current row's valid_to = today, is_current = FALSE
+2. Insert new row with new data, valid_from = today, is_current = TRUE
+
+Analysis Query:
+-- Who was a Software Engineer in 2023 and is now a Manager?
+WITH engineers_2023 AS (
+  SELECT user_id
+  FROM dim_user_profile
+  WHERE job_title LIKE '%Software Engineer%'
+    AND valid_from <= '2023-01-01'
+    AND valid_to >= '2023-12-31'
+),
+managers_now AS (
+  SELECT user_id
+  FROM dim_user_profile
+  WHERE job_title LIKE '%Manager%'
+    AND is_current = TRUE
+)
+SELECT COUNT(DISTINCT e.user_id)
+FROM engineers_2023 e
+JOIN managers_now m ON e.user_id = m.user_id;
+
+Result: Can track career progression over time</div>
+
+                <h2>Kimball vs Inmon: Two Schools of Thought</h2>
+
+                <h3>Kimball (Bottom-Up, Dimensional)</h3>
+
+                <div class="code-block">Approach:
+- Start with business process
+- Build star schemas per department
+- Create data marts
+- Conformed dimensions across marts
+
+Architecture:
+Source Systems → Staging → Data Marts (stars) → Reports
+
+Example:
+- Sales mart (fact_sales + dimensions)
+- Inventory mart (fact_inventory + dimensions)
+- Shared dimensions (dim_product, dim_date)
+
+Pros:
+✓ Faster to deliver (one mart at a time)
+✓ Business-friendly (denormalized)
+✓ Each mart can evolve independently
+
+Cons:
+✗ Data duplication across marts
+✗ Ensuring consistency is hard
+✗ Can become messy over time
+
+Popular With: Agile teams, smaller companies</div>
+
+                <h3>Inmon (Top-Down, Normalized)</h3>
+
+                <div class="code-block">Approach:
+- Build enterprise data warehouse (normalized)
+- Then create data marts from warehouse
+- Single source of truth
+
+Architecture:
+Source Systems → Staging → EDW (normalized) → Data Marts → Reports
+
+Example:
+- Normalized warehouse (3NF)
+- Department-specific marts derived from warehouse
+- Ensures consistency
+
+Pros:
+✓ Single source of truth
+✓ Consistency guaranteed
+✓ Better long-term architecture
+
+Cons:
+✗ Takes longer to build
+✗ More upfront design needed
+✗ Can be over-engineered
+
+Popular With: Large enterprises, regulated industries</div>
+
+                <h3>Modern Reality: Hybrid + ELT</h3>
+
+                <div class="code-block">What Actually Works:
+
+1. Raw Layer (Lake): Dump everything, normalized
+2. Warehouse Layer: dbt transforms into star schemas
+3. Mart Layer: Materialized views for specific use cases
+
+Best of Both:
+✓ Raw data preserved (Inmon idea)
+✓ Fast iteration (Kimball idea)
+✓ Transform with SQL (modern ELT)
+✓ Version controlled (dbt)
+
+Example with dbt:
+
+-- models/staging/stg_orders.sql
+SELECT
+  order_id,
+  user_id,
+  created_at::date as order_date,
+  amount
+FROM raw.orders
+
+-- models/marts/fact_orders.sql
+SELECT
+  o.order_id,
+  o.user_id,
+  d.date_id,
+  o.amount
+FROM {{ ref('stg_orders') }} o
+JOIN {{ ref('dim_date') }} d ON o.order_date = d.date
+
+Result:
+- Version controlled transformations
+- Easy to iterate and change
+- Can rebuild entire warehouse from scratch
+- Best practices enforced</div>
+
+                <h2>Common Data Modeling Mistakes</h2>
+
+                <h3>1. Over-Normalization in Warehouse</h3>
+
+                <div class="code-block">Mistake: Apply OLTP normalization to warehouse
+
+Bad:
+fact_sales → order_items → orders → users → addresses → cities → states
+
+Query:
+SELECT state, SUM(revenue)
+FROM fact_sales
+JOIN order_items ON ...
+JOIN orders ON ...
+JOIN users ON ...
+JOIN addresses ON ...
+JOIN cities ON ...
+JOIN states ON ...
+GROUP BY state
+
+Result: 6 JOINs for simple query, takes 30 seconds
+
+Better:
+fact_sales (includes state_id → dim_state)
+
+Query:
+SELECT s.state_name, SUM(f.revenue)
+FROM fact_sales f
+JOIN dim_state s ON f.state_id = s.state_id
+GROUP BY s.state_name
+
+Result: 1 JOIN, takes 2 seconds
+
+Lesson: Denormalize in warehouse, it's OK to duplicate data</div>
+
+                <h3>2. Not Planning for Growth</h3>
+
+                <div class="code-block">Mistake: Design for today's data size
+
+Example:
+fact_sales (1M rows today)
+- No partitioning
+- No indexes
+- Works fine!
+
+2 Years Later:
+fact_sales (500M rows)
+- Queries timeout
+- Can't add partition (need to rebuild)
+- Massive effort to fix
+
+Better: Design from day 1
+CREATE TABLE fact_sales (
+  ...columns...
+)
+PARTITION BY RANGE (order_date) (
+  PARTITION p2024_q1 VALUES LESS THAN ('2024-04-01'),
+  PARTITION p2024_q2 VALUES LESS THAN ('2024-07-01'),
+  ...
+);
+
+Result:
+- Queries only scan needed partitions
+- Can drop old partitions easily
+- Scales to billions of rows</div>
+
+                <h3>3. Too Many Dimensions</h3>
+
+                <div class="code-block">Mistake: Create dimension for everything
+
+Bad:
+fact_sales
+- date_id
+- time_id
+- product_id
+- store_id
+- customer_id
+- employee_id
+- promotion_id
+- payment_method_id
+- shipping_method_id
+- weather_id
+- traffic_source_id
+
+Result:
+- 10+ dimensions
+- Most rarely used
+- JOINs become complex
+- Users confused
+
+Better:
+- Core dimensions (date, product, store, customer)
+- Less important data as columns in fact table
+- Create dimension only if queried frequently
+
+Rule of thumb: 3-7 dimensions per fact table</div>
+
+                <h2>Data Modeling Tools</h2>
+
+                <table class="table">
+                    <tr>
+                        <th>Tool</th>
+                        <th>Use Case</th>
+                        <th>Learning Curve</th>
+                    </tr>
+                    <tr>
+                        <td><strong>dbt</strong></td>
+                        <td>SQL transformations, version control, testing</td>
+                        <td>Low (if you know SQL)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dataform</strong></td>
+                        <td>Like dbt, native to BigQuery</td>
+                        <td>Low</td>
+                    </tr>
+                    <tr>
+                        <td><strong>LookML</strong></td>
+                        <td>Modeling for Looker BI tool</td>
+                        <td>Medium</td>
+                    </tr>
+                    <tr>
+                        <td><strong>ER/Studio</strong></td>
+                        <td>Visual data modeling, documentation</td>
+                        <td>High</td>
+                    </tr>
+                </table>
+
+                <h2>Checklist for Good Data Model</h2>
+
+                <ul>
+                    <li>✅ <strong>Understandable</strong> - Non-technical users can grasp it</li>
+                    <li>✅ <strong>Performant</strong> - Common queries run in < 5 seconds</li>
+                    <li>✅ <strong>Scalable</strong> - Works with 10x data growth</li>
+                    <li>✅ <strong>Maintainable</strong> - Easy to add new columns/tables</li>
+                    <li>✅ <strong>Documented</strong> - Every table/column has description</li>
+                    <li>✅ <strong>Tested</strong> - Data quality checks in place</li>
+                    <li>✅ <strong>Versioned</strong> - Schema changes tracked in git</li>
+                </ul>
+
+                <p>Remember: <strong>The best data model is one that users actually use</strong>. Perfection is the enemy of done. Start simple, iterate based on real usage.</p>
+            \`,
+            interviews: [
+                {
+                    question: "How do you handle many-to-many relationships in a star schema?",
+                    answer: "Create a bridge table (factless fact table). Example: Students-to-Courses is many-to-many. Create fact_enrollments with student_id, course_id, enrollment_date. This becomes your fact table. Then can analyze: 'how many students per course', 'how many courses per student'. Alternative: Denormalize into array column if warehouse supports (BigQuery ARRAY, Snowflake ARRAY). Trade-off: Bridge table is more flexible, arrays are simpler for specific queries."
+                },
+                {
+                    question: "When should you use a surrogate key vs natural key?",
+                    answer: "Use surrogate keys (auto-generated IDs) in warehouse dimensions. Why: 1) Natural keys can change (SSN, email), surrogate never changes, 2) Natural keys might be composite (first_name + last_name + DOB), surrogate is single column, 3) Natural keys have meaning (can change), surrogate is meaningless (stable), 4) Handles SCD Type 2 cleanly (same natural key, different surrogate keys). Exception: Use natural key if truly immutable (country_code, date). Example: dim_customer has surrogate customer_key (1,2,3...) and natural customer_id from source."
+                },
+                {
+                    question: "How do you model data when business rules frequently change?",
+                    answer: "Use configuration tables instead of hard-coded logic. Example: Tax rates change by state. Bad: Hard-code in SQL (CASE WHEN state='CA' THEN 0.0725). Good: Create dim_tax_rates(state, rate, effective_from, effective_to). Query joins to get correct rate. When rates change: INSERT new row, don't modify code. Also: Use SCD Type 2 for changing business rules. Keep history of what rule applied when. Can reprocess historical data with rules that were active at the time."
+                },
+                {
+                    question: "What's the difference between a fact table and a dimension table?",
+                    answer: "Facts = measurements/metrics (what you analyze). Dimensions = context (how you slice/dice). Facts: numeric, additive, many rows, change frequently. Examples: sales_amount, quantity, duration. Dimensions: descriptive, categorical, fewer rows, change slowly. Examples: product_name, customer_city, date. Rule: If you use it in GROUP BY → dimension. If you use it in SUM/AVG/COUNT → fact. Exception: Degenerate dimensions (transaction_id in fact table, not separate dimension)."
+                },
+                {
+                    question: "How do you test data models before deploying to production?",
+                    answer: "Multi-layer testing: 1) Schema tests (columns exist, data types correct), 2) Data quality tests (no nulls in required fields, values in range), 3) Business logic tests (revenue = quantity × price), 4) Historical comparison (row counts match source), 5) Performance tests (queries under SLA). Use dbt tests: uniqueness, not_null, relationships, accepted_values. Also: Deploy to dev warehouse first, run subset of queries, compare results with production, get stakeholder approval, then deploy to prod. Never deploy untested model to production."
+                }
+            ]
+        },
+        {
+            id: 'data-quality-testing',
+            title: 'Data Quality: Trust But Verify',
+            duration: '50 min',
+            content: \`
+                <h2>Why Data Quality Matters</h2>
+                <p>Here's a painful truth: <strong>Bad data is worse than no data</strong>. With no data, people know they don't know. With bad data, they make wrong decisions confidently.</p>
+
+                <h3>Real Disaster Story - Uber's $100M Mistake</h3>
+                <div class="code-block">The Problem:
+Uber's pricing algorithm relied on driver location data
+Data quality issue: GPS coordinates occasionally flipped lat/long
+Result: Surge pricing in wrong areas, drivers sent to wrong locations
+Impact: Millions in lost revenue, angry customers and drivers
+
+Root Cause: No validation that latitude was -90 to 90
+Fix: Data quality checks on every GPS coordinate
+Lesson: One missing validation = millions lost</div>
+
+                <h2>The Six Dimensions of Data Quality</h2>
+
+                <h3>1. Accuracy - Is the data correct?</h3>
+                <p><strong>Real example from retail company:</strong></p>
+                <div class="code-block">Problem: Product prices in warehouse didn't match website
+Source: Website shows $29.99
+Warehouse: $2999 (missing decimal point)
+
+Detection:
+SELECT product_id, price
+FROM products
+WHERE price > 10000  -- No product should cost $10k
+OR price < 0.01      -- No product should cost $0
+
+Fix: Add validation at ingestion
+- Check price range makes sense
+- Alert if price changes >50% in one day
+- Require manual approval for big price changes</div>
+
+                <h3>2. Completeness - Is all data present?</h3>
+                <div class="code-block">Check for missing critical fields:
+
+SELECT
+    COUNT(*) as total_orders,
+    COUNT(customer_email) as orders_with_email,
+    COUNT(*) - COUNT(customer_email) as missing_emails,
+    ROUND(100.0 * COUNT(customer_email) / COUNT(*), 2) as completeness_pct
+FROM orders
+WHERE order_date = CURRENT_DATE;
+
+Alert if: completeness_pct < 95%
+
+Real case: Marketing can't email 20% of customers
+Impact: $2M annual revenue lost
+Root cause: Email field not required in checkout form</div>
+
+                <h3>3. Consistency - Does data agree across sources?</h3>
+                <p><strong>Netflix example:</strong></p>
+                <div class="code-block">Data from 3 sources:
+- Application DB: 150M active subscribers
+- Billing system: 148M paid subscriptions
+- Analytics warehouse: 152M users
+
+Which is right? They should match!
+
+Investigation found:
+- App DB counts free trials (not paid yet)
+- Billing excludes paused accounts (still active)
+- Warehouse had duplicates from botched migration
+
+Solution:
+1. Define "active subscriber" clearly
+2. Add reconciliation job (runs daily)
+3. Alert if sources differ by >1%
+4. Weekly manual review</div>
+
+                <h3>4. Timeliness - Is data fresh enough?</h3>
+                <div class="code-block">Check data freshness:
+
+SELECT
+    MAX(updated_at) as last_update,
+    TIMESTAMPDIFF(MINUTE, MAX(updated_at), NOW()) as minutes_stale
+FROM user_activity_summary;
+
+-- Alert if data is >2 hours old
+IF minutes_stale > 120 THEN
+    ALERT("User activity data is stale!")
+END IF
+
+Real example from fraud detection:
+- Credit card fraud needs real-time data
+- Batch updates every 24 hours = too slow
+- Fraud happens in minutes, not days
+- Solution: Stream processing with Kafka (< 1 min latency)</div>
+
+                <h3>5. Validity - Does data follow business rules?</h3>
+                <div class="code-block">Business rules validation:
+
+-- Age should be realistic
+SELECT * FROM users WHERE age < 13 OR age > 120;
+
+-- Email format
+SELECT * FROM users WHERE email NOT LIKE '%@%.%';
+
+-- Future dates (common bug!)
+SELECT * FROM orders WHERE order_date > CURRENT_DATE;
+
+-- Negative quantities
+SELECT * FROM line_items WHERE quantity <= 0;
+
+-- Referential integrity
+SELECT o.order_id
+FROM orders o
+LEFT JOIN customers c ON o.customer_id = c.customer_id
+WHERE c.customer_id IS NULL;  -- Orphaned orders!</div>
+
+                <h3>6. Uniqueness - No unwanted duplicates?</h3>
+                <p><strong>Airbnb's duplicate problem:</strong></p>
+                <div class="code-block">Issue: Same listing appearing multiple times in search
+Cause: ETL job ran twice due to retry logic
+Impact: Confused users, skewed analytics
+
+Detection query:
+SELECT
+    listing_id,
+    COUNT(*) as duplicate_count
+FROM listings
+GROUP BY listing_id
+HAVING COUNT(*) > 1;
+
+Prevention:
+1. Add UNIQUE constraint on listing_id
+2. Use UPSERT instead of INSERT
+3. Idempotent pipeline design
+4. Deduplication step before loading</div>
+
+                <h2>Data Quality Framework</h2>
+
+                <h3>Great Expectations - Industry Standard Tool</h3>
+                <div class="code-block">Python example:
+
+import great_expectations as gx
+
+# Create expectation suite
+suite = gx.ExpectationSuite(name="orders_suite")
+
+# Define expectations
+suite.expect_column_values_to_not_be_null("customer_id")
+suite.expect_column_values_to_be_between("amount", min_value=0, max_value=100000)
+suite.expect_column_values_to_be_in_set("status", ["pending", "paid", "shipped", "delivered"])
+suite.expect_column_values_to_match_regex("email", "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$")
+
+# Validate data
+results = gx.validate(dataframe, expectation_suite=suite)
+
+if not results.success:
+    send_alert("Data quality check failed!")
+    stop_pipeline()  # Don't load bad data!</div>
+
+                <h3>Building a Data Quality Pipeline</h3>
+                <div class="code-block">Quality gates in data pipeline:
+
+1. SOURCE VALIDATION (at ingestion)
+   ├── Schema matches expected
+   ├── No malformed records
+   └── File size reasonable (not 0 bytes or unexpectedly huge)
+
+2. TRANSFORMATION VALIDATION
+   ├── Row count: output ≈ input (within threshold)
+   ├── No unexpected nulls
+   └── Numeric values in expected ranges
+
+3. LOAD VALIDATION
+   ├── Primary keys unique
+   ├── Foreign keys valid
+   └── No data loss (count source vs target)
+
+4. POST-LOAD VALIDATION
+   ├── Reconciliation with source
+   ├── Business metric sanity checks
+   └── Historical comparison (similar to yesterday?)
+
+If ANY check fails → STOP pipeline → Alert engineer</div>
+
+                <h2>Data Quality Metrics to Track</h2>
+
+                <table class="table">
+                    <tr>
+                        <th>Metric</th>
+                        <th>How to Calculate</th>
+                        <th>Good Threshold</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Null Rate</strong></td>
+                        <td>(NULL count / total rows) × 100</td>
+                        <td>< 5% for critical fields</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Duplicate Rate</strong></td>
+                        <td>(Duplicate rows / total rows) × 100</td>
+                        <td>0% for unique keys</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Freshness</strong></td>
+                        <td>Current time - last update time</td>
+                        <td>Depends on use case</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Schema Drift</strong></td>
+                        <td>Compare current vs expected schema</td>
+                        <td>0 unexpected changes</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Volume Anomaly</strong></td>
+                        <td>Compare today's row count vs 7-day average</td>
+                        <td>Within 20% of average</td>
+                    </tr>
+                </table>
+
+                <h2>Monitoring & Alerting Strategy</h2>
+
+                <h3>What to Alert On</h3>
+                <div class="code-block">CRITICAL ALERTS (wake someone up):
+❌ Pipeline completely failed
+❌ Data freshness > 4 hours (for real-time systems)
+❌ Zero rows loaded (should have data)
+❌ Revenue metric drops to $0
+❌ >50% of records failing validation
+
+WARNING ALERTS (check during work hours):
+⚠️ Data freshness > 2 hours
+⚠️ Null rate increased by 10%
+⚠️ Row count differs from yesterday by >30%
+⚠️ Schema change detected
+⚠️ Processing time doubled
+
+INFO (just log it):
+ℹ️ Small validation failures (<1%)
+ℹ️ Expected schema evolution
+ℹ️ Successful pipeline runs</div>
+
+                <h3>Real Monitoring Setup - Airflow + Slack</h3>
+                <div class="code-block">Python example in Airflow DAG:
+
+from airflow.operators.python_operator import PythonOperator
+from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
+
+def check_data_quality(**context):
+    # Run quality checks
+    null_rate = check_null_rate('orders', 'customer_id')
+    duplicate_rate = check_duplicates('orders', 'order_id')
+
+    if null_rate > 0.05:  # >5% nulls
+        raise Exception(f"Null rate too high: {null_rate}")
+
+    if duplicate_rate > 0:
+        raise Exception(f"Duplicates found: {duplicate_rate}")
+
+    return "Quality checks passed"
+
+# Task in DAG
+quality_check = PythonOperator(
+    task_id='check_quality',
+    python_callable=check_data_quality,
+    on_failure_callback=send_slack_alert  # Alert if fails
+)
+
+# Alert function
+def send_slack_alert(context):
+    slack_msg = f"""
+    :x: Data Quality Check Failed
+    DAG: {context['dag_run'].dag_id}
+    Task: {context['task_instance'].task_id}
+    Error: {context['exception']}
+    Log: {context['task_instance'].log_url}
+    """
+    SlackWebhookOperator(
+        task_id='slack_alert',
+        http_conn_id='slack_webhook',
+        message=slack_msg
+    ).execute(context)</div>
+
+                <h2>Common Data Quality Mistakes</h2>
+
+                <h3>1. Testing in Production</h3>
+                <div class="code-block">WRONG:
+Load data to production → Find issues → Fix and reload
+
+RIGHT:
+Load to staging → Run quality checks → Fix issues → Load to production
+
+Lesson from Stripe:
+- All data goes through staging first
+- Automated tests run (takes 15 minutes)
+- Manual approval for big changes
+- Zero production data quality incidents in 2 years</div>
+
+                <h3>2. No Baseline Metrics</h3>
+                <div class="code-block">WRONG:
+"This data looks okay" (subjective)
+
+RIGHT:
+Track historical metrics, detect anomalies
+
+Example:
+Orders table usually has:
+- 10,000-12,000 rows per day
+- 2-3% null emails
+- 0 duplicates
+
+Today:
+- 8,500 rows (15% drop - investigate!)
+- 8% null emails (3x normal - alert!)
+- 12 duplicates (should be 0 - fix!)</div>
+
+                <h3>3. Ignoring Data Lineage</h3>
+                <div class="code-block">Problem: Bad data in report, but where did it come from?
+
+Without lineage:
+- Check 20+ tables manually
+- Hours/days to find root cause
+- Might miss the actual source
+
+With lineage (tools like dbt, DataHub):
+revenue_report
+  ← agg_daily_revenue
+    ← fact_transactions
+      ← stg_stripe_payments  ← ❌ SOURCE OF BUG
+      ← stg_paypal_payments
+
+Found root cause in minutes, not hours</div>
+
+                <h2>Data Quality Checklist</h2>
+
+                <ul>
+                    <li>✅ <strong>Schema validation</strong> - Every field expected exists</li>
+                    <li>✅ <strong>Null checks</strong> - Critical fields not null</li>
+                    <li>✅ <strong>Range checks</strong> - Values within bounds</li>
+                    <li>✅ <strong>Uniqueness</strong> - Primary keys unique</li>
+                    <li>✅ <strong>Referential integrity</strong> - Foreign keys valid</li>
+                    <li>✅ <strong>Freshness</strong> - Data updated recently</li>
+                    <li>✅ <strong>Volume</strong> - Row count reasonable</li>
+                    <li>✅ <strong>Distribution</strong> - Values distributed normally</li>
+                    <li>✅ <strong>Reconciliation</strong> - Matches source system</li>
+                    <li>✅ <strong>Business rules</strong> - Domain-specific validations</li>
+                </ul>
+
+                <p><strong>Remember:</strong> Data quality is not a one-time setup. It's an ongoing process. Monitor, measure, and improve continuously.</p>
+            \`,
+            interviews: [
+                {
+                    question: "How would you detect a sudden drop in data volume in a pipeline?",
+                    answer: "Implement volume anomaly detection: 1) Calculate baseline (7-day or 30-day average row count), 2) Compare today's count to baseline, 3) Alert if difference > threshold (e.g., 30%). SQL: SELECT COUNT(*) as today, (SELECT AVG(row_count) FROM daily_stats WHERE date >= CURRENT_DATE - 7) as avg_last_7_days, ABS(COUNT(*) - avg) / avg * 100 as pct_diff FROM current_table. Also check: a) Is source system down? b) Is it weekend/holiday (expected drop)? c) Is pipeline running on schedule? d) Check logs for errors. Tools: Great Expectations, Monte Carlo, Datafold."
+                },
+                {
+                    question: "What's the difference between data validation and data quality?",
+                    answer: "Validation = checking if data meets rules (binary: pass/fail). Quality = measuring how good data is (spectrum: 0-100%). Validation: Is email format correct? Is age > 0? Is foreign key valid? Quality: What % of emails are valid? What's the null rate? How fresh is data? Analogy: Validation is like spell-check (wrong/right). Quality is like grammar score (could be better). In practice: Use validation to reject bad data at ingestion. Use quality metrics to monitor trends and improve over time. Both are needed."
+                },
+                {
+                    question: "How do you handle PII (Personal Identifiable Information) in data quality testing?",
+                    answer: "Never use production PII in testing. Strategies: 1) Anonymize in test environment (hash emails, mask SSNs), 2) Generate synthetic data with same statistical properties, 3) Use data masking tools (Delphix, Tonic.ai), 4) Subset production data without PII columns. Example: Instead of testing 'john@example.com', test 'user_***@domain.com'. For testing uniqueness: hash the value, test hash uniqueness. For regex testing: use format check without logging actual value. GDPR/CCPA compliance: PII should never leave production environment. Quality checks run in production, results (not data) exported."
+                },
+                {
+                    question: "What happens when quality checks fail but stakeholders need the data urgently?",
+                    answer: "This is a tough spot. Framework: 1) Assess severity (Is data usable with caveats? Or completely wrong?), 2) Calculate risk (Wrong decision from bad data vs no decision from no data), 3) If loading anyway: Add warnings to reports, email stakeholders with known issues, track which decisions were made with bad data, 4) Fix root cause ASAP, 5) Reload correct data when available. Real example: Revenue report has 5% missing transactions. Options: a) Don't publish (stakeholders blind), b) Publish with big warning 'Underreported by ~5%'. Usually: Publish with caveat > no data. But: For compliance/finance data, never compromise. Better to miss deadline than report wrong numbers to SEC."
+                },
+                {
+                    question: "How would you design a data quality dashboard for executives?",
+                    answer: "Keep it simple, not technical. Show: 1) Overall health score (0-100, green/yellow/red), 2) Critical issues count (needs immediate action), 3) Trend over time (improving or degrading?), 4) Business impact (which reports affected). Avoid: Technical jargon (null rate, schema drift), raw metrics without context. Example tiles: '✅ Data Quality: 96% (Excellent)', '⚠️ 2 pipelines need attention', '📈 +4% improvement this month', 'Affected: Customer Dashboard, Revenue Report'. Click for details → show which specific checks failed, recommended action, owner. Update: Real-time or daily. Deliver: Email morning summary, Slack channel for alerts, dashboard always available."
+                }
+            ]
+        },
+        {
+            id: 'orchestration-airflow',
+            title: 'Orchestration: Making Pipelines Reliable',
+            duration: '55 min',
+            content: \`
+                <h2>Why You Need Orchestration</h2>
+                <p>Let me tell you what happens without orchestration:</p>
+
+                <div class="code-block">No orchestration = Chaos:
+
+# Monday morning cron jobs:
+0 2 * * * python extract_users.py
+0 3 * * * python extract_orders.py
+0 4 * * * python transform_data.py
+0 5 * * * python load_to_warehouse.py
+
+What could go wrong?
+❌ extract_orders.py fails → transform still runs (on old data)
+❌ Database is slow → extract takes 90 min → transform starts before extract finishes
+❌ Need to rerun failed job → Have to SSH to server, run manually
+❌ Six months later → Nobody remembers what order things should run
+❌ Developer leaves → Knowledge lost forever</div>
+
+                <p><strong>Orchestration solves this</strong>: Manages dependencies, handles failures, provides monitoring, and makes pipelines reproducible.</p>
+
+                <h2>Apache Airflow - Industry Standard</h2>
+
+                <h3>Core Concepts in 5 Minutes</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Concept</th>
+                        <th>What It Is</th>
+                        <th>Real Example</th>
+                    </tr>
+                    <tr>
+                        <td><strong>DAG</strong></td>
+                        <td>Directed Acyclic Graph - your workflow</td>
+                        <td>Daily customer report pipeline</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Task</strong></td>
+                        <td>Single unit of work</td>
+                        <td>Extract users from MySQL</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Operator</strong></td>
+                        <td>Template for a task</td>
+                        <td>PythonOperator, BashOperator, SQLOperator</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dependency</strong></td>
+                        <td>Task A must finish before Task B</td>
+                        <td>Extract before Transform</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Schedule</strong></td>
+                        <td>When to run</td>
+                        <td>Daily at 2 AM, Every hour, Manual trigger</td>
+                    </tr>
+                </table>
+
+                <h3>Your First Airflow DAG</h3>
+
+                <div class="code-block"># dags/daily_user_pipeline.py
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+from airflow.operators.postgres_operator import PostgresOperator
+from datetime import datetime, timedelta
+
+# Default arguments for all tasks
+default_args = {
+    'owner': 'data-team',
+    'depends_on_past': False,  # Don't wait for previous run
+    'start_date': datetime(2024, 1, 1),
+    'email': ['data-team@company.com'],
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 3,  # Retry 3 times if task fails
+    'retry_delay': timedelta(minutes=5),
+}
+
+# Define the DAG
+dag = DAG(
+    'daily_user_pipeline',
+    default_args=default_args,
+    description='Extract, transform, load user data',
+    schedule_interval='0 2 * * *',  # 2 AM daily
+    catchup=False,  # Don't backfill past dates
+)
+
+# Task 1: Extract from MySQL
+def extract_users():
+    import pandas as pd
+    from sqlalchemy import create_engine
+
+    engine = create_engine('mysql://user:pass@host/db')
+    df = pd.read_sql('SELECT * FROM users WHERE updated_at >= CURDATE()', engine)
+    df.to_csv('/tmp/users.csv', index=False)
+    print(f"Extracted {len(df)} users")
+
+extract_task = PythonOperator(
+    task_id='extract_users',
+    python_callable=extract_users,
+    dag=dag,
+)
+
+# Task 2: Transform data
+def transform_users():
+    import pandas as pd
+
+    df = pd.read_csv('/tmp/users.csv')
+
+    # Data cleaning
+    df['email'] = df['email'].str.lower()  # Lowercase emails
+    df['signup_date'] = pd.to_datetime(df['signup_date'])
+    df = df.dropna(subset=['email'])  # Remove rows with no email
+
+    df.to_csv('/tmp/users_clean.csv', index=False)
+    print(f"Transformed {len(df)} users")
+
+transform_task = PythonOperator(
+    task_id='transform_users',
+    python_callable=transform_users,
+    dag=dag,
+)
+
+# Task 3: Load to warehouse
+load_task = PostgresOperator(
+    task_id='load_to_warehouse',
+    postgres_conn_id='warehouse',  # Configured in Airflow UI
+    sql="""
+        COPY staging.users FROM '/tmp/users_clean.csv'
+        WITH (FORMAT CSV, HEADER true);
+
+        INSERT INTO prod.users
+        SELECT * FROM staging.users
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            updated_at = CURRENT_TIMESTAMP;
+    """,
+    dag=dag,
+)
+
+# Define dependencies
+extract_task >> transform_task >> load_task  # Linear flow</div>
+
+                <h2>Real-World Airflow Patterns</h2>
+
+                <h3>Pattern 1: Fan-Out (Parallel Processing)</h3>
+                <div class="code-block"># Extract from multiple sources in parallel
+
+extract_mysql = PythonOperator(task_id='extract_mysql', ...)
+extract_mongodb = PythonOperator(task_id='extract_mongodb', ...)
+extract_api = PythonOperator(task_id='extract_api', ...)
+transform = PythonOperator(task_id='transform', ...)
+
+# All extracts run in parallel, then transform waits for all
+[extract_mysql, extract_mongodb, extract_api] >> transform
+
+Benefits:
+- 3x faster (parallel vs sequential)
+- Used by: Spotify (extract from 50+ services)</div>
+
+                <h3>Pattern 2: Fan-In (Merge Results)</h3>
+                <div class="code-block"># Process different customer segments, then merge
+
+process_premium = PythonOperator(task_id='process_premium', ...)
+process_free = PythonOperator(task_id='process_free', ...)
+process_trial = PythonOperator(task_id='process_trial', ...)
+merge_all = PythonOperator(task_id='merge_all', ...)
+
+# All processing happens in parallel, merge waits for all
+[process_premium, process_free, process_trial] >> merge_all
+
+Benefits:
+- Isolate failures (if premium fails, free/trial still succeed)
+- Used by: Netflix (process different content types)</div>
+
+                <h3>Pattern 3: Dynamic Task Generation</h3>
+                <div class="code-block"># When you don't know tasks ahead of time
+
+from airflow.operators.python_operator import PythonOperator
+
+def get_countries():
+    # Fetch list of countries dynamically
+    return ['US', 'UK', 'IN', 'DE', 'FR']  # Could be from DB
+
+countries = get_countries()
+
+# Create one task per country
+for country in countries:
+    PythonOperator(
+        task_id=f'process_{country}',
+        python_callable=process_country,
+        op_kwargs={'country': country},
+        dag=dag,
+    )
+
+Real use case - Airbnb:
+- Process each market separately
+- New market added → Automatically gets pipeline
+- No code changes needed</div>
+
+                <h2>Handling Failures Gracefully</h2>
+
+                <h3>Retry Strategy</h3>
+                <div class="code-block"># Different retry strategies for different tasks
+
+# Critical task - retry aggressively
+critical_task = PythonOperator(
+    task_id='send_to_partners',
+    python_callable=send_data,
+    retries=10,  # Try 10 times
+    retry_delay=timedelta(minutes=2),
+    retry_exponential_backoff=True,  # 2min, 4min, 8min...
+    max_retry_delay=timedelta(hours=1),
+)
+
+# Optional task - fail fast
+optional_task = PythonOperator(
+    task_id='send_slack_notification',
+    python_callable=notify_slack,
+    retries=1,  # Try once
+    trigger_rule='all_done',  # Run even if upstream failed
+)
+
+Lessons from production:
+- API calls: Retry with backoff (service might be temporarily down)
+- Database writes: Retry immediately (might be transient deadlock)
+- File operations: Don't retry (if file missing, retrying won't help)</div>
+
+                <h3>Graceful Degradation</h3>
+                <div class="code-block"># Don't let optional tasks block critical ones
+
+extract = PythonOperator(task_id='extract_data', ...)
+transform = PythonOperator(task_id='transform', ...)
+load = PythonOperator(task_id='load_to_warehouse', ...)
+send_email = PythonOperator(
+    task_id='send_summary_email',
+    trigger_rule='all_success',  # Only if everything succeeded
+)
+update_monitoring = PythonOperator(
+    task_id='update_dashboard',
+    trigger_rule='all_done',  # Run even if load failed
+)
+
+# Critical path
+extract >> transform >> load
+
+# Optional
+load >> send_email  # Email only if successful
+load >> update_monitoring  # Dashboard shows status either way</div>
+
+                <h2>Monitoring & Alerting</h2>
+
+                <h3>What Spotify Monitors</h3>
+                <table class="table">
+                    <tr>
+                        <th>Metric</th>
+                        <th>Alert Threshold</th>
+                        <th>Action</th>
+                    </tr>
+                    <tr>
+                        <td>Task duration</td>
+                        <td>>2x normal</td>
+                        <td>Investigate performance</td>
+                    </tr>
+                    <tr>
+                        <td>Failure rate</td>
+                        <td>>5% for a DAG</td>
+                        <td>Page on-call engineer</td>
+                    </tr>
+                    <tr>
+                        <td>Queue length</td>
+                        <td>>100 tasks waiting</td>
+                        <td>Scale workers</td>
+                    </tr>
+                    <tr>
+                        <td>Scheduler lag</td>
+                        <td>>5 minutes</td>
+                        <td>Restart scheduler</td>
+                    </tr>
+                </table>
+
+                <h3>SLA (Service Level Agreement) Monitoring</h3>
+                <div class="code-block"># Set SLA for time-sensitive pipelines
+
+dag = DAG(
+    'morning_report',
+    default_args={
+        'sla': timedelta(hours=1),  # Must complete within 1 hour
+    },
+    schedule_interval='0 6 * * *',  # 6 AM daily
+)
+
+# If task takes >1 hour → Email alert
+# Executives need report by 7 AM for morning meeting
+
+Real example - Financial trading firm:
+- Market data must load by 9:30 AM (market open)
+- SLA: 15 minutes
+- Miss SLA → Can't trade → Millions lost
+- Solution: Multiple redundant pipelines, failover</div>
+
+                <h2>Testing Airflow DAGs</h2>
+
+                <div class="code-block"># tests/test_user_pipeline.py
+import pytest
+from airflow.models import DagBag
+
+def test_dag_loads():
+    """DAG should load without errors"""
+    dagbag = DagBag(dag_folder='dags/', include_examples=False)
+    assert len(dagbag.import_errors) == 0, "DAG import errors"
+
+def test_task_count():
+    """Should have expected number of tasks"""
+    dagbag = DagBag(dag_folder='dags/')
+    dag = dagbag.get_dag('daily_user_pipeline')
+    assert len(dag.tasks) == 3, "Should have 3 tasks"
+
+def test_dependencies():
+    """Tasks should have correct dependencies"""
+    dagbag = DagBag(dag_folder='dags/')
+    dag = dagbag.get_dag('daily_user_pipeline')
+
+    extract = dag.get_task('extract_users')
+    transform = dag.get_task('transform_users')
+
+    assert transform in extract.downstream_list
+
+def test_schedule():
+    """Should run daily at 2 AM"""
+    dagbag = DagBag(dag_folder='dags/')
+    dag = dagbag.get_dag('daily_user_pipeline')
+    assert dag.schedule_interval == '0 2 * * *'
+
+Run tests before deploying:
+pytest tests/
+If tests pass → Deploy to production</div>
+
+                <h2>Common Orchestration Mistakes</h2>
+
+                <h3>1. Not Idempotent Pipelines</h3>
+                <div class="code-block">BAD (not idempotent):
+INSERT INTO users SELECT * FROM staging_users;
+-- Running twice = duplicate data!
+
+GOOD (idempotent):
+DELETE FROM users WHERE date = '2024-01-01';
+INSERT INTO users SELECT * FROM staging_users WHERE date = '2024-01-01';
+-- Running multiple times = same result
+
+Or better:
+MERGE INTO users USING staging_users
+ON users.user_id = staging_users.user_id
+WHEN MATCHED THEN UPDATE
+WHEN NOT MATCHED THEN INSERT;
+
+Why: Airflow will retry failed tasks
+If not idempotent → Retries create duplicates</div>
+
+                <h3>2. Putting Too Much Logic in DAG File</h3>
+                <div class="code-block">BAD:
+# DAG file has 1000 lines of business logic
+def transform_users():
+    # 500 lines of transformation code here...
+
+GOOD:
+# DAG file is thin wrapper
+from src.transforms import transform_users
+
+transform_task = PythonOperator(
+    task_id='transform_users',
+    python_callable=transform_users,  # Imported from separate module
+)
+
+Why:
+- DAG file parsed every 30 seconds (Airflow scheduler)
+- Heavy logic slows down scheduler
+- Can't unit test code in DAG file easily</div>
+
+                <h3>3. No Resource Limits</h3>
+                <div class="code-block">BAD:
+# No memory/CPU limits
+# 10 tasks start simultaneously
+# Server runs out of memory
+# Everything crashes
+
+GOOD:
+# DAG level
+dag = DAG(
+    'resource_intensive',
+    max_active_runs=1,  # Only one DAG run at a time
+    concurrency=3,  # Max 3 tasks in parallel
+)
+
+# Airflow config
+parallelism = 32  # Max tasks across all DAGs
+dag_concurrency = 16  # Max tasks per DAG
+worker_concurrency = 4  # Max tasks per worker
+
+Netflix lesson:
+- Started with no limits
+- Black Friday: 1000s of DAGs triggered
+- Cluster crashed
+- Now: Strict limits, auto-scaling</div>
+
+                <h2>Airflow Alternatives</h2>
+
+                <table class="table">
+                    <tr>
+                        <th>Tool</th>
+                        <th>Best For</th>
+                        <th>Pros</th>
+                        <th>Cons</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Airflow</strong></td>
+                        <td>Complex workflows</td>
+                        <td>Flexible, huge ecosystem</td>
+                        <td>Complex setup</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Prefect</strong></td>
+                        <td>Python-heavy teams</td>
+                        <td>Pythonic, modern UI</td>
+                        <td>Smaller community</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dagster</strong></td>
+                        <td>Data testing focus</td>
+                        <td>Great testing, type safety</td>
+                        <td>Learning curve</td>
+                    </tr>
+                    <tr>
+                        <td><strong>dbt</strong></td>
+                        <td>SQL transformations</td>
+                        <td>Simple, SQL-based</td>
+                        <td>Only SQL, no API calls</td>
+                    </tr>
+                    <tr>
+                        <td><strong>AWS Step Functions</strong></td>
+                        <td>AWS-native workloads</td>
+                        <td>Serverless, no ops</td>
+                        <td>Vendor lock-in</td>
+                    </tr>
+                </table>
+
+                <p><strong>Industry usage:</strong> Airbnb, Uber, Lyft, Twitter → Airflow. dbt Labs → Dagster. Startups → Prefect or AWS Step Functions.</p>
+
+                <h2>Orchestration Checklist</h2>
+
+                <ul>
+                    <li>✅ <strong>Idempotent tasks</strong> - Safe to rerun</li>
+                    <li>✅ <strong>Proper dependencies</strong> - Clear task order</li>
+                    <li>✅ <strong>Retry logic</strong> - Handles transient failures</li>
+                    <li>✅ <strong>Monitoring</strong> - Alerts on failures</li>
+                    <li>✅ <strong>SLAs</strong> - Time-sensitive pipelines tracked</li>
+                    <li>✅ <strong>Resource limits</strong> - Prevents overload</li>
+                    <li>✅ <strong>Testing</strong> - DAGs tested before deploy</li>
+                    <li>✅ <strong>Documentation</strong> - Each DAG has description</li>
+                    <li>✅ <strong>Version control</strong> - DAGs in git</li>
+                    <li>✅ <strong>Logging</strong> - Detailed logs for debugging</li>
+                </ul>
+            \`,
+            interviews: [
+                {
+                    question: "How would you backfill data for the past 30 days in Airflow?",
+                    answer: "Use Airflow's backfill command: 'airflow dags backfill -s 2024-01-01 -e 2024-01-30 daily_user_pipeline'. This runs DAG for each day. Important: 1) Set catchup=False in DAG to prevent automatic backfill on deploy, 2) Set max_active_runs=1 to run sequentially (avoid overwhelming system), 3) Test on single day first: -s 2024-01-01 -e 2024-01-01, 4) Monitor resources (30 runs can spike CPU/memory), 5) Consider: Is data available for past dates? Will source systems handle 30 simultaneous queries? Alternative: Clear failed task instances in UI → Airflow reruns them. For large backfills: Split into chunks, run during off-peak hours."
+                },
+                {
+                    question: "What's the difference between depends_on_past and wait_for_downstream?",
+                    answer: "depends_on_past: Current run waits for same task in previous run. Example: DAG runs daily, Jan 2 task waits for Jan 1 task to succeed. Use when: Data is cumulative (need yesterday's data). wait_for_downstream: Current run waits for ALL downstream tasks of previous run. Example: Jan 2 extract waits for Jan 1 extract AND Jan 1 transform AND Jan 1 load. Use when: Strict sequential processing needed. Real case: Financial reconciliation (Jan 2 can't start until Jan 1 completely done). Most times: Don't use either. Let runs happen independently. Only use for specific business needs."
+                },
+                {
+                    question: "How do you handle slowly changing source data in scheduled pipelines?",
+                    answer: "Problem: DAG runs at 2 AM, extracts data. But source DB gets updates until 3 AM. Solution 1) Add buffer time (run at 4 AM, ensures all data present). Solution 2) Use watermarks (track last processed timestamp, extract WHERE updated_at > last_watermark). Solution 3) Event-driven (source system sends signal when done, triggers DAG). Solution 4) Incremental with lookback (extract last 2 hours of data, handles late arrivals). Example from payments: Stripe webhooks arrive late due to retries. Extract with 1-hour lookback, dedup in warehouse. Best: Combine watermarks + lookback. Worst: Fixed schedule without buffer (guarantees missing data)."
+                },
+                {
+                    question: "When would you choose Luigi over Airflow?",
+                    answer: "Luigi pros: Simpler (just Python), no separate scheduler (runs as daemon), easier to debug (plain Python), lighter weight. Airflow pros: Better UI, more operators, better monitoring, bigger community, enterprise features (RBAC, pools). Choose Luigi when: Small team, simple pipelines, Python-heavy, don't need fancy UI, running on single machine. Choose Airflow when: Complex dependencies, multiple teams, need monitoring/alerting, cloud deployment, 100+ pipelines. Reality: Most companies start with Luigi/cron, migrate to Airflow as complexity grows. Spotify, Lyft used Luigi initially, now Airflow. New projects: Start with Airflow or Prefect."
+                },
+                {
+                    question: "How do you prevent DAGs from running simultaneously?",
+                    answer: "Set max_active_runs=1 in DAG definition: dag = DAG('pipeline', max_active_runs=1). This ensures only one run at a time. If DAG triggered while running, next run queues. Use when: 1) Pipeline modifies same tables (prevent conflicts), 2) Resource-intensive (don't want parallel runs), 3) Order matters (must finish before starting new run). Alternative: Use Pools for shared resources. Create pool 'warehouse_connection' with 1 slot. All tasks using warehouse take from this pool. Real example: ETL to Redshift has max_active_runs=1 (prevent COPY conflicts). But analytics queries can run in parallel (different pool). Don't overuse: Most DAGs benefit from parallel runs (faster catch-up)."
+                }
+            ]
+        },
+        {
+            id: 'cloud-platforms',
+            title: 'Cloud Data Platforms: AWS, GCP, Azure',
+            duration: '60 min',
+            content: \`
+                <h2>Why Cloud? The Honest Truth</h2>
+                <p>Ten years ago, every company built their own data centers. Today, only giants like Google and Amazon do. Why?</p>
+
+                <div class="code-block">On-Premise Data Center:
+Initial: $500K for servers + $200K for storage
+Annual: $100K electricity + $150K maintenance + 2 full-time ops engineers
+Scaling: 6 months to buy, rack, configure new servers
+Disaster recovery: Build duplicate data center ($500K+)
+Total 3-year cost: ~$2.5M + enormous complexity
+
+Cloud:
+Initial: $0
+Pay as you go: ~$5K/month starting (scales up/down)
+Scaling: Click button, instant
+Disaster recovery: Built-in
+Total 3-year cost: ~$180K-$500K (depending on usage)
+
+Winner: Cloud for 99% of companies</div>
+
+                <h2>The Big Three Cloud Platforms</h2>
+
+                <h3>AWS (Amazon Web Services) - 32% Market Share</h3>
+                <p><strong>Best for:</strong> Companies that need everything, mature services, most third-party integrations</p>
+
+                <table class="table">
+                    <tr>
+                        <th>Service</th>
+                        <th>What It Does</th>
+                        <th>When to Use</th>
+                    </tr>
+                    <tr>
+                        <td><strong>S3</strong></td>
+                        <td>Object storage (data lake)</td>
+                        <td>Store raw files, logs, backups</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Redshift</strong></td>
+                        <td>Data warehouse</td>
+                        <td>SQL analytics, BI dashboards</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Glue</strong></td>
+                        <td>ETL service</td>
+                        <td>Transform data, crawl schemas</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Athena</strong></td>
+                        <td>Query S3 with SQL</td>
+                        <td>Ad-hoc analysis without loading to warehouse</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Kinesis</strong></td>
+                        <td>Real-time streaming</td>
+                        <td>Process live events (clickstream, IoT)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>EMR</strong></td>
+                        <td>Managed Spark/Hadoop</td>
+                        <td>Big data processing (PB scale)</td>
+                    </tr>
+                </table>
+
+                <p><strong>Real AWS Architecture - E-commerce Company:</strong></p>
+                <div class="code-block">Data Sources:
+├── MySQL (orders, products) → AWS DMS → S3
+├── Application logs → Kinesis Firehose → S3
+├── Third-party APIs → Lambda → S3
+└── Mobile apps → Kinesis Data Streams → Lambda → S3
+
+S3 Data Lake (raw data):
+├── /orders/2024/01/01/*.parquet
+├── /logs/2024/01/01/*.json
+└── /api-data/stripe/2024-01-01.csv
+
+Glue ETL:
+├── Crawls S3, builds catalog
+├── Runs Spark jobs (transform data)
+└── Outputs to S3 (cleaned data)
+
+Redshift Warehouse:
+├── COPY from S3 (cleaned data)
+├── dim_customers, dim_products, fact_orders
+└── Queries from Tableau, Looker
+
+Athena:
+└── Ad-hoc queries on S3 (exploratory analysis)
+
+Cost (500GB data, 10M rows/day):
+- S3: $12/month
+- Redshift (dc2.large, 1 node): $180/month
+- Glue: $50/month
+- Athena: $25/month (5 TB scanned)
+Total: ~$270/month</div>
+
+                <h3>GCP (Google Cloud Platform) - 11% Market Share</h3>
+                <p><strong>Best for:</strong> Analytics-heavy workloads, ML/AI, companies that love BigQuery</p>
+
+                <table class="table">
+                    <tr>
+                        <th>Service</th>
+                        <th>What It Does</th>
+                        <th>Why Special</th>
+                    </tr>
+                    <tr>
+                        <td><strong>BigQuery</strong></td>
+                        <td>Serverless data warehouse</td>
+                        <td>Blazing fast, petabyte-scale, pay-per-query</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Cloud Storage</strong></td>
+                        <td>Object storage (like S3)</td>
+                        <td>Cheaper egress, better with BigQuery</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dataflow</strong></td>
+                        <td>Stream/batch processing (Apache Beam)</td>
+                        <td>Unified batch + streaming</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Pub/Sub</strong></td>
+                        <td>Messaging/streaming</td>
+                        <td>Global, exactly-once delivery</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dataproc</strong></td>
+                        <td>Managed Spark/Hadoop</td>
+                        <td>Faster startup than EMR</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Vertex AI</strong></td>
+                        <td>ML platform</td>
+                        <td>Best ML integration</td>
+                    </tr>
+                </table>
+
+                <p><strong>Real GCP Architecture - Media Company (Spotify-like):</strong></p>
+                <div class="code-block">Data Sources:
+├── User events (plays, skips) → Pub/Sub → Dataflow → BigQuery
+├── PostgreSQL (users, playlists) → Dataflow → BigQuery
+└── Cloud Storage (audio files, metadata)
+
+BigQuery Warehouse:
+├── Streaming inserts (real-time events)
+├── Partitioned by date (efficient queries)
+├── Clustered by user_id (fast user lookups)
+└── Materialized views (pre-aggregated metrics)
+
+dbt on BigQuery:
+├── Transforms raw → staging → marts
+├── Incremental models (only new data)
+└── Tests + documentation
+
+Looker Studio:
+└── Dashboards query BigQuery directly
+
+Cost (1TB data, 100M events/day):
+- BigQuery storage: $20/month (active), $10/month (long-term)
+- BigQuery queries: $200/month (4TB scanned)
+- Pub/Sub: $40/month
+- Dataflow: $150/month
+Total: ~$420/month
+
+BigQuery magic:
+- Query 1TB in 10 seconds
+- No indexes needed
+- Auto-scales to petabytes
+- Pay only for queries run</div>
+
+                <h3>Azure - 23% Market Share</h3>
+                <p><strong>Best for:</strong> Enterprises using Microsoft stack, hybrid cloud</p>
+
+                <table class="table">
+                    <tr>
+                        <th>Service</th>
+                        <th>AWS Equivalent</th>
+                        <th>GCP Equivalent</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Synapse Analytics</strong></td>
+                        <td>Redshift</td>
+                        <td>BigQuery</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Lake Storage</strong></td>
+                        <td>S3</td>
+                        <td>Cloud Storage</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Factory</strong></td>
+                        <td>Glue</td>
+                        <td>Dataflow</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Event Hubs</strong></td>
+                        <td>Kinesis</td>
+                        <td>Pub/Sub</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Databricks</strong></td>
+                        <td>EMR</td>
+                        <td>Dataproc</td>
+                    </tr>
+                </table>
+
+                <h2>How to Choose?</h2>
+
+                <table class="table">
+                    <tr>
+                        <th>Scenario</th>
+                        <th>Best Choice</th>
+                        <th>Why</th>
+                    </tr>
+                    <tr>
+                        <td>Startup, need to move fast</td>
+                        <td>GCP (BigQuery)</td>
+                        <td>Simplest, least ops</td>
+                    </tr>
+                    <tr>
+                        <td>Enterprise, Microsoft shop</td>
+                        <td>Azure</td>
+                        <td>Integrates with Office, AD</td>
+                    </tr>
+                    <tr>
+                        <td>Need every service imaginable</td>
+                        <td>AWS</td>
+                        <td>Most mature, most options</td>
+                    </tr>
+                    <tr>
+                        <td>ML/AI heavy</td>
+                        <td>GCP</td>
+                        <td>Best ML tools (TensorFlow native)</td>
+                    </tr>
+                    <tr>
+                        <td>Gaming, media streaming</td>
+                        <td>AWS</td>
+                        <td>Best CDN (CloudFront), low latency</td>
+                    </tr>
+                    <tr>
+                        <td>Financial services, compliance</td>
+                        <td>AWS or Azure</td>
+                        <td>More compliance certifications</td>
+                    </tr>
+                </table>
+
+                <h2>Cloud Data Pipeline - Real Example</h2>
+
+                <p><strong>Airbnb's AWS Data Platform (Simplified):</strong></p>
+
+                <div class="code-block"># Step 1: Ingest data from various sources
+
+# MySQL (listings, bookings) → S3
+aws dms create-replication-task \\
+  --replication-instance arn:aws:dms:us-east-1:... \\
+  --source-endpoint mysql-prod \\
+  --target-endpoint s3-data-lake
+
+# Application logs → Kinesis → S3
+import boto3
+kinesis = boto3.client('kinesis')
+kinesis.put_record(
+    StreamName='user-events',
+    Data=json.dumps({'user_id': 123, 'event': 'search', 'ts': '2024-01-01 12:00:00'}),
+    PartitionKey='123'
+)
+
+# Kinesis Firehose → S3 (batches and saves)
+# Automatic: Every 5 minutes or 5MB
+
+# Step 2: Transform with Glue (PySpark)
+from awsglue.context import GlueContext
+from pyspark.context import SparkContext
+
+sc = SparkContext()
+glueContext = GlueContext(sc)
+
+# Read from S3
+df = glueContext.create_dynamic_frame.from_catalog(
+    database="raw_data",
+    table_name="bookings"
+)
+
+# Transform
+df = df.filter(lambda x: x['booking_status'] == 'confirmed')
+df = df.rename_field('booking_ts', 'booking_timestamp')
+
+# Write back to S3 (cleaned)
+glueContext.write_dynamic_frame.from_options(
+    frame=df,
+    connection_type="s3",
+    connection_options={"path": "s3://cleaned-data/bookings/"},
+    format="parquet"
+)
+
+# Step 3: Load to Redshift
+COPY bookings
+FROM 's3://cleaned-data/bookings/'
+IAM_ROLE 'arn:aws:iam::123456789012:role/RedshiftRole'
+FORMAT AS PARQUET;
+
+# Step 4: Query with analysts
+SELECT
+    listing_city,
+    COUNT(*) as bookings,
+    SUM(price) as revenue
+FROM bookings
+WHERE booking_date >= '2024-01-01'
+GROUP BY listing_city
+ORDER BY revenue DESC;
+
+Result:
+- Paris: 12,450 bookings, $2.4M revenue
+- New York: 11,230 bookings, $3.1M revenue
+- Tokyo: 9,870 bookings, $1.8M revenue</div>
+
+                <h2>Cloud Cost Optimization</h2>
+
+                <h3>Biggest Cost Mistakes</h3>
+
+                <div class="code-block">MISTAKE 1: Scanning entire table when you need 1 day
+
+-- BAD (scans 1 TB every time)
+SELECT * FROM events
+WHERE event_date = '2024-01-01';
+
+Cost: $5 per query (BigQuery: $5/TB)
+
+-- GOOD (scans 10 GB)
+SELECT * FROM events
+WHERE event_date = '2024-01-01'
+  AND _PARTITIONDATE = '2024-01-01';  -- Use partition filter
+
+Cost: $0.05 per query (100x cheaper!)
+
+Airbnb saved $1M/year by partitioning tables</div>
+
+                <div class="code-block">MISTAKE 2: Leaving warehouse running 24/7
+
+-- Redshift costs $180/month per node
+-- Running 24/7 when only used 9am-6pm (weekdays)
+-- Actual usage: 40 hours/week out of 168 hours (24%)
+
+Solution:
+- Pause Redshift nights/weekends
+- Use serverless (BigQuery, Athena) for unpredictable workloads
+- Resize down during off-peak
+
+Lyft saved $400K/year with auto-pause</div>
+
+                <div class="code-block">MISTAKE 3: Not using compression
+
+-- Uncompressed data in S3: 500 GB
+-- Storage: $12/month
+-- Data transfer: $45/month (pulling to Redshift)
+
+-- Compressed (gzip or Parquet): 100 GB (5x smaller)
+-- Storage: $2.40/month
+-- Data transfer: $9/month
+
+Savings: $45.60/month → $546/year
+For 10TB data → $10K/year saved</div>
+
+                <h3>Cost Optimization Checklist</h3>
+                <ul>
+                    <li>✅ <strong>Partition tables</strong> by date (most important!)</li>
+                    <li>✅ <strong>Use columnar formats</strong> (Parquet, ORC) not CSV</li>
+                    <li>✅ <strong>Compress data</strong> (gzip, snappy)</li>
+                    <li>✅ <strong>Right-size instances</strong> (don't over-provision)</li>
+                    <li>✅ <strong>Delete old data</strong> (archive to cheaper storage)</li>
+                    <li>✅ <strong>Use spot instances</strong> for batch jobs (70% cheaper)</li>
+                    <li>✅ <strong>Reserved instances</strong> for predictable workloads (40% off)</li>
+                    <li>✅ <strong>Monitor costs</strong> (AWS Cost Explorer, GCP Billing)</li>
+                    <li>✅ <strong>Set budgets and alerts</strong> (prevent surprises)</li>
+                    <li>✅ <strong>Turn off dev/test resources</strong> nights/weekends</li>
+                </ul>
+
+                <h2>Multi-Cloud Strategy</h2>
+
+                <div class="code-block">Reality check:
+- 87% of enterprises use multi-cloud
+- Not because it's better (it's more complex)
+- Because: Different teams chose different clouds, acquisitions, avoiding vendor lock-in
+
+Real example - Large retailer:
+- Marketing data: GCP (BigQuery for analytics)
+- Finance data: Azure (Microsoft Excel integration)
+- Operations data: AWS (legacy systems)
+- Result: 3x complexity, 3x cost, 3x headcount
+
+Lesson: Pick ONE cloud for data
+Use others only if absolutely necessary
+Complexity cost > savings from negotiation leverage</div>
+
+                <h2>Serverless vs. Provisioned</h2>
+
+                <table class="table">
+                    <tr>
+                        <th>Aspect</th>
+                        <th>Serverless (BigQuery, Athena)</th>
+                        <th>Provisioned (Redshift, Synapse)</th>
+                    </tr>
+                    <tr>
+                        <td>Cost model</td>
+                        <td>Pay per query</td>
+                        <td>Pay per hour (always running)</td>
+                    </tr>
+                    <tr>
+                        <td>Best for</td>
+                        <td>Unpredictable, spiky workloads</td>
+                        <td>Steady, 24/7 querying</td>
+                    </tr>
+                    <tr>
+                        <td>Scaling</td>
+                        <td>Automatic, instant</td>
+                        <td>Manual resize (minutes-hours)</td>
+                    </tr>
+                    <tr>
+                        <td>Maintenance</td>
+                        <td>Zero (fully managed)</td>
+                        <td>Patching, vacuuming, tuning</td>
+                    </tr>
+                    <tr>
+                        <td>Performance</td>
+                        <td>Consistent (shared resources)</td>
+                        <td>Dedicated (can be faster)</td>
+                    </tr>
+                </table>
+
+                <p><strong>Rule of thumb:</strong> If you're querying <1TB per day → Serverless is cheaper. If >5TB per day → Provisioned is cheaper.</p>
+            \`,
+            interviews: [
+                {
+                    question: "How would you migrate 10TB of data from on-premise to cloud?",
+                    answer: "Multi-step approach: 1) Network assessment (can 10TB fit in transfer window? 100Mbps = 10 days). 2) If network too slow, use physical device (AWS Snowball, Azure Data Box - ship hard drive). 3) During migration: a) Initial bulk load (all historical data), b) CDC (Change Data Capture) for ongoing changes, c) Cutover window (stop writes, sync final changes, switch to cloud). 4) Validation (row counts, checksums match). Real timeline: Planning 2 weeks, initial transfer 1-4 weeks, CDC setup 1 week, testing 1 week, cutover 1 day. Mistake to avoid: Starting migration without CDC (data stale by time you finish). Tools: AWS DMS, Fivetran, Stitch Data."
+                },
+                {
+                    question: "BigQuery vs Redshift - when to use which?",
+                    answer: "BigQuery: Best for ad-hoc analytics, unpredictable workloads, don't want to manage infrastructure. Pros: Zero ops, petabyte scale, fast. Cons: Expensive for high query volume. Redshift: Best for predictable 24/7 workloads, cost-sensitive (large scale), need control over performance. Pros: Cheaper at scale, dedicated resources, more control. Cons: Need DBA, manual scaling. Real numbers: 100 users, 1000 queries/day, 1TB data → BigQuery $500/mo, Redshift $200/mo. But BigQuery has zero ops cost (no DBA), Redshift needs engineer time. Verdict: Most startups choose BigQuery (speed to value). Large enterprises use Redshift (cost at scale). Many use both (BigQuery for analysts, Redshift for production dashboards)."
+                },
+                {
+                    question: "How do you handle PII and compliance (GDPR, HIPAA) in cloud?",
+                    answer: "Multi-layer approach: 1) Encryption: At rest (AWS KMS, GCP KMS) and in transit (TLS). 2) Access control: IAM policies (least privilege), MFA required, audit all access. 3) Data masking: PII masked in non-prod environments (email → e***@domain.com). 4) Data residency: EU data stays in EU region (GDPR requirement). 5) Right to deletion: Automate user data deletion (GDPR: 30 days). 6) Audit logs: CloudTrail (AWS), Audit Logs (GCP) - who accessed what when. 7) Compliance: Choose certified services (HIPAA compliant, SOC 2). Real example: Healthcare company - encrypt all PHI with customer-managed keys, data in us-east-1 only, auto-delete on request, quarterly audits. Mistake: Storing PII in logs (goes to different storage, harder to delete)."
+                },
+                {
+                    question: "What's the biggest cloud cost surprise you've seen?",
+                    answer: "Data transfer costs (egress). Storage is cheap. Compute is predictable. But moving data OUT of cloud is expensive. Real example: Company stored 100TB in S3 ($2,300/mo). Analysts downloaded 50TB/month for local processing. Data transfer: $4,500/mo! Solution: Process data IN cloud (use EMR/Athena), only download results (1GB not 50TB). Another surprise: Cross-region transfer. Moving 10TB from us-east-1 to eu-west-1 = $200. Keep data in ONE region. Third surprise: CloudWatch logs. Company had verbose logging, generated 5TB logs/month, $2,500 in storage + ingestion. Solution: Sample logs (not every request), shorter retention. Prevention: Set billing alerts, review monthly costs, use cost calculators before deploying."
+                },
+                {
+                    question: "How do you test cloud infrastructure changes without breaking production?",
+                    answer: "Infrastructure as Code (IaC) + environments: 1) Define infrastructure in code (Terraform, CloudFormation). 2) Have 3 environments: dev, staging, prod. 3) Test in dev first (cheap, can break). 4) Promote to staging (replica of prod). 5) Run smoke tests, load tests. 6) If success, apply to prod. 7) Use blue-green deployment (keep old infra running, switch traffic gradually). Example: Upgrading Redshift - Create new cluster (green), copy data from old (blue), test queries on green, switch apps to green, monitor for issues, delete blue after 1 week. For pipelines: Backfill in dev (test on small date range), then staging (1 week data), then prod (all history). Always: Have rollback plan, backup data before changes, change during off-peak hours. Netflix approach: Chaos engineering (intentionally break things in prod to test resilience)."
+                }
+            ]
+        },
+        {
+            id: 'performance-optimization',
+            title: 'Performance: Making Queries Fast',
+            duration: '55 min',
+            content: \`
+                <h2>Why Performance Matters</h2>
+                <p>A slow query isn't just annoying. It costs real money and productivity.</p>
+
+                <div class="code-block">Real Cost of Slow Queries:
+
+Scenario: Executive dashboard takes 5 minutes to load
+Impact:
+- 20 executives check it 3 times/day
+- 20 × 3 × 5 min = 300 minutes/day wasted = 5 hours
+- Average exec salary: $150/hour
+- Daily cost: $750
+- Annual cost: $187,500 just waiting for one dashboard!
+
+Facebook's rule: "Every 100ms slower = 1% fewer users"
+Amazon's finding: "Every 100ms slower = 1% less revenue"
+
+Lesson: Performance is a feature, not nice-to-have</div>
+
+                <h2>The Query Performance Hierarchy</h2>
+
+                <p>Fix these in order. Don't optimize indexes if you're scanning wrong data.</p>
+
+                <h3>Level 1: Scan Less Data (Biggest Impact)</h3>
+
+                <div class="code-block">-- BAD: Scanning entire table (1 billion rows)
+SELECT * FROM orders
+WHERE order_date = '2024-01-01';
+
+Execution: 120 seconds
+Cost (BigQuery): $5
+
+-- GOOD: Partition pruning (1 day = 1M rows)
+SELECT * FROM orders
+WHERE order_date = '2024-01-01'
+  AND _PARTITIONDATE = '2024-01-01';  -- Partition filter
+
+Execution: 1.2 seconds (100x faster!)
+Cost: $0.05 (100x cheaper!)
+
+How partitioning works:
+- Data physically split by date
+- Query only reads relevant partition
+- Like searching one file cabinet drawer, not entire warehouse
+
+Partitioning strategies:
+- Time-series data: Partition by date (most common)
+- Geographic data: Partition by region
+- Tenant data: Partition by customer_id (multi-tenant SaaS)</div>
+
+                <h3>Level 2: Clustering (10-100x improvement)</h3>
+
+                <div class="code-block">-- After partitioning, cluster by commonly filtered columns
+
+CREATE TABLE orders (
+    order_id BIGINT,
+    customer_id BIGINT,
+    order_date DATE,
+    amount DECIMAL
+)
+PARTITION BY order_date
+CLUSTER BY customer_id;  -- Data sorted by customer
+
+-- Query for specific customer
+SELECT * FROM orders
+WHERE order_date = '2024-01-01'  -- Partition pruning
+  AND customer_id = 12345;       -- Cluster pruning
+
+Execution: 0.3 seconds (4x faster than just partitioning)
+
+Why: Data for same customer is stored together
+Query only reads relevant blocks
+
+Clustering tips:
+- Cluster by columns in WHERE clause
+- Up to 4 clustering columns (order matters!)
+- Most selective first
+- Example: CLUSTER BY country, city, customer_id</div>
+
+                <h3>Level 3: Columnar Format (5-10x improvement)</h3>
+
+                <div class="code-block">CSV vs Parquet benchmark (1GB data, 10M rows):
+
+-- CSV (row format)
+Size: 1 GB
+Query time (SELECT country, COUNT(*)): 45 seconds
+Compression: None
+Reads: Entire file (all columns)
+
+-- Parquet (columnar format)
+Size: 100 MB (10x smaller due to compression)
+Query time: 4 seconds (11x faster)
+Compression: Automatic (Snappy)
+Reads: Only 'country' column (not all columns)
+
+Why columnar is faster:
+1. Read only needed columns (not entire row)
+2. Better compression (similar values together)
+3. Predicate pushdown (filter before reading)
+4. Vectorized processing (CPU-efficient)
+
+When to use:
+- Parquet: Analytics (read few columns from many rows)
+- CSV: Row-oriented apps (read all columns of few rows)
+- JSON: Nested/schemaless data
+- Avro: Write-heavy, schema evolution</div>
+
+                <h3>Level 4: Indexing (2-100x for specific queries)</h3>
+
+                <div class="code-block">-- Traditional databases (PostgreSQL, MySQL)
+
+-- Query: Find user by email (1M users)
+SELECT * FROM users WHERE email = 'john@example.com';
+
+No index: Full table scan (1M rows read)
+Time: 5 seconds
+
+-- Create index
+CREATE INDEX idx_users_email ON users(email);
+
+With index: B-tree lookup (log2(1M) = 20 comparisons)
+Time: 0.05 seconds (100x faster!)
+
+When to index:
+✅ Columns in WHERE clause (especially unique lookups)
+✅ Foreign keys (JOIN columns)
+✅ Columns in ORDER BY
+✅ Columns in GROUP BY (sometimes helps)
+
+When NOT to index:
+❌ Low cardinality columns (boolean, status with 3 values)
+❌ Columns never used in WHERE
+❌ Tables with heavy INSERT/UPDATE (indexes slow writes)
+
+Real mistake - Over-indexing:
+Company had 40 indexes on 10-column table
+INSERTs took 10 seconds (updating all indexes)
+Removed to 5 indexes → INSERT time: 0.1 seconds</div>
+
+                <h2>Query Optimization Patterns</h2>
+
+                <h3>Pattern 1: Avoid SELECT *</h3>
+
+                <div class="code-block">-- BAD: Fetching 50 columns when you need 3
+SELECT * FROM orders
+WHERE order_date = '2024-01-01';
+
+Time: 10 seconds
+Data scanned: 10 GB
+
+-- GOOD: Only needed columns
+SELECT order_id, customer_id, amount
+FROM orders
+WHERE order_date = '2024-01-01';
+
+Time: 2 seconds (5x faster)
+Data scanned: 2 GB (5x less)
+
+Why: Columnar databases (BigQuery, Redshift) charge per byte scanned
+Less columns = less data = faster + cheaper
+
+Real example - Uber:
+Changed SELECT * to specific columns across 100 queries
+Result: 40% cost reduction on BigQuery</div>
+
+                <h3>Pattern 2: Push Filters Down</h3>
+
+                <div class="code-block">-- BAD: Filter after joining (processes all data first)
+SELECT o.*, c.name
+FROM orders o
+JOIN customers c ON o.customer_id = c.customer_id
+WHERE o.order_date = '2024-01-01';
+
+Execution:
+1. JOIN all orders (100M rows) with customers (10M rows)
+2. Then filter to 1 day (1M rows)
+
+-- GOOD: Filter before joining
+SELECT o.*, c.name
+FROM (
+    SELECT * FROM orders
+    WHERE order_date = '2024-01-01'  -- Filter early!
+) o
+JOIN customers c ON o.customer_id = c.customer_id;
+
+Execution:
+1. Filter to 1M orders first
+2. Then JOIN (much smaller dataset)
+
+Modern query engines do this automatically (query optimization)
+But not always! Manual filtering helps.</div>
+
+                <h3>Pattern 3: Avoid Functions on Indexed Columns</h3>
+
+                <div class="code-block">-- BAD: Function prevents index usage
+SELECT * FROM users
+WHERE LOWER(email) = 'john@example.com';
+
+-- Index on 'email' is useless (can't use it!)
+-- Full table scan required
+
+-- GOOD: Lowercase the search term instead
+SELECT * FROM users
+WHERE email = 'john@example.com';
+
+-- Index is used → Fast
+
+Alternative: Create function-based index
+CREATE INDEX idx_email_lower ON users(LOWER(email));
+
+-- Now this is fast
+SELECT * FROM users
+WHERE LOWER(email) = 'john@example.com';</div>
+
+                <h3>Pattern 4: Use Approximate Aggregates</h3>
+
+                <div class="code-block">-- Need approximate count? Don't scan everything
+
+-- EXACT (slow for big tables)
+SELECT COUNT(DISTINCT user_id) FROM events;
+Time: 120 seconds
+Result: 1,234,567
+
+-- APPROXIMATE (HyperLogLog algorithm)
+SELECT APPROX_COUNT_DISTINCT(user_id) FROM events;
+Time: 5 seconds (24x faster!)
+Result: 1,234,511 (~99.99% accurate)
+
+Use approximate when:
+- Don't need exact count (dashboards showing "~1.2M users")
+- 1% error acceptable
+- Speed more important than precision
+
+Functions:
+- APPROX_COUNT_DISTINCT (cardinality)
+- APPROX_QUANTILES (percentiles)
+- APPROX_TOP_COUNT (top N items)
+
+Google uses this for Analytics (trillions of events)</div>
+
+                <h2>Join Optimization</h2>
+
+                <h3>Join Strategies</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Strategy</th>
+                        <th>When to Use</th>
+                        <th>Performance</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Broadcast Join</strong></td>
+                        <td>One table small (<1GB), other large</td>
+                        <td>Fastest (no shuffle)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Shuffle Hash Join</strong></td>
+                        <td>Both tables medium-large</td>
+                        <td>Medium (shuffle cost)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Sort-Merge Join</strong></td>
+                        <td>Both tables huge (sorted)</td>
+                        <td>Slower but scalable</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Nested Loop Join</strong></td>
+                        <td>No other option (avoid if possible)</td>
+                        <td>Slowest (O(n²))</td>
+                    </tr>
+                </table>
+
+                <div class="code-block">Example - Slow join:
+
+SELECT o.*, c.name
+FROM orders o  -- 100M rows
+JOIN customers c ON o.customer_id = c.customer_id  -- 10M rows
+
+Problem: Shuffle 100M rows across network
+Time: 10 minutes
+
+Solution: Broadcast small table (customers)
+-- Hint to database
+SELECT /*+ BROADCAST(c) */ o.*, c.name
+FROM orders o
+JOIN customers c ON o.customer_id = c.customer_id;
+
+Result: Copy customers (small) to all nodes
+Time: 30 seconds (20x faster)</div>
+
+                <h2>Monitoring Query Performance</h2>
+
+                <h3>Key Metrics to Track</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Metric</th>
+                        <th>Good Threshold</th>
+                        <th>Action if Exceeded</th>
+                    </tr>
+                    <tr>
+                        <td>Query execution time</td>
+                        <td><5 seconds (interactive)</td>
+                        <td>Optimize query, add indexes</td>
+                    </tr>
+                    <tr>
+                        <td>Data scanned</td>
+                        <td><100GB per query</td>
+                        <td>Partition table, select fewer columns</td>
+                    </tr>
+                    <tr>
+                        <td>Rows returned</td>
+                        <td><10,000 (for dashboards)</td>
+                        <td>Add LIMIT, aggregate in database</td>
+                    </tr>
+                    <tr>
+                        <td>Concurrent queries</td>
+                        <td><50 active queries</td>
+                        <td>Queue system, scale warehouse</td>
+                    </tr>
+                    <tr>
+                        <td>Slow query frequency</td>
+                        <td><5% queries over SLA</td>
+                        <td>Investigate slow queries, optimize</td>
+                    </tr>
+                </table>
+
+                <h3>Query Profiling - Finding Bottlenecks</h3>
+
+                <div class="code-block">-- PostgreSQL
+EXPLAIN ANALYZE
+SELECT * FROM orders WHERE order_date = '2024-01-01';
+
+Output:
+Seq Scan on orders (cost=0..10000 rows=1000 width=100)
+  Filter: (order_date = '2024-01-01')
+  Planning time: 0.5 ms
+  Execution time: 5234 ms  ← SLOW!
+
+Look for:
+- "Seq Scan" (full table scan - add index)
+- High "rows" (scanning too much - add filters)
+- "Sort" or "Hash" (memory operations - may need more RAM)
+
+-- BigQuery
+SELECT
+    job_id,
+    query,
+    total_bytes_processed,
+    total_slot_ms,
+    creation_time
+FROM \`region-us\`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+  AND total_bytes_processed > 1000000000  -- >1GB queries
+ORDER BY total_slot_ms DESC  -- Most expensive first
+LIMIT 10;
+
+Action: Optimize top 10 expensive queries</div>
+
+                <h2>Caching Strategies</h2>
+
+                <h3>Multi-Layer Caching</h3>
+
+                <div class="code-block">Layers (from fastest to slowest):
+
+1. Application cache (Redis, Memcached)
+   - TTL: 5 minutes
+   - Use for: Frequently accessed, slow-changing data
+   - Example: Product catalog, user profiles
+   - Speed: <1ms
+
+2. Query result cache (BigQuery, Snowflake)
+   - TTL: 24 hours
+   - Use for: Identical queries
+   - Example: Daily dashboard (same query run 100x/day)
+   - Speed: 10ms
+
+3. Materialized views
+   - Refresh: Hourly/daily
+   - Use for: Complex aggregations
+   - Example: Pre-computed daily metrics
+   - Speed: 100ms (reads pre-aggregated data)
+
+4. Source database
+   - No cache
+   - Always fresh, always slow
+   - Speed: 5-60 seconds
+
+Real architecture - E-commerce:
+- User profile → Redis (5 min TTL)
+- Product catalog → Redis (15 min TTL)
+- Daily sales → Materialized view (refresh 1 AM)
+- Historical orders → Direct query (no cache)</div>
+
+                <h2>Performance Checklist</h2>
+
+                <ul>
+                    <li>✅ <strong>Partition tables by date</strong> (scan less data)</li>
+                    <li>✅ <strong>Cluster by filter columns</strong> (co-locate related data)</li>
+                    <li>✅ <strong>Use columnar format</strong> (Parquet, ORC)</li>
+                    <li>✅ <strong>Compress data</strong> (smaller = faster)</li>
+                    <li>✅ <strong>Select only needed columns</strong> (no SELECT *)</li>
+                    <li>✅ <strong>Push filters down</strong> (filter before join)</li>
+                    <li>✅ <strong>Index appropriately</strong> (not too many, not too few)</li>
+                    <li>✅ <strong>Use approximate aggregates</strong> (when exact not needed)</li>
+                    <li>✅ <strong>Cache expensive queries</strong> (materialized views)</li>
+                    <li>✅ <strong>Monitor slow queries</strong> (optimize top 10)</li>
+                    <li>✅ <strong>Profile queries</strong> (EXPLAIN ANALYZE)</li>
+                    <li>✅ <strong>Set query timeouts</strong> (kill runaway queries)</li>
+                </ul>
+
+                <p><strong>Remember:</strong> "Premature optimization is the root of all evil. But never optimizing is the root of expensive bills and angry users."</p>
+            \`,
+            interviews: [
+                {
+                    question: "A query that used to take 5 seconds now takes 5 minutes. How do you debug?",
+                    answer: "Systematic approach: 1) Check if data volume increased (table now 100x bigger? Partitions working?), 2) Check query plan (EXPLAIN - did it change? Index broken? Statistics outdated?), 3) Check system resources (is warehouse overloaded? Too many concurrent queries?), 4) Check recent changes (code deploy? Schema change? New index?), 5) Compare old vs new metrics (data scanned, rows processed). Real example: Company query slowed down. Found: Table grew from 1M to 100M rows, partition wasn't being used (query had CAST(order_date) which disabled partition pruning). Fix: Remove CAST, query back to 5 seconds. Tools: Query history, execution plans, monitoring dashboards."
+                },
+                {
+                    question: "How do you decide between adding an index vs materializing a view?",
+                    answer: "Index: Speeds up lookups (WHERE, JOIN). Good for point queries (find specific rows). Cost: Slower writes (must update index). Use when: Need real-time data, many different query patterns. Materialized view: Pre-computes aggregations (SUM, COUNT, JOIN). Good for complex analytics. Cost: Stale data (refreshed periodically), storage space. Use when: Same complex query run often, can tolerate 1-hour staleness, aggregating billions of rows. Example: User lookup by email → Index (need real-time). Daily sales report (same query 100x/day) → Materialized view (refresh nightly). Both: For frequently joined tables (index on join column, mat view for common aggregations)."
+                },
+                {
+                    question: "What's the difference between LIMIT and partitioning for making queries faster?",
+                    answer: "They solve different problems. LIMIT: Reduces RETURNED rows (but still SCANS full table). SELECT * FROM orders LIMIT 100 → Scans 100M rows, returns 100. Doesn't make query faster (still reads everything). Use: Pagination, sampling results. Partitioning: Reduces SCANNED rows (physically skips irrelevant data). SELECT * FROM orders WHERE _PARTITIONDATE = '2024-01-01' → Scans 1M rows (one day), not 100M. Makes query 100x faster. Use: Time-series data, large tables. Common mistake: Using LIMIT 100 thinking it's optimization. Reality: Database still does full scan, throws away 99.9% of results. Correct: Partition + filter, then LIMIT."
+                },
+                {
+                    question: "How would you optimize a JOIN between a 1 billion row table and a 10 million row table?",
+                    answer: "Broadcast join strategy: 1) Smaller table (10M rows) is 'broadcast' to all compute nodes. 2) Each node has full copy of small table in memory. 3) Large table (1B rows) is partitioned across nodes. 4) Each node joins its partition locally (no network shuffle). Implementation: Modern warehouses do this automatically, but can hint: SELECT /*+ BROADCAST(small_table) */ ... Benefit: Avoids shuffling 1B rows across network. Requirement: Small table must fit in memory (~10GB max). If both tables huge: Sort-merge join (partition both by join key, sort, merge). Real numbers: 1B x 10M join - Broadcast: 2 min, Shuffle: 30 min. Alternative: Denormalize (avoid join altogether by pre-joining data)."
+                },
+                {
+                    question: "What performance considerations are different for streaming vs batch processing?",
+                    answer: "Batch: Optimize for throughput (max rows/second), latency doesn't matter (run overnight). Techniques: Large batch sizes (100K rows), sequential scans, aggressive compression, sort-merge joins. Cost-optimized (use spot instances). Streaming: Optimize for latency (each event processed quickly), throughput secondary. Techniques: Small batch sizes (100 events), indexed lookups, simpler joins, less compression. Need predictable performance (no spot instances). Example - Batch ETL: Load 100M rows in 1 hour → 27K rows/sec throughput, individual row latency irrelevant. Example - Fraud detection: Process each transaction in <100ms → Low throughput (few thousand/sec) but real-time. Architectural difference: Batch uses scan-friendly columnar stores (Parquet). Streaming uses key-value stores (Cassandra, DynamoDB) for fast random access."
+                }
+            ]
+        },
+        {
+            id: 'real-world-career',
+            title: 'Building a Data Engineering Career: Real Talk',
+            duration: '45 min',
+            content: \`
+                <h2>The Data Engineering Career Path</h2>
+                <p>Let me share what a real data engineering career looks like, from someone who's been through it all.</p>
+
+                <h3>Career Progression (Typical Timeline)</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Level</th>
+                        <th>Years</th>
+                        <th>What You Do</th>
+                        <th>Salary Range (US)</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Junior</strong></td>
+                        <td>0-2</td>
+                        <td>Write SQL, build simple pipelines, fix data quality issues</td>
+                        <td>$70K - $110K</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Mid-level</strong></td>
+                        <td>2-5</td>
+                        <td>Design pipelines, optimize queries, mentor juniors</td>
+                        <td>$110K - $160K</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Senior</strong></td>
+                        <td>5-8</td>
+                        <td>Architect systems, lead projects, make technical decisions</td>
+                        <td>$150K - $220K</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Staff/Principal</strong></td>
+                        <td>8-12</td>
+                        <td>Set standards, cross-team impact, research new tech</td>
+                        <td>$200K - $350K</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Engineering Manager</strong></td>
+                        <td>5+</td>
+                        <td>Hire, mentor, roadmap planning (less coding)</td>
+                        <td>$160K - $280K</td>
+                    </tr>
+                </table>
+
+                <p><em>Note: FAANG (Meta, Google, Netflix) pays 50-100% more. Startups pay less but offer equity.</em></p>
+
+                <h2>Skills That Actually Matter</h2>
+
+                <h3>Must-Have Skills (Learn These First)</h3>
+
+                <div class="code-block">1. SQL (90% of your job)
+   - Window functions (RANK, ROW_NUMBER, LAG/LEAD)
+   - Complex JOINs (multiple tables, subqueries)
+   - Query optimization (EXPLAIN, indexes)
+   - Practice: LeetCode SQL, HackerRank
+
+2. Python (for everything SQL can't do)
+   - pandas (data manipulation)
+   - requests (API calls)
+   - sqlalchemy (database connections)
+   - airflow/prefect (orchestration)
+   - NOT needed: Deep learning, computer vision
+
+3. One Cloud Platform (pick AWS or GCP)
+   - Data warehouse (Redshift or BigQuery)
+   - Object storage (S3 or GCS)
+   - Orchestration (Airflow, Step Functions)
+   - Get certified: AWS Data Analytics or GCP Data Engineer
+
+4. Git (version control)
+   - Branch, merge, pull requests
+   - Code reviews
+   - Every company uses this
+
+5. Data Modeling (dimensional modeling)
+   - Star schema, fact/dimension tables
+   - Read: "The Data Warehouse Toolkit" by Kimball</div>
+
+                <h3>Nice-to-Have Skills (Learn After Basics)</h3>
+
+                <div class="code-block">- Spark (for big data processing)
+- Kafka (for real-time streaming)
+- dbt (for SQL transformations)
+- Docker (for containerization)
+- Terraform (for infrastructure as code)
+- Scala or Java (for Spark development)
+
+When to learn:
+- Apply for big data roles → Learn Spark
+- Streaming-heavy company → Learn Kafka
+- Modern data stack shop → Learn dbt</div>
+
+                <h2>How to Get Your First Data Engineering Job</h2>
+
+                <h3>Path 1: From Data Analyst (Easiest)</h3>
+
+                <div class="code-block">Many data engineers start as analysts
+Timeline: 1-2 years
+
+Step 1: Excel at current analyst job
+- Write complex SQL queries
+- Build dashboards (Tableau, Looker)
+- Understand business metrics deeply
+
+Step 2: Take on engineering tasks
+- "This report is slow, can I optimize it?"
+- "Can I automate this manual process?"
+- "I'll set up a pipeline for this data"
+
+Step 3: Learn engineering tools (nights/weekends)
+- Python (pandas, sqlalchemy)
+- Airflow (build personal project)
+- Cloud (AWS/GCP free tier)
+
+Step 4: Internal transfer or new job
+- Show projects you built
+- Demonstrate impact (reduced query time, automated process)
+
+Real example:
+Data analyst at e-commerce company
+Built automated inventory pipeline in Airflow
+Saved team 10 hours/week manual work
+Promoted to Data Engineer in 14 months</div>
+
+                <h3>Path 2: From Software Engineer (Fastest)</h3>
+
+                <div class="code-block">You have coding skills, learn data tools
+Timeline: 3-6 months
+
+Learn:
+1. SQL (most important!)
+2. Data warehousing concepts (star schema, dimensional modeling)
+3. Orchestration (Airflow)
+4. One cloud platform (AWS/GCP)
+
+Build project:
+- Scrape data from API (Twitter, Reddit)
+- Load to cloud database (PostgreSQL on AWS RDS)
+- Transform with Airflow
+- Analyze in Jupyter notebook
+- Put on GitHub, write blog post
+
+Apply for:
+- Junior Data Engineer roles
+- Data Platform Engineer
+- Analytics Engineer
+
+Advantage: You know how to code (big plus!)
+Challenge: Learn data concepts (not just coding)</div>
+
+                <h3>Path 3: From Bootcamp/Self-Taught (Hardest)</h3>
+
+                <div class="code-block">No experience? Build portfolio
+Timeline: 6-12 months
+
+Core curriculum:
+1. SQL (3 months) - SQLBolt, LeetCode SQL
+2. Python (2 months) - DataCamp, Codecademy
+3. Data warehousing (1 month) - Read Kimball book
+4. Cloud (2 months) - AWS/GCP certification
+5. Orchestration (1 month) - Airflow tutorials
+
+Build 3 projects:
+Project 1: Simple ETL
+- Extract from public API (weather, stocks)
+- Load to PostgreSQL
+- Visualize in matplotlib
+
+Project 2: Data warehouse
+- Build star schema
+- Load sample data (e-commerce, retail)
+- Write analytical queries
+
+Project 3: Production-like pipeline
+- Airflow DAG (scheduled daily)
+- Multiple data sources
+- Quality checks
+- Deployed on cloud (AWS/GCP)
+- Documented on GitHub
+
+Apply for:
+- Junior/Associate roles
+- Startups (more willing to take risk)
+- Contract/freelance (build experience)
+
+First job will be hard to get
+But after 1 year experience, job market opens up</div>
+
+                <h2>Interview Preparation</h2>
+
+                <h3>What Interviews Actually Test</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Round</th>
+                        <th>What They Test</th>
+                        <th>How to Prepare</th>
+                    </tr>
+                    <tr>
+                        <td><strong>SQL Round</strong></td>
+                        <td>Window functions, JOINs, subqueries</td>
+                        <td>LeetCode SQL (50 problems), HackerRank</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Coding Round</strong></td>
+                        <td>Python scripting, data structures</td>
+                        <td>LeetCode Easy/Medium (data structures)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>System Design</strong></td>
+                        <td>Design data pipeline, warehouse schema</td>
+                        <td>This course! + read case studies</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Behavioral</strong></td>
+                        <td>Past projects, conflict resolution, teamwork</td>
+                        <td>STAR method, prepare stories</td>
+                    </tr>
+                </table>
+
+                <h3>Common Interview Questions</h3>
+
+                <div class="code-block">SQL (80% of interviews ask this):
+1. "Find second highest salary" (window functions)
+2. "Find users who haven't made purchase" (LEFT JOIN, NULL)
+3. "Calculate running total" (SUM OVER)
+4. "Deduplicate records" (ROW_NUMBER, PARTITION BY)
+5. "Find top 3 products per category" (RANK, PARTITION BY)
+
+System Design (senior roles):
+1. "Design a data pipeline for e-commerce analytics"
+2. "Build real-time fraud detection system"
+3. "Design data warehouse for SaaS company"
+4. "Handle 1 million events per second"
+
+Python (mid-level+):
+1. "Parse JSON API response, load to database"
+2. "Read CSV, clean data, write to Parquet"
+3. "Implement retry logic for API calls"
+
+Cloud (varies):
+1. "How would you migrate 10TB data to cloud?"
+2. "Compare Redshift vs BigQuery"
+3. "Design disaster recovery strategy"</div>
+
+                <h2>Companies & Culture</h2>
+
+                <h3>Types of Data Engineering Roles</h3>
+
+                <div class="code-block">1. Product Analytics (Consumer Tech)
+   Companies: Meta, Uber, Airbnb, Netflix
+   Work: Build pipelines for product metrics (DAU, retention)
+   Stakeholders: Product managers, analysts
+   Tech: Often real-time (Kafka, Flink)
+   Pace: Fast (ship features weekly)
+   Pay: Highest ($$$)
+
+2. Business Intelligence (Enterprise)
+   Companies: Banks, retail, healthcare
+   Work: Data warehouses, BI dashboards, reports
+   Stakeholders: Executives, business teams
+   Tech: Traditional (SQL, Tableau, ETL)
+   Pace: Slower (quarterly projects)
+   Pay: Mid-range ($$)
+
+3. Data Platform (Infrastructure)
+   Companies: All big tech companies
+   Work: Build data infrastructure (tools other engineers use)
+   Stakeholders: Other data engineers, scientists
+   Tech: Cutting edge (Spark, Airflow, custom tools)
+   Pace: Medium (foundational work)
+   Pay: High ($$$)
+
+4. ML Engineering (AI/ML Heavy)
+   Companies: AI startups, tech companies
+   Work: Feature pipelines, model deployment, data for ML
+   Stakeholders: Data scientists, ML engineers
+   Tech: Python-heavy (Spark, TensorFlow data)
+   Pace: Fast (research-driven)
+   Pay: Highest ($$$$)</div>
+
+                <h3>How to Choose a Company</h3>
+
+                <table class="table">
+                    <tr>
+                        <th>Company Type</th>
+                        <th>Pros</th>
+                        <th>Cons</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Big Tech (FAANG)</strong></td>
+                        <td>High pay, great benefits, resume boost, cutting-edge tech</td>
+                        <td>Hard to get in, bureaucracy, narrow scope</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Startup (< 50 people)</strong></td>
+                        <td>Huge impact, broad scope, equity upside, fast pace</td>
+                        <td>Lower pay, long hours, equity might be worthless</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Mid-size (500-5000)</strong></td>
+                        <td>Balance of impact & stability, decent pay, good learning</td>
+                        <td>Less prestigious, mid-tier tech</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Enterprise (10K+)</strong></td>
+                        <td>Stability, good work-life balance, benefits</td>
+                        <td>Slow pace, legacy tech, bureaucracy</td>
+                    </tr>
+                </table>
+
+                <h2>Continuous Learning</h2>
+
+                <h3>Stay Current (Tech Changes Fast)</h3>
+
+                <div class="code-block">Read Weekly:
+- Data Engineering Weekly (newsletter)
+- Hacker News (news.ycombinator.com)
+- Company engineering blogs (Netflix, Uber, Airbnb)
+
+Follow These People on Twitter/LinkedIn:
+- Maxime Beauchemin (Airflow creator)
+- Tristan Handy (dbt creator)
+- Joe Reis (Data Engineering book author)
+
+Listen to Podcasts:
+- Data Engineering Podcast
+- Analytics Engineering Podcast
+
+Attend Conferences (or watch talks):
+- Data Council
+- Spark Summit
+- AWS re:Invent
+
+Contribute to Open Source:
+- Fix bug in Airflow
+- Add feature to dbt
+- Write documentation
+
+Side Projects:
+- Build something you'd use
+- Scrape data, analyze, share insights
+- Write blog posts about what you learn</div>
+
+                <h2>Common Career Mistakes</h2>
+
+                <h3>Mistake 1: Tool Chasing</h3>
+                <div class="code-block">WRONG: "I need to learn Spark, Kafka, Flink, dbt, Airflow, Dagster..."
+
+RIGHT: "I'll master SQL and Python first, then learn tools as needed"
+
+Reality:
+- Tools change every 2-3 years
+- Fundamentals (SQL, data modeling) last decades
+- Companies use different tools
+- Strong fundamentals → Learn any tool in 2 weeks</div>
+
+                <h3>Mistake 2: Not Talking to Users</h3>
+                <div class="code-block">BAD: Build perfect pipeline, nobody uses it
+
+GOOD: Talk to analysts/PMs → Understand needs → Build what's needed
+
+Example:
+Engineer spent 3 months building real-time pipeline
+Stakeholders actually needed daily batch (real-time not required)
+Wasted effort
+
+Always: Validate requirements before building</div>
+
+                <h3>Mistake 3: Over-Engineering</h3>
+                <div class="code-block">WRONG: Build Kafka + Spark streaming for 1000 events/day
+
+RIGHT: Batch job in Python (runs in 10 seconds)
+
+Rule: Use simplest solution that works
+Can always add complexity later
+Premature optimization = wasted time</div>
+
+                <h2>Work-Life Balance Reality</h2>
+
+                <div class="code-block">Typical week as Data Engineer:
+
+Good weeks (50%):
+- 40 hours
+- Build new features
+- Solve interesting problems
+- Learn new things
+
+Bad weeks (30%):
+- 50-60 hours
+- Pipeline breaks at 2 AM (on-call)
+- Data quality issues
+- Firefighting
+
+Great weeks (20%):
+- 30 hours
+- Pipelines running smoothly
+- Mostly code reviews and planning
+- Time for learning
+
+On-call reality:
+- Most companies: 1 week every 6-8 weeks
+- Expectation: Respond within 30 min
+- Frequency: 2-3 pages per week
+- Impact: Stressful but manageable
+
+Work from home:
+- Most data engineering is remote-friendly
+- 80% of companies allow hybrid/remote
+- Less collaboration needed than software eng</div>
+
+                <h2>Final Advice from Someone Who's Been There</h2>
+
+                <ul>
+                    <li><strong>Start simple:</strong> Don't try to learn everything at once. SQL + Python + one cloud platform is enough to get first job.</li>
+                    <li><strong>Build projects:</strong> GitHub portfolio > certifications > resume keywords.</li>
+                    <li><strong>Network:</strong> Data engineering community is small and helpful. Join Slack groups, go to meetups.</li>
+                    <li><strong>Write:</strong> Blog about what you learn. Teaches you deeply, helps others, shows expertise.</li>
+                    <li><strong>Be patient:</strong> First job is hardest. After 1-2 years experience, recruiters will find you.</li>
+                    <li><strong>Prioritize learning:</strong> Early career, choose companies where you'll learn most (not highest pay).</li>
+                    <li><strong>Ask questions:</strong> Nobody knows everything. Admitting "I don't know" is strength, not weakness.</li>
+                    <li><strong>Document everything:</strong> Your future self (and teammates) will thank you.</li>
+                    <li><strong>Focus on impact:</strong> Doesn't matter how elegant your code if nobody uses it.</li>
+                    <li><strong>Enjoy the journey:</strong> Data engineering is challenging but rewarding. You're building systems that power decisions. That's pretty cool.</li>
+                </ul>
+
+                <h2>Next Steps After This Course</h2>
+
+                <div class="code-block">Immediate (This Week):
+1. Pick one cloud platform (AWS or GCP)
+2. Sign up for free tier
+3. Build first pipeline (any public data source)
+
+Short-term (This Month):
+1. Complete LeetCode SQL problems (50 easy, 25 medium)
+2. Build 3 portfolio projects
+3. Write blog post about what you learned
+4. Join data engineering Slack communities
+
+Medium-term (3 Months):
+1. Get cloud certification (AWS Data Analytics or GCP Data Engineer)
+2. Contribute to open source (Airflow, dbt)
+3. Apply to 5-10 jobs per week
+4. Network with data engineers on LinkedIn
+
+Long-term (1 Year):
+1. Get first data engineering job (or transition internally)
+2. Learn company's data stack deeply
+3. Take on increasingly complex projects
+4. Mentor junior engineers
+5. Build specialization (streaming, ML, data platform)
+
+You got this! 🚀</div>
+            \`,
+            interviews: [
+                {
+                    question: "What's the difference between a Data Engineer, Data Analyst, and Data Scientist?",
+                    answer: "Data Analyst: Answers business questions using existing data. Tools: SQL, Excel, Tableau. Output: Dashboards, reports. Example: 'Why did sales drop 10% last month?' Data Scientist: Builds predictive models, runs experiments. Tools: Python (scikit-learn, TensorFlow), statistics. Output: ML models, A/B test results. Example: 'Which users will churn next month?' Data Engineer: Builds infrastructure for data. Tools: SQL, Python, Airflow, Spark. Output: Pipelines, data warehouses. Example: 'Make sales data available for analysis.' Flow: Engineers build pipelines → Analysts use data → Scientists build models on data. Career: Analyst is easiest entry (less technical). Engineer needs coding. Scientist needs stats/ML. Pay: Similar at senior levels ($150K-$250K). Demand: Data Engineer highest (2:1 ratio vs scientists)."
+                },
+                {
+                    question: "How important are certifications for getting a data engineering job?",
+                    answer: "Certifications help but aren't required. Reality: 1) For first job: Helpful (proves you know basics when no experience). 2) For experienced engineers: Less important (projects and experience matter more). 3) For cloud roles: AWS/GCP certification shows you know platform (good signal). Most valuable: AWS Certified Data Analytics, GCP Professional Data Engineer, dbt Certification. Least valuable: Generic 'Data Science' certificates from random online platforms. Better than certification: GitHub portfolio with 3 real projects. Real hiring: Managers glance at certifications (5 seconds), deep read projects/experience (5 minutes). Recommendation: If entry-level, get cloud cert ($300, 2 weeks study). If experienced, skip unless employer pays. Best ROI: Build projects, not collect certificates."
+                },
+                {
+                    question: "Should I specialize in batch or streaming early in my career?",
+                    answer: "Start with batch, learn streaming later. Why: 1) Batch is 80% of data engineering jobs (most companies don't need real-time). 2) Batch is simpler (easier to debug, reason about). 3) Batch fundamentals transfer to streaming (reverse is harder). 4) Streaming jobs need more experience (junior roles are rare). Timeline: Years 1-2: Master batch (SQL, Airflow, data warehousing). Years 3-5: Add streaming if needed (Kafka, Flink). Exception: If joining company that's streaming-heavy (fintech, adtech), learn both. Real market: 10 batch jobs for every 1 streaming job. Most 'real-time' requirements can be solved with fast batch (every 5 minutes). True streaming (sub-second latency) is rare. Advice: Be T-shaped - broad in batch, specialize in streaming later if interested."
+                },
+                {
+                    question: "How do I negotiate a data engineering job offer?",
+                    answer: "Negotiation is expected, don't skip it. Research: 1) Check levels.fyi for your level/location. 2) Know market rate (don't anchor to current salary). Strategy: 1) Get multiple offers (huge leverage - 'Company X offered $Y'). 2) Negotiate total comp (base + bonus + equity), not just base. 3) Ask for specific number (not 'Can you do better?'). 4) Be pleasant but firm ('I'm excited about role, but need $X to move forward'). 5) Negotiate over email (gives time to think). What to negotiate: Base salary (+$10K is standard ask), Signing bonus (easier than base), Equity (if startup), Start date (if need time), Remote work (if hybrid). Mistakes: Accepting first offer (always negotiate), Revealing current salary (say 'I'm looking for $X'), Being aggressive (polite persistence wins). Real result: 80% of candidates who negotiate get 5-15% more. That's $5K-$20K for one conversation."
+                },
+                {
+                    question: "What's the biggest difference between working at a startup vs big tech as a data engineer?",
+                    answer: "Startup (< 200 people): Pros: Huge scope (you build everything), Fast impact (ship in days), Wear many hats (data eng + analytics + some ML), Direct access to leadership, Equity upside. Cons: Scrappy (manual work, not perfect), Chaos (priorities change weekly), Longer hours (50-60/wk), Lower pay ($100K-$140K), Risk (startup might fail). Big Tech (FAANG): Pros: High pay ($150K-$350K), Cutting-edge tech (Kafka, Flink), Mentorship (senior engineers), Brand name (resume boost), Stability. Cons: Narrow scope (one piece of pipeline), Slow (weeks for code review), Bureaucracy (meetings), Politics (promotion committees). Recommendation: Early career (0-3 years): Big tech or mid-size (learn best practices). Mid career (3-7 years): Startup (use skills, build from scratch, equity upside). Late career (7+ years): Wherever you want (you have leverage). Reality: Most people alternate (2 years startup, 3 years big tech, repeat)."
+                }
+            ]
         }
     ]
 };
