@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Courses Load</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <h1>Testing Course Data Load</h1>
+    <div id="status">Loading...</div>
+    <pre id="debug"></pre>
+    
+    <script>
+        console.log('Starting test...');
+        
+        // Load courses.js
+        const script = document.createElement('script');
+        script.src = 'courses.js?' + Date.now(); // Cache bust
+        script.onload = function() {
+            console.log('Script loaded');
+            const status = document.getElementById('status');
+            const debug = document.getElementById('debug');
+            
+            if (typeof courses !== 'undefined') {
+                status.textContent = '✓ Courses loaded successfully!';
+                status.style.color = 'green';
+                debug.textContent = 'Course IDs: ' + Object.keys(courses).join(', ') + '\n\n';
+                debug.textContent += 'Total modules in system-design: ' + courses['system-design'].modules.length;
+            } else {
+                status.textContent = '✗ Courses NOT defined';
+                status.style.color = 'red';
+                debug.textContent = 'Error: courses object is not defined';
+            }
+        };
+        script.onerror = function(e) {
+            console.error('Script error:', e);
+            document.getElementById('status').textContent = '✗ Error loading script';
+            document.getElementById('status').style.color = 'red';
+        };
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>

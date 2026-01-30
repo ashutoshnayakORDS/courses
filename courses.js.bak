@@ -8575,13 +8575,13 @@ Client: Refresh token → Get new token → Retry request
 // ✅ ROBUST: Include token refresh logic
 async function apiCall(url) {
   let response = await fetch(url, {
-    headers: { Authorization: \`Bearer \${token}\` }
+    headers: { Authorization: `Bearer ${token}` }
   });
 
   if (response.status === 401) {
     token = await refreshToken();  // Get new token
     response = await fetch(url, {  // Retry with new token
-      headers: { Authorization: \`Bearer \${token}\` }
+      headers: { Authorization: `Bearer ${token}` }
     });
   }
 
@@ -8676,7 +8676,7 @@ app.put('/api/users/:id', async (req, res) => {
   await updateUser(req.params.id, req.body);
 
   // Invalidate cache
-  await cache.del(\`user:\${req.params.id}\`);
+  await cache.del(`user:${req.params.id}`);
 
   res.json({ success: true });
 });
@@ -8707,8 +8707,8 @@ All 1000 hit database (cache miss) → Database overload!
 
 // ✅ SOLUTION: Cache stampede protection
 async function getUser(id) {
-  const cacheKey = \`user:\${id}\`;
-  const lockKey = \`lock:user:\${id}\`;
+  const cacheKey = `user:${id}`;
+  const lockKey = `lock:user:${id}`;
 
   // Try to get from cache
   let user = await cache.get(cacheKey);
@@ -8746,7 +8746,7 @@ app.put('/api/users/:id', async (req, res) => {
 
   // Broadcast invalidation to all servers
   await pubsub.publish('cache:invalidate', {
-    key: \`user:\${req.params.id}\`
+    key: `user:${req.params.id}`
   });
 
   res.json({ success: true });
@@ -21378,7 +21378,7 @@ function generateErrorDocs() {
 // Validate error codes in code
 function createError(code, details) {
   if (!ErrorCodes[code]) {
-    throw new Error(\`Unknown error code: \${code}\`);
+    throw new Error(`Unknown error code: ${code}`);
   }
   return {
     ...ErrorCodes[code],
@@ -23956,7 +23956,7 @@ function authenticateToken(req, res, next) {
 
 // Protected route
 app.get('/api/protected', authenticateToken, (req, res) => {
-  res.json({ message: \`Hello \${req.user.username}\` });
+  res.json({ message: `Hello ${req.user.username}` });
 });</div>
 
                             <h3>Token Storage on Client</h3>
@@ -29784,7 +29784,7 @@ app.post('/webhooks/stripe', (req, res) => {
   } catch (err) {
     // ❌ Signature invalid, reject
     console.log('Webhook signature verification failed:', err.message);
-    return res.status(400).send(\`Webhook Error: \${err.message}\`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 });
 
@@ -29921,12 +29921,12 @@ async function sendWebhook(url, payload, attempt = 1) {
     // Retry on 5xx errors, not 4xx
     if (response.status >= 500 && attempt < maxAttempts) {
       const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s, 16s, 32s
-      console.log(\`Retry \${attempt} after \${delay}ms\`);
+      console.log(`Retry ${attempt} after ${delay}ms`);
       await sleep(delay);
       return sendWebhook(url, payload, attempt + 1);
     }
 
-    throw new Error(\`HTTP \${response.status}\`);
+    throw new Error(`HTTP ${response.status}`);
   } catch (error) {
     if (attempt < maxAttempts) {
       const delay = Math.pow(2, attempt) * 1000;
@@ -29975,7 +29975,7 @@ webhookQueue.process(async (job) => {
     // Notify webhook owner
     await sendEmail(webhook.ownerEmail, {
       subject: 'Webhook delivery failed',
-      body: \`Your webhook \${webhook.url} failed after \${job.attemptsMade} attempts\`
+      body: `Your webhook ${webhook.url} failed after ${job.attemptsMade} attempts`
     });
   }
 });
