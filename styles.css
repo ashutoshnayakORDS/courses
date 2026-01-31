@@ -81,7 +81,12 @@ body.dark-mode .nav-buttons button {
   cursor: not-allowed;
 }
 
-/* Home icon responsive sizing */
+/* Hide home button with icon */
+#home-btn {
+  display: none;
+}
+
+/* Home icon responsive sizing (not used now that button is hidden) */
 .home-icon {
   object-fit: cover;
   object-position: center;
@@ -342,6 +347,7 @@ body.dark-mode .sidebar {
 .sidebar-content {
   padding: 1rem;
   padding-top: 5rem;
+  padding-bottom: 6rem;  /* Add space for bottom navbar on mobile */
 }
 
 .sidebar-module {

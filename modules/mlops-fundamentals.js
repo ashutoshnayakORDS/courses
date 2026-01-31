@@ -8,7 +8,7 @@ const mlopsFundamentals = {
             id: 'what-is-mlops',
             title: 'What is MLOps? The Reality Check',
             duration: '50 min',
-            content: \`
+            content: `
                 <h2>MLOps is NOT What You Think</h2>
                 <p>Let me be brutally honest: <strong>MLOps is 90% engineering, 10% machine learning.</strong> If you love tuning hyperparameters and experimenting with models, this might not be for you. But if you love building reliable systems that run 24/7 at scale, welcome home.</p>
 
@@ -881,7 +881,7 @@ Real examples:
                 </ol>
 
                 <p>Each lesson includes: Real-world examples, Code samples, Architecture patterns, War stories, Best practices, Common pitfalls, and Interview questions.</p>
-            \`,
+            `,
             interviews: [
                 {
                     question: "What's the difference between MLOps and DevOps?",
@@ -909,7 +909,7 @@ Real examples:
             id: 'feature-engineering-pipeline',
             title: 'Feature Engineering: The 80% of ML Nobody Talks About',
             duration: '55 min',
-            content: \`
+            content: `
                 <h2>The Uncomfortable Truth About ML</h2>
                 <p><strong>"Features matter more than algorithms."</strong> - Every ML practitioner ever (after learning the hard way)</p>
 
@@ -1414,7 +1414,7 @@ Store in model registry:
                 </ul>
 
                 <p><strong>Remember:</strong> "Garbage in, garbage out" is doubly true for ML. Amazing model with bad features = useless. Okay model with great features = production success.</p>
-            \`,
+            `,
             interviews: [
                 {
                     question: "How do you ensure training-serving consistency in features?",
@@ -1442,7 +1442,7 @@ Store in model registry:
             id: 'model-serving-deployment',
             title: 'Model Serving: Fast, Reliable Predictions at Scale',
             duration: '60 min',
-            content: \`
+            content: `
                 <h2>The Hardest Part of ML: Actually Serving Predictions</h2>
 
                 <p>Training a model takes days. Serving it reliably takes months. Here's what nobody tells you:</p>
@@ -2008,7 +2008,7 @@ Now first real prediction: 50ms (not 5 seconds)</div>
                     <li>✅ <strong>Canary deployment</strong> - Gradual rollout</li>
                     <li>✅ <strong>Auto-scaling</strong> - Handle traffic spikes</li>
                 </ul>
-            \`,
+            `,
             interviews: [
                 {
                     question: "What's the difference between batch scoring and real-time serving?",
@@ -2036,7 +2036,7 @@ Now first real prediction: 50ms (not 5 seconds)</div>
             id: 'ml-monitoring',
             title: 'Monitoring ML Models: What Can Go Wrong, Will Go Wrong',
             duration: '55 min',
-            content: \`
+            content: `
                 <h2>Why ML Monitoring is Different (And Harder)</h2>
 
                 <p>Regular software: Code doesn't change unless you deploy. ML models: Silently degrade every day.</p>
@@ -2502,13 +2502,11 @@ Result:
                 </ul>
 
                 <p><strong>Remember:</strong> In traditional software, if it compiles, it probably works. In ML, if it compiles, you have no idea if it works. Monitor everything!</p>
-            \`,
+            `,
             interviews: [
                 {
                     question: "How do you detect data drift in production ML models?",
-                    answer: "Statistical tests comparing production data to training data. For numerical features: Kolmogorov-Smirnov test (KS test), Jensen-Shannon divergence. For categorical: Chi-squared test, Population Stability Index (PSI). Implementation: Weekly batch job compares last 7 days production data to training data. from scipy.stats import ks_2samp; stat, pval = ks_2samp(train_data['age'], prod_data['age']); if pval < 0.05: alert('Drift detected'). Thresholds: p<0.05 (significant), p<0.01 (severe). Tools: Evidently AI (automatic drift detection), Wh
-
-yLabs, Great Expectations. Real example: E-commerce model, detected drift in 'hour_of_day' feature during COVID (shopping patterns changed), retrained model with recent data, accuracy restored 87%→93%. Prevention: Monitor all features, not just model accuracy. Drift can happen without immediate accuracy drop. Action: Investigate cause (seasonal? permanent?), retrain if drift persistent >2 weeks, sometimes drift is temporary (holiday season), don't overreact."
+                    answer: "Statistical tests comparing production data to training data. For numerical features: Kolmogorov-Smirnov test (KS test), Jensen-Shannon divergence. For categorical: Chi-squared test, Population Stability Index (PSI). Implementation: Weekly batch job compares last 7 days production data to training data. from scipy.stats import ks_2samp; stat, pval = ks_2samp(train_data['age'], prod_data['age']); if pval < 0.05: alert('Drift detected'). Thresholds: p<0.05 (significant), p<0.01 (severe). Tools: Evidently AI (automatic drift detection), WhyLabs, Great Expectations. Real example: E-commerce model, detected drift in 'hour_of_day' feature during COVID (shopping patterns changed), retrained model with recent data, accuracy restored 87%→93%. Prevention: Monitor all features, not just model accuracy. Drift can happen without immediate accuracy drop. Action: Investigate cause (seasonal? permanent?), retrain if drift persistent >2 weeks, sometimes drift is temporary (holiday season), don't overreact."
                 },
                 {
                     question: "What's the difference between data drift and concept drift?",
@@ -2532,7 +2530,7 @@ yLabs, Great Expectations. Real example: E-commerce model, detected drift in 'ho
             id: 'cicd-for-ml',
             title: 'CI/CD for ML: Automate Everything',
             duration: '50 min',
-            content: \`
+            content: `
                 <h2>Why Traditional CI/CD Isn't Enough for ML</h2>
 
                 <div class="code-block">Traditional software CI/CD:
@@ -2697,7 +2695,7 @@ jobs:
     steps:
       - name: Deploy to Staging
         run: |
-          aws sagemaker create-model --model-name fraud-v${{ github.run_number }}
+          aws sagemaker create-model --model-name fraud-v\${{ github.run_number }}
           # Deploys to SageMaker staging endpoint
 
       - name: Run Smoke Tests
@@ -3000,7 +2998,7 @@ Don't stay at Level 0 with 20 models (chaos)</div>
                     <li>✅ <strong>Monitoring</strong> - Continuous model + business metrics</li>
                     <li>✅ <strong>Alerts</strong> - Page on-call for critical issues</li>
                 </ul>
-            \`,
+            `,
             interviews: [
                 {
                     question: "How is CI/CD for ML different from traditional software CI/CD?",
@@ -3028,7 +3026,7 @@ Don't stay at Level 0 with 20 models (chaos)</div>
             id: 'mlops-career',
             title: 'Building an MLOps Career: Real Talk',
             duration: '40 min',
-            content: \`
+            content: `
                 <h2>The MLOps Career Landscape</h2>
 
                 <p>MLOps is the hottest role in ML right now. Why? Because everyone trained models in school. Nobody learned how to deploy them in production.</p>
@@ -3360,7 +3358,7 @@ Job titles to search:
                 <p><strong>The opportunity:</strong> MLOps is where DevOps was 10 years ago. High demand, short supply, companies willing to train. Get in now while it's still early. In 5 years, there will be MLOps bootcamps and oversaturation. But today? You have a window. Use it.</p>
 
                 <p>Good luck! 🚀</p>
-            \`,
+            `,
             interviews: [
                 {
                     question: "What's the difference between ML Engineer and MLOps Engineer roles?",
