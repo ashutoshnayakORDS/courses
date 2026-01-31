@@ -33169,5 +33169,19 @@ The API Team
                 ]
             }
         ]
+    },
+    'mlops': {
+        title: 'MLOps Fundamentals',
+        duration: '10 weeks',
+        level: 'Intermediate',
+        modules: [
+            // Module loaded from modules/mlops-fundamentals.js
+            (typeof mlopsFundamentals !== 'undefined' ? mlopsFundamentals : {
+                title: 'MLOps Fundamentals',
+                lessons: [
+                    { id: 'what-is-mlops', title: 'What is MLOps?', duration: '50 min', content: '<p>Loading...</p>', interviews: [] }
+                ]
+            })
+        ]
     }
 };
