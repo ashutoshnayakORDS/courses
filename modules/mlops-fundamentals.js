@@ -6,44 +6,47 @@ const mlopsFundamentals = {
     lessons: [
         {
             id: 'what-is-mlops',
-            title: 'What is MLOps? The Reality Check',
+            title: 'What is MLOps? Understanding Production ML',
             duration: '50 min',
             content: `
-                <h2>MLOps is NOT What You Think</h2>
-                <p>Let me be brutally honest: <strong>MLOps is 90% engineering, 10% machine learning.</strong> If you love tuning hyperparameters and experimenting with models, this might not be for you. But if you love building reliable systems that run 24/7 at scale, welcome home.</p>
+                <h2>Understanding MLOps</h2>
+                <p><strong>MLOps (Machine Learning Operations)</strong> is the practice of deploying, monitoring, and maintaining machine learning models in production environments. Unlike traditional software engineering, MLOps deals with three moving parts: code, data, and models.</p>
 
-                <h3>The Harsh Reality I Learned (2018)</h3>
-                <div class="code-block">My first ML "deployment" disaster:
+                <p>Key insight: <strong>MLOps is 90% engineering, 10% machine learning.</strong> Success in this field requires strong software engineering skills combined with understanding of ML concepts.</p>
 
-Background:
-- Data scientist built fraud detection model
-- Jupyter notebook: 95% accuracy (amazing!)
-- Took 6 months to train, lots of feature engineering
-- Boss: "Ship it to production by Friday"
+                <h3>Case Study: First ML Deployment Challenges</h3>
+                <div class="code-block">Common ML deployment scenario:
 
-What I thought deployment meant:
-1. Copy code from notebook
-2. Run on server
-3. Done!
+Initial Setup:
+- Data scientist develops fraud detection model
+- Jupyter notebook shows 95% accuracy
+- 6 months of feature engineering and experimentation
+- Project manager: "Deploy to production by Friday"
 
-What actually happened:
-Monday: Copied model.pkl file to production server
-Tuesday: Model serving API crashed (pickle version mismatch)
-Wednesday: Fixed pickle, but predictions took 5 seconds each (need <100ms)
-Thursday: Optimized, but model used 16GB RAM (server had 8GB)
-Friday: Got it running, but model predicted fraud on 90% of transactions
-         (training data was from 2017, now 2018 - totally different patterns)
-Weekend: CEO email: "Why are we blocking all payments?"
-         Emergency meeting. Rolled back. Project "postponed indefinitely"
+Common assumptions about deployment:
+1. Copy model file to server
+2. Write simple API endpoint
+3. Start serving predictions
 
-Time spent:
-- Data scientist: 6 months building model
-- Me: 1 week trying to deploy
-- Result: $0 business value, lots of embarrassment
+Reality of production deployment:
+Day 1: Model file deployed to production server
+Day 2: Serving API crashes - pickle version mismatch between environments
+Day 3: Version fixed, but prediction latency is 5 seconds (requirement: <100ms)
+Day 4: Code optimized, but model requires 16GB RAM (server has 8GB)
+Day 5: Infrastructure upgraded, model runs but predicts 90% transactions as fraud
+       Root cause: Training data from 2017, production data patterns from 2018
+Day 6: Emergency rollback after CEO inquiry about blocked payments
+       Project status: Indefinitely postponed
 
-LESSON: A model in a notebook is worth $0.
-        A model in production making decisions is worth millions.
-        MLOps is the bridge between those two states.</div>
+Analysis:
+- Development time: 6 months
+- Deployment attempts: 1 week
+- Business value delivered: $0
+- Key lesson: Production ML requires engineering infrastructure
+
+CORE PRINCIPLE: A model achieving 95% accuracy in a notebook delivers zero business value.
+                A model achieving 85% accuracy running reliably in production
+                delivers millions in value. MLOps bridges this gap.</div>
 
                 <h2>What MLOps Actually Is</h2>
 
@@ -333,11 +336,11 @@ Found issue in 30 minutes, rolled back feature version
 
 This is why versioning EVERYTHING matters</div>
 
-                <h2>War Story: Uber's ML Platform Outage (2019)</h2>
+                <h2>Real-World Case Study: Uber's ML Platform Outage (2019)</h2>
 
-                <p>A friend who worked on Uber's Michelangelo platform told me this story:</p>
+                <p>This incident at Uber's Michelangelo platform demonstrates the critical importance of production ML infrastructure:</p>
 
-                <div class="code-block">The Incident (September 2019):
+                <div class="code-block">Incident Overview (September 2019):
 
 Context:
 - Uber runs 1000s of ML models in production
