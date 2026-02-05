@@ -37,7 +37,15 @@ function showLesson(courseId, moduleIdx, lessonIdx) {
     currentCourseId = courseId;
     currentModule = moduleIdx;
     currentLessonIdx = lessonIdx;
-    allLessons = currentCourse.modules[moduleIdx].lessons;
+
+    // Flatten all lessons across all modules for continuous navigation
+    allLessons = [];
+    currentCourse.modules.forEach((module) => {
+        module.lessons.forEach((lesson) => {
+            allLessons.push(lesson);
+        });
+    });
+
     renderLesson();
     renderCourseMenu(courseId);
     showPage('lesson-page');

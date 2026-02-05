@@ -46,8 +46,15 @@ function renderContents(courseId) {
 }
 
 function renderLesson() {
-    const lesson = allLessons[currentLessonIdx];
-    const progress = ((currentLessonIdx + 1) / allLessons.length) * 100;
+    // Calculate global lesson index across all modules
+    let globalLessonIdx = 0;
+    for (let m = 0; m < currentModule; m++) {
+        globalLessonIdx += currentCourse.modules[m].lessons.length;
+    }
+    globalLessonIdx += currentLessonIdx;
+
+    const lesson = allLessons[globalLessonIdx];
+    const progress = ((globalLessonIdx + 1) / allLessons.length) * 100;
     const courseId = Object.keys(courses).find(k => courses[k] === currentCourse);
 
     // Render sidebar
@@ -65,18 +72,38 @@ function renderLesson() {
 
     let navHtml = '';
 
-    if (currentLessonIdx > 0) {
-        navHtml += `<button onclick="showLesson('${courseId}', ${currentModule}, ${currentLessonIdx - 1})">← Previous</button>`;
+    // Previous button
+    if (globalLessonIdx > 0) {
+        const prevPosition = findModuleAndLessonIdx(globalLessonIdx - 1);
+        navHtml += `<button onclick="showLesson('${courseId}', ${prevPosition.moduleIdx}, ${prevPosition.lessonIdx})">← Previous</button>`;
     }
 
-    navHtml += `<div class="lesson-progress">Lesson ${currentLessonIdx + 1} / ${allLessons.length}</div>`;
+    navHtml += `<div class="lesson-progress">Lesson ${globalLessonIdx + 1} / ${allLessons.length}</div>`;
 
-    if (currentLessonIdx < allLessons.length - 1) {
-        navHtml += `<button onclick="showLesson('${courseId}', ${currentModule}, ${currentLessonIdx + 1})">Next →</button>`;
+    // Next button
+    if (globalLessonIdx < allLessons.length - 1) {
+        const nextPosition = findModuleAndLessonIdx(globalLessonIdx + 1);
+        navHtml += `<button onclick="showLesson('${courseId}', ${nextPosition.moduleIdx}, ${nextPosition.lessonIdx})">Next →</button>`;
     }
 
     document.getElementById('lesson-nav').innerHTML = navHtml;
     document.getElementById('progress-fill').style.width = progress + '%';
+}
+
+// Helper function to find module and lesson index from global index
+function findModuleAndLessonIdx(globalIdx) {
+    let count = 0;
+    for (let moduleIdx = 0; moduleIdx < currentCourse.modules.length; moduleIdx++) {
+        const moduleLessons = currentCourse.modules[moduleIdx].lessons.length;
+        if (count + moduleLessons > globalIdx) {
+            return {
+                moduleIdx: moduleIdx,
+                lessonIdx: globalIdx - count
+            };
+        }
+        count += moduleLessons;
+    }
+    return { moduleIdx: 0, lessonIdx: 0 };
 }
 
 function renderSidebar(courseId) {

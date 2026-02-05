@@ -1069,6 +1069,184 @@ Netflix uses DOZENS of models:
 - One for "Trending in your region"
 Each model specialized for its purpose.</div>
 
+                <h2>Tracking Your Work: Versioning and Experiments</h2>
+
+                <h3>The Problem: "Which Model Is in Production?"</h3>
+                <div class="code-block">Real scenario at a company:
+
+Engineer: "The model is performing badly in production."
+Manager: "Which model version is running?"
+Engineer: "Uh... model_final_v3_actually_final.pkl?"
+Manager: "What data was it trained on?"
+Engineer: "I think... last month's data? Or was it two months ago?"
+Manager: "What were the hyperparameters?"
+Engineer: "Let me check... uh... I can't find my notes."
+
+This happens ALL THE TIME in ML teams.
+Without proper tracking, you have NO IDEA what's running in production!</div>
+
+                <h3>Model Versioning: Tracking Every Model You Train</h3>
+                <div class="code-block">Just like code needs Git, models need versioning.
+
+Every time you train a model, save:
+1. The model file itself (.pkl, .h5, .pt)
+2. When it was trained (timestamp)
+3. What data it was trained on (data version)
+4. What code was used (Git commit hash)
+5. Hyperparameters (learning rate, etc.)
+6. Performance metrics (accuracy, precision, recall)
+7. Who trained it
+
+Example model version:
+┌─────────────────────────────────────┐
+│  Model: spam-detector               │
+│  Version: v2.3.1                    │
+│  Trained: 2024-01-15 10:30 AM       │
+│  Data: emails_jan2024_cleaned.csv   │
+│  Code: git commit abc123f           │
+│  Accuracy: 97.2%                    │
+│  Trained by: sarah@company.com      │
+│  Status: In Production ✓            │
+└─────────────────────────────────────┘
+
+Now everyone knows EXACTLY what's running!</div>
+
+                <h3>Model Registry: The Central Repository</h3>
+                <div class="code-block">A Model Registry is like GitHub, but for ML models.
+
+Popular model registries:
+- MLflow Model Registry (most popular, open source)
+- Weights & Biases (W&B)
+- AWS SageMaker Model Registry
+- Azure ML Model Registry
+
+What it stores:
+┌────────────────────────────────────────┐
+│         spam-detector Models          │
+├────────────────────────────────────────┤
+│  v1.0  →  Archived (old)              │
+│  v2.0  →  Staging (testing)           │
+│  v2.1  →  Staging (testing)           │
+│  v2.2  →  Production ✓ (currently live)│
+│  v2.3  →  Development (training)      │
+└────────────────────────────────────────┘
+
+When you deploy v2.3 to production:
+1. Mark v2.3 as "Production"
+2. Mark v2.2 as "Archived"
+3. Everyone can see what changed
+4. Easy to rollback to v2.2 if v2.3 fails
+
+The registry answers:
+- What model is in production?
+- What models have we trained?
+- How did performance change over time?
+- Can we roll back to a previous version?</div>
+
+                <h3>MLflow Example: Tracking a Model</h3>
+                <div class="code-block">Simple Python example using MLflow:
+
+import mlflow
+
+# Start tracking this experiment
+mlflow.start_run()
+
+# Log parameters (hyperparameters)
+mlflow.log_param("learning_rate", 0.01)
+mlflow.log_param("num_trees", 100)
+
+# Train your model (your code here)
+model = train_random_forest(data)
+
+# Log metrics (performance)
+mlflow.log_metric("accuracy", 0.95)
+mlflow.log_metric("precision", 0.93)
+
+# Save the model to registry
+mlflow.sklearn.log_model(model, "spam_detector")
+
+mlflow.end_run()
+
+Now this model is tracked forever!
+You can view all experiments in MLflow's web UI.</div>
+
+                <h3>Data Versioning: Tracking Training Data</h3>
+                <div class="code-block">Problem: Models are trained on data. Data changes. How do you know which data was used?
+
+Scenario:
+January: Trained model on jan_data.csv → 95% accuracy
+March: Retrained on mar_data.csv → 87% accuracy
+
+What changed in the data?
+Without data versioning → You have NO IDEA
+With data versioning → You can compare and see exactly what changed
+
+Data Version Control (DVC) is like Git for data:
+
+$ dvc add training_data.csv
+$ git add training_data.csv.dvc
+$ git commit -m "Training data for v2.3"
+$ dvc push  # Uploads data to cloud storage
+
+Now your data is versioned alongside your code!
+
+Benefits:
+✓ Reproduce any experiment (same code + same data = same model)
+✓ Compare different data versions
+✓ Roll back to previous data if needed
+✓ Team members can access exact data you used</div>
+
+                <h3>Experiment Tracking: Comparing Models Side-by-Side</h3>
+                <div class="code-block">You train 20 models with different settings.
+Which one was best? Without tracking → you probably forgot!
+
+Experiment tracking tools:
+- MLflow (most popular, free)
+- Weights & Biases (W&B) (beautiful UI)
+- TensorBoard (for deep learning)
+
+What you track per experiment:
+┌────────────────────────────────────────────────────┐
+│  Experiment: Improve Spam Detection                │
+├────────────────────────────────────────────────────┤
+│  Run 1: lr=0.001, trees=50  → accuracy: 94.2%     │
+│  Run 2: lr=0.01,  trees=50  → accuracy: 95.1% ✓   │
+│  Run 3: lr=0.01,  trees=100 → accuracy: 95.3% ✓✓  │
+│  Run 4: lr=0.1,   trees=100 → accuracy: 91.8%     │
+└────────────────────────────────────────────────────┘
+
+Run 3 is the best! Deploy that one.
+
+You can also track:
+- Training time (how long each experiment took)
+- Loss curves (how loss decreased during training)
+- Confusion matrices
+- Sample predictions</div>
+
+                <h3>Putting It All Together: A Complete Workflow</h3>
+                <div class="code-block">Day 1: Train a model
+  → Track experiment in MLflow
+  → Log hyperparameters, metrics, training time
+  → Version the training data with DVC
+  → Save model to Model Registry as v2.4
+
+Day 5: Model v2.4 performs well in staging
+  → Promote v2.4 to "Production" status in registry
+  → Deploy to servers
+  → Start monitoring
+
+Day 30: Accuracy drops from 95% to 88%
+  → Check Model Registry: v2.4 is still in production
+  → Check data version: training data was from December
+  → Current data: January (different patterns!)
+  → Solution: Retrain with January data → create v2.5
+
+Day 32: Deploy v2.5
+  → Mark v2.5 as "Production"
+  → Keep v2.4 available for quick rollback if needed
+
+This is professional MLOps!</div>
+
                 <h2>Summary</h2>
                 <ul style="margin: 1rem 0; margin-left: 2rem;">
                     <li>ML systems have three parts: Training (the kitchen), Serving (the waiter), Monitoring (the health inspector)</li>
@@ -1077,6 +1255,10 @@ Each model specialized for its purpose.</div>
                     <li>Serving can be batch (pre-computed answers) or real-time (computed on demand)</li>
                     <li>Monitoring watches model accuracy, input data, system health, and business metrics</li>
                     <li>Key design decisions: batch vs real-time, how often to retrain, one model vs many</li>
+                    <li>Model versioning tracks every model you train with all metadata (data used, hyperparameters, performance)</li>
+                    <li>Model Registry is the central repository where all models are stored and tracked (which is in production, staging, archived)</li>
+                    <li>Data versioning (DVC) tracks changes in training data, making experiments reproducible</li>
+                    <li>Experiment tracking (MLflow, W&B) helps compare different model runs to find the best one</li>
                 </ul>
 
                 <p>Next lesson: <strong>How to actually deploy and test ML models</strong> — the hands-on implementation side!</p>
@@ -1101,6 +1283,22 @@ Each model specialized for its purpose.</div>
                 {
                     question: "What four things should you monitor in an ML system?",
                     answer: "1) Model accuracy — is it still performing as well as when deployed? 2) Input data quality — is incoming data normal or has something changed? 3) System health — response times, error rates, CPU usage. 4) Business metrics — are users clicking, converting, and generating revenue as expected?"
+                },
+                {
+                    question: "What is a Model Registry and why is it important?",
+                    answer: "A Model Registry is a central repository that tracks all trained models with their metadata (version, training date, data used, hyperparameters, performance). It shows which model is in Production, Staging, or Archived. Essential for answering: 'What model is currently running?' and enabling quick rollbacks when deployments fail. Popular tools: MLflow, Weights & Biases, AWS SageMaker."
+                },
+                {
+                    question: "What information should you track for each model version?",
+                    answer: "For each model version, track: 1) The model file itself, 2) Training timestamp, 3) Data version used for training, 4) Code version (git commit), 5) Hyperparameters, 6) Performance metrics (accuracy, etc.), 7) Who trained it, 8) Current status (Production/Staging/Archived). This makes every model reproducible and debuggable."
+                },
+                {
+                    question: "What is data versioning and why do you need it?",
+                    answer: "Data versioning tracks changes in training data over time, similar to Git for code. Tools like DVC (Data Version Control) let you version datasets, making experiments reproducible. Without it, you can't recreate old models or understand why performance changed. Example: 'Model v2.3 trained on jan_data.csv got 95% accuracy' — with data versioning, you can retrieve that exact dataset later."
+                },
+                {
+                    question: "What is experiment tracking and how does it help?",
+                    answer: "Experiment tracking records every training run with its hyperparameters, metrics, and artifacts. Tools like MLflow and Weights & Biases let you compare runs side-by-side to find the best model. Example: You try 20 different learning rates — experiment tracking shows which one gave the highest accuracy. Without it, you'd forget which settings worked best."
                 }
             ]
         },
@@ -1325,6 +1523,269 @@ Who to contact: sarah@company.com
 Why this matters: Everyone who uses this model
 knows exactly what it does and doesn't do!</div>
 
+                <h2>Optimizing Your Model: Hyperparameter Tuning</h2>
+
+                <h3>What Are Hyperparameters?</h3>
+                <div class="code-block">Hyperparameters are the settings you choose BEFORE training.
+
+The model LEARNS parameters during training (like weights).
+But YOU must choose hyperparameters (like learning rate).
+
+Example hyperparameters:
+- Learning rate: How fast the model learns (0.001? 0.01? 0.1?)
+- Number of trees: In a random forest (50? 100? 500?)
+- Batch size: How many examples to process at once (32? 64? 128?)
+- Number of layers: In a neural network (3? 5? 10?)
+
+Bad hyperparameters → Bad model (even with great data!)
+Good hyperparameters → Good model
+
+Problem: How do you find the best hyperparameters?</div>
+
+                <h3>Method 1: Grid Search (Try Everything)</h3>
+                <div class="code-block">Grid search tries EVERY combination systematically.
+
+Example: Finding best learning rate and number of trees
+
+Learning rates to try: [0.001, 0.01, 0.1]
+Number of trees to try: [50, 100, 200]
+
+Grid search tries ALL 9 combinations:
+┌─────────────────────────────────────────┐
+│ lr=0.001, trees=50   → accuracy: 92.1% │
+│ lr=0.001, trees=100  → accuracy: 93.4% │
+│ lr=0.001, trees=200  → accuracy: 93.8% │
+│ lr=0.01,  trees=50   → accuracy: 94.5% │
+│ lr=0.01,  trees=100  → accuracy: 95.2% ✓│
+│ lr=0.01,  trees=200  → accuracy: 95.1% │
+│ lr=0.1,   trees=50   → accuracy: 91.3% │
+│ lr=0.1,   trees=100  → accuracy: 92.8% │
+│ lr=0.1,   trees=200  → accuracy: 93.1% │
+└─────────────────────────────────────────┘
+
+Best: lr=0.01, trees=100 → 95.2% accuracy
+
+Pros:
+✓ Simple to understand
+✓ Guaranteed to find the best in the grid
+
+Cons:
+✗ VERY slow (3 values × 3 values = 9 trainings)
+✗ Gets exponentially slower with more hyperparameters
+  (4 hyperparameters with 5 values each = 625 trainings!)</div>
+
+                <h3>Method 2: Random Search (Try Randomly)</h3>
+                <div class="code-block">Random search picks hyperparameter combinations randomly.
+
+Instead of trying ALL 625 combinations:
+→ Try 50 random combinations
+→ Pick the best one
+
+Why this works:
+- Most hyperparameters don't matter much
+- A few are VERY important
+- Random search finds good values for important ones faster
+
+Example: 50 random tries
+┌─────────────────────────────────────────┐
+│ Try 1:  lr=0.023, trees=147 → 94.1%    │
+│ Try 2:  lr=0.008, trees=83  → 93.7%    │
+│ Try 3:  lr=0.051, trees=192 → 92.8%    │
+│ ...                                     │
+│ Try 23: lr=0.012, trees=95  → 95.4% ✓  │
+│ ...                                     │
+│ Try 50: lr=0.089, trees=210 → 91.2%    │
+└─────────────────────────────────────────┘
+
+Found 95.4% accuracy in 50 tries (much faster than grid search!)
+
+Pros:
+✓ Much faster than grid search
+✓ Often finds good values quickly
+
+Cons:
+✗ Might miss the absolute best
+✗ Still requires many training runs</div>
+
+                <h3>Method 3: Bayesian Optimization (Smart Search)</h3>
+                <div class="code-block">Bayesian optimization learns from previous tries.
+
+How it works (simplified):
+1. Try a few random combinations
+2. Build a model of "which areas look promising"
+3. Try combinations in promising areas
+4. Update the model
+5. Repeat until satisfied
+
+Example:
+Try 1: lr=0.01, trees=50   → 94.5%
+Try 2: lr=0.1,  trees=200  → 91.3%
+
+Model thinks: "Lower learning rates seem better"
+
+Try 3: lr=0.005, trees=100 → 95.1%  ← Tried a similar area
+Try 4: lr=0.008, trees=120 → 95.3%  ← Even better!
+Try 5: lr=0.007, trees=110 → 95.5%  ← Found it!
+
+Instead of 50 random tries, found great hyperparameters in 5!
+
+Pros:
+✓ MUCH faster than random or grid search
+✓ Learns from each experiment
+✓ Focuses on promising areas
+
+Cons:
+✗ More complex to set up
+✗ Needs special libraries (Optuna, Hyperopt, Ray Tune)
+
+Best for: Deep learning models that take hours to train</div>
+
+                <h3>Practical Tips for Hyperparameter Tuning</h3>
+                <div class="code-block">1. Start with defaults
+   Most libraries have reasonable defaults. Try those first.
+
+2. Tune the most important hyperparameters first
+   Learning rate usually matters MOST. Start there.
+
+3. Use a validation set
+   Never tune on your test set! Use a separate validation set.
+
+4. Don't overtune
+   A model that's 95.2% vs 95.3% doesn't matter.
+   Diminishing returns after a certain point.
+
+5. Track everything
+   Use MLflow or W&B to track all experiments.
+   You'll forget which settings you tried!
+
+6. Use early stopping
+   If accuracy stops improving after 10 epochs, stop training.
+   Saves time during hyperparameter search.</div>
+
+                <h2>Understanding Your Model: Explainability</h2>
+
+                <h3>Why Explainability Matters</h3>
+                <div class="code-block">Scenario 1: Your model rejects a loan application
+Applicant: "Why was I rejected?"
+You: "The model said so."
+Applicant: "But WHY?"
+You: "Uh... I don't know. The model is a black box."
+
+This is a LEGAL and ETHICAL problem!
+
+Scenario 2: Your model's accuracy drops
+You: "Why did performance drop?"
+Your model: [black box silence]
+You: "I have no idea what went wrong..."
+
+Without explainability:
+- Can't debug models when they fail
+- Can't comply with regulations (EU's GDPR requires explanations)
+- Can't build user trust
+- Can't catch bias or unfairness</div>
+
+                <h3>Feature Importance: Which Features Matter?</h3>
+                <div class="code-block">Feature importance shows which features the model uses most.
+
+Example: Predicting house prices
+
+Feature Importance:
+┌────────────────────────────────┐
+│ Square footage:    45% ████████│
+│ Location:          30% ██████  │
+│ Number of bedrooms:15% ███     │
+│ Age of house:       8% ██      │
+│ Paint color:        2% ▏       │
+└────────────────────────────────┘
+
+Insight: Paint color barely matters! Location and size matter most.
+
+If the model suddenly performs badly:
+→ Check if square footage data is corrupted
+→ That's the most important feature!
+
+Most ML libraries provide feature importance built-in:
+- sklearn: model.feature_importances_
+- XGBoost: model.get_score()
+- LightGBM: model.feature_importance()</div>
+
+                <h3>SHAP: Explaining Individual Predictions</h3>
+                <div class="code-block">SHAP (SHapley Additive exPlanations) explains WHY a specific prediction was made.
+
+Example: Loan application rejected
+
+Applicant A:
+Base prediction: 50% approval chance
++ Income is high:        +25% ✓
++ Credit score is good:  +20% ✓
++ Debt is very high:     -40% ✗
++ Age is appropriate:    +5%  ✓
+= Final prediction: 60% → REJECTED
+
+Why rejected? DEBT was the deciding factor (-40%)
+
+Applicant B:
+Base prediction: 50%
++ Income is very high:   +35% ✓
++ Credit score is good:  +20% ✓
++ Debt is moderate:      -5%  ✗
++ Age is appropriate:    +5%  ✓
+= Final prediction: 105% → APPROVED
+
+Now you can tell the applicant EXACTLY why:
+"Your debt-to-income ratio was too high. Reducing debt by $5,000 would likely result in approval."
+
+This is MUCH better than "computer says no"!</div>
+
+                <h3>LIME: Local Explanations</h3>
+                <div class="code-block">LIME (Local Interpretable Model-agnostic Explanations) explains
+predictions by creating a simple model around one prediction.
+
+Example: Spam detection
+
+Email: "Congratulations! You won $1,000,000! Click here to claim!"
+
+Model: 99.8% SPAM
+
+LIME explanation — which words mattered most:
+┌──────────────────────────────────┐
+│ "won"             → +35% SPAM    │
+│ "$1,000,000"      → +30% SPAM    │
+│ "congratulations" → +20% SPAM    │
+│ "click here"      → +15% SPAM    │
+│ "claim"           → +10% SPAM    │
+└──────────────────────────────────┘
+
+If the model starts misclassifying normal emails:
+→ Check if normal emails contain these trigger words
+→ The model might be overfitting to specific words
+
+LIME works for ANY model (neural networks, random forests, etc.)</div>
+
+                <h3>When to Use Each Explainability Method</h3>
+                <div class="code-block">Feature Importance:
+Use when: You want to understand the model overall
+Question: "What features matter most in general?"
+Example: "Location matters more than paint color for house prices"
+
+SHAP:
+Use when: You need to explain individual predictions
+Question: "Why was THIS specific prediction made?"
+Example: "Your loan was rejected because of high debt"
+Required for: Regulatory compliance, user trust
+
+LIME:
+Use when: You have a complex black-box model
+Question: "What drove this one prediction?"
+Example: "This email was spam because of the word 'won'"
+Best for: Debugging individual weird predictions
+
+Real-world usage:
+- Financial services: MUST use SHAP or LIME (regulations)
+- Healthcare: MUST explain diagnoses (liability)
+- Recommendations: Feature importance is enough
+- Debugging: All three are useful!</div>
+
                 <h2>CI/CD for Machine Learning</h2>
 
                 <h3>What is CI/CD? (Quick Explanation)</h3>
@@ -1410,6 +1871,9 @@ Why so careful?
                     <li>A/B testing: show two versions to random groups, measure which is better</li>
                     <li>Testing pyramid: unit tests → integration tests → model tests → load tests</li>
                     <li>Model cards document what a model does, its limitations, and performance</li>
+                    <li>Hyperparameter tuning: Grid search (try everything), Random search (faster), Bayesian optimization (smartest)</li>
+                    <li>Model explainability: Feature importance (overall), SHAP (individual predictions), LIME (local explanations)</li>
+                    <li>Explainability is required for debugging, regulatory compliance, and building user trust</li>
                     <li>CI/CD automates the whole pipeline from code change to deployment</li>
                 </ul>
 
@@ -1435,6 +1899,22 @@ Why so careful?
                 {
                     question: "How is CI/CD different for ML compared to regular software?",
                     answer: "Regular CI/CD: code change → test code → deploy. ML CI/CD adds: code change → test code → retrain model → test model accuracy → test fairness → deploy with canary. ML has extra steps because changing code or data means retraining, and the model itself needs evaluation. Also needs rollback capability if model quality drops."
+                },
+                {
+                    question: "What are hyperparameters and why do they matter?",
+                    answer: "Hyperparameters are settings chosen BEFORE training (like learning rate, number of trees, batch size). Unlike parameters that the model learns, hyperparameters must be set by you. Bad hyperparameters lead to poor models even with good data. Good hyperparameters can dramatically improve accuracy."
+                },
+                {
+                    question: "What's the difference between grid search, random search, and Bayesian optimization?",
+                    answer: "Grid search tries EVERY combination systematically — thorough but very slow. Random search tries random combinations — much faster, often good enough. Bayesian optimization learns from previous tries and focuses on promising areas — fastest and smartest, but more complex to set up. Use random search for quick tuning, Bayesian for expensive deep learning models."
+                },
+                {
+                    question: "What is SHAP and when should you use it?",
+                    answer: "SHAP (SHapley Additive exPlanations) explains individual predictions by showing how each feature contributed. Example: 'Your loan was rejected because high debt (-40%) outweighed good income (+25%) and credit score (+20%).' Use SHAP when you need to explain specific predictions for regulatory compliance, user trust, or debugging edge cases."
+                },
+                {
+                    question: "Why is model explainability important?",
+                    answer: "1) Regulatory compliance — EU GDPR and financial regulations require explanations. 2) Debugging — can't fix what you don't understand. 3) User trust — 'computer says no' isn't acceptable. 4) Detecting bias — spot if model discriminates unfairly. 5) Business insight — learn which features drive predictions to improve products."
                 }
             ]
         },
