@@ -33183,5 +33183,19 @@ The API Team
                 ]
             })
         ]
+    },
+    'containerization': {
+        title: 'Docker & Kubernetes',
+        duration: '10 weeks',
+        level: 'Beginner',
+        modules: [
+            // Module loaded from modules/containerization-docker-kubernetes.js
+            (typeof containerizationFundamentals !== 'undefined' ? containerizationFundamentals : {
+                title: 'Containerization Fundamentals',
+                lessons: [
+                    { id: 'what-is-a-container', title: 'What is a Container?', duration: '45 min', content: '<p>Loading...</p>', interviews: [] }
+                ]
+            })
+        ]
     }
 };
