@@ -158,13 +158,14 @@ body.dark-mode .home-page {
 }
 
 .home-page h1 {
-  color: #ffffff;
-}
-
-.home-page h1 {
   font-size: 1.8rem;
   margin-bottom: 2rem;
   font-weight: normal;
+  color: #000000;
+}
+
+body.dark-mode .home-page h1 {
+  color: #ffffff;
 }
 
 .courses-grid {
@@ -426,6 +427,7 @@ body.dark-mode .sidebar-lesson.active {
 }
 
 body.dark-mode .lesson-main {
+  background: #000000;
   box-shadow: 0 2px 8px rgba(255, 255, 255, 0.05);
 }
 
